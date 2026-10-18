@@ -180,4 +180,15 @@ final class BackupCoreTests: XCTestCase {
         let timestamp = try await MotionPhoto.presentationTime(url)
         XCTAssertEqual(timestamp, 250000)
     }
+    func testRelaunchCannotResumeOtherAccountsOrManuallyPausedTransfers() {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: BackupSettings())
+        job.state = .transferring
+        XCTAssertEqual(job.transferDisposition(activeAccount: "a"), .run)
+        XCTAssertEqual(job.transferDisposition(activeAccount: "b"), .pause)
+        XCTAssertEqual(job.transferDisposition(activeAccount: ""), .pause)
+        job.state = .paused
+        XCTAssertEqual(job.transferDisposition(activeAccount: "a"), .pause)
+        job.state = .cancelled
+        XCTAssertEqual(job.transferDisposition(activeAccount: "a"), .cancel)
+    }
 }

@@ -37,7 +37,7 @@ struct LibraryView: View {
                 }.padding(.horizontal).padding(.vertical, 10)
                 if assets.isEmpty { ContentUnavailableView("没有可显示的项目", systemImage: "photo", description: Text("调整筛选条件或相册访问权限。")) }
                 else {
-                    PhotoGrid(assets: assets, manager: model.library.images, selecting: selecting, selected: selected) { asset in
+                    PhotoGrid(assets: assets, manager: model.library.images, selecting: selecting, selected: selected, states: model.assetStates, account: model.account) { asset in
                         if selecting {
                             if selected.contains(asset.localIdentifier) { selected.remove(asset.localIdentifier) } else { selected.insert(asset.localIdentifier) }
                         } else { detail = AssetSelection(asset: asset) }
@@ -86,6 +86,8 @@ private struct PhotoGrid: UIViewRepresentable {
     let manager: PHCachingImageManager
     var selecting: Bool
     var selected: Set<String>
+    var states: [String: AssetBackupState]
+    var account: String
     var tapped: (PHAsset) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> UICollectionView {
@@ -104,22 +106,29 @@ private struct PhotoGrid: UIViewRepresentable {
             for path in grid.indexPathsForVisibleItems {
                 guard path.item < assets.count, let cell = grid.cellForItem(at: path) as? PhotoCell else { continue }
                 cell.badge.text = selecting ? (selected.contains(assets[path.item].localIdentifier) ? "✓" : "○") : ""
+                cell.applyState(state(for: assets[path.item]), selecting: selecting)
                 cell.accessibilityTraits = selected.contains(assets[path.item].localIdentifier) ? [.button, .selected] : .button
             }
         }
+    }
+    func state(for asset: PHAsset) -> JobState? {
+        guard let value = states[asset.localIdentifier], value.account == account, value.revision == PhotoLibrary.stamp(asset) else { return nil }
+        return value.state
     }
     final class Coordinator: NSObject, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
         var parent: PhotoGrid
         init(_ parent: PhotoGrid) { self.parent = parent }
         func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { parent.assets.count }
         func collectionView(_ grid: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
-            let width = floor((grid.bounds.width - 4) / 3); return CGSize(width: width, height: width)
+            let width = max(1, floor((grid.bounds.width - 4) / 3)); return CGSize(width: width, height: width)
         }
         func collectionView(_ grid: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
             let cell = grid.dequeueReusableCell(withReuseIdentifier: "photo", for: indexPath) as! PhotoCell
             let asset = parent.assets[indexPath.item]
             cell.configure(asset, manager: parent.manager)
             cell.badge.text = parent.selecting ? (parent.selected.contains(asset.localIdentifier) ? "✓" : "○") : ""
+            cell.applyState(parent.state(for: asset), selecting: parent.selecting)
+            cell.accessibilityTraits = parent.selected.contains(asset.localIdentifier) ? [.button, .selected] : .button
             return cell
         }
         func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) { parent.tapped(parent.assets[indexPath.item]) }
@@ -128,6 +137,7 @@ private struct PhotoGrid: UIViewRepresentable {
 
 private final class PhotoCell: UICollectionViewCell {
     let image = UIImageView(), badge = UILabel(), subtitle = UILabel()
+    let cloud = UIImageView()
     var request: PHImageRequestID?
     var representedID = ""
     weak var manager: PHCachingImageManager?
@@ -136,15 +146,24 @@ private final class PhotoCell: UICollectionViewCell {
         image.contentMode = .scaleAspectFill; image.clipsToBounds = true; image.backgroundColor = .secondarySystemBackground
         badge.textColor = .white; badge.font = .systemFont(ofSize: 25, weight: .bold); badge.textAlignment = .right
         subtitle.textColor = .white; subtitle.font = .systemFont(ofSize: 11, weight: .semibold)
-        for view in [image, badge, subtitle] { view.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(view) }
+        cloud.tintColor = .white; cloud.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8); cloud.layer.cornerRadius = 5; cloud.contentMode = .scaleAspectFit
+        for view in [image, badge, subtitle, cloud] { view.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(view) }
         NSLayoutConstraint.activate([
             image.topAnchor.constraint(equalTo: contentView.topAnchor), image.leadingAnchor.constraint(equalTo: contentView.leadingAnchor), image.trailingAnchor.constraint(equalTo: contentView.trailingAnchor), image.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             badge.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -6), badge.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
-            subtitle.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6), subtitle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6)
+            subtitle.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6), subtitle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            cloud.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6), cloud.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6), cloud.widthAnchor.constraint(equalToConstant: 25), cloud.heightAnchor.constraint(equalToConstant: 22)
         ])
         isAccessibilityElement = true; accessibilityTraits = .button
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    func applyState(_ state: JobState?, selecting: Bool) {
+        cloud.isHidden = selecting || state == nil || state == .cancelled
+        accessibilityValue = state?.title
+        guard let state else { return }
+        let symbol = state == .completed ? "checkmark.icloud.fill" : state == .failed || state == .attention ? "exclamationmark.icloud" : state == .paused ? "pause.circle.fill" : "icloud.and.arrow.up"
+        cloud.image = UIImage(systemName: symbol)
+    }
     override func prepareForReuse() {
         super.prepareForReuse()
         if let request { manager?.cancelImageRequest(request) }

@@ -9,6 +9,7 @@ final class HarborModel: ObservableObject {
     let library = PhotoLibrary()
     let network = NetworkStatus()
     @Published private(set) var jobs: [BackupJob] = []
+    @Published private(set) var assetStates: [String: AssetBackupState] = [:]
     @Published var settings = BackupSettings()
     @Published private(set) var accounts: [String] = []
     @Published var notice = ""
@@ -71,6 +72,7 @@ final class HarborModel: ObservableObject {
             let repository = try BackupStore(url: engine.home.appendingPathComponent("backup-v2.sqlite"))
             store = repository
             jobs = try await repository.load(BackupJob.self, kind: "job")
+            updateAssetStates(jobs)
             mappings = try await repository.load(AlbumMapping.self, kind: "album")
             assetIndex = Dictionary(uniqueKeysWithValues: try await repository.load(AssetSnapshot.self, kind: "asset").map { ($0.id, $0) })
             do { accounts = try KeychainStore.accounts(); credentialStorageAvailable = true }
@@ -81,10 +83,19 @@ final class HarborModel: ObservableObject {
             transfer.activate()
             let existing = await transfer.tasks()
             let receipts = try transfer.pendingReceipts()
+            for task in existing {
+                guard let id = task.taskDescription?.components(separatedBy: ":").first,
+                      let job = jobs.first(where: { $0.id == id }) else { task.cancel(); continue }
+                switch job.transferDisposition(activeAccount: account) {
+                case .cancel: task.cancel()
+                case .pause: task.suspend()
+                case .run: if task.state == .suspended { task.resume() }
+                }
+            }
             for var job in jobs where job.state.active {
                 let systemTask = existing.contains { $0.taskDescription?.hasPrefix(job.id + ":") == true }
                 let hasReceipt = receipts.contains { $0.jobID == job.id }
-                if !systemTask && !hasReceipt { job.state = .queued; try await persist(job) }
+                if !systemTask && !hasReceipt { job.state = .queued; job.retryAt = Date(timeIntervalSinceNow: 10); try await persist(job) }
             }
             for var job in jobs where job.state == .paused {
                 for index in job.resources.indices {
@@ -115,6 +126,7 @@ final class HarborModel: ObservableObject {
         value.generation = (jobs.first(where: { $0.id == value.id })?.generation ?? 0) + 1
         // Publish intent before yielding: pause/cancel must see the latest transport ID.
         if let index = jobs.firstIndex(where: { $0.id == value.id }) { jobs[index] = value } else { jobs.append(value) }
+        updateAssetStates([value])
         do { try await store.save(value, kind: "job", id: value.id, revision: value.generation ?? 0) }
         catch { fatalStorage(error); throw error }
     }
@@ -123,6 +135,16 @@ final class HarborModel: ObservableObject {
         let saved = try await store.load(AccountSettings.self, kind: "settings")
         settingsGeneration = Dictionary(uniqueKeysWithValues: saved.map { ($0.account, $0.generation ?? 0) })
         settings = saved.first(where: { $0.account == account })?.settings ?? BackupSettings()
+        assetStates = [:]; updateAssetStates(jobs)
+    }
+    private func updateAssetStates(_ values: [BackupJob]) {
+        var updated = assetStates
+        for job in values where job.account == account {
+            if updated[job.assetID] == nil || job.created >= updated[job.assetID]!.created {
+                updated[job.assetID] = AssetBackupState(account: job.account, revision: job.assetRevision, state: job.state, created: job.created)
+            }
+        }
+        assetStates = updated
     }
     struct AccountSettings: Codable { var account: String; var settings: BackupSettings; var generation: Int64? }
     func saveSettings() async {
@@ -143,7 +165,7 @@ final class HarborModel: ObservableObject {
         while !workers.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
         await engine.login(credential)
         if engine.account.isEmpty { notice = engine.message }
-        do { accounts = try KeychainStore.accounts(); try await loadSettings() } catch { notice = error.localizedDescription }
+        do { accounts = try KeychainStore.accounts(); credentialStorageAvailable = true; try await loadSettings() } catch { notice = error.localizedDescription }
         cleanupReady = []; switching = false
         await replayReceipts(); await automaticScan(); await pump()
     }
@@ -183,6 +205,7 @@ final class HarborModel: ObservableObject {
             }
             if !additions.isEmpty {
                 jobs.append(contentsOf: additions)
+                updateAssetStates(additions)
                 do { try await store.saveBatch(additions.map { ($0.id, $0) }, kind: "job") }
                 catch { fatalStorage(error); throw error }
                 notice = "已加入备份队列。"
@@ -410,7 +433,7 @@ final class HarborModel: ObservableObject {
             job.resources[index].transportID = nil
             if receipt.error.isEmpty {
                 job.resources[index].responsePath = receipt.responsePath
-                job.state = paused ? .paused : .queued; job.error = ""
+                job.state = paused ? .paused : .queued; job.error = ""; job.retryAt = nil
             } else {
                 job.state = paused ? .paused : .waiting; job.error = receipt.error
                 job.attempts += 1; job.retryAt = Date(timeIntervalSinceNow: min(300, pow(2, Double(job.attempts)) * 5))

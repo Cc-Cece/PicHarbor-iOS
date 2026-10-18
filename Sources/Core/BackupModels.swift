@@ -52,6 +52,13 @@ enum JobState: String, Codable {
     }
     var active: Bool { [.preparing, .transferring, .committing, .confirming].contains(self) }
 }
+enum TransferDisposition: Equatable { case run, pause, cancel }
+struct AssetBackupState {
+    var account: String
+    var revision: String
+    var state: JobState
+    var created: Date
+}
 struct MediaResource: Codable, Identifiable, Equatable {
     var id = UUID().uuidString
     var role: String
@@ -89,6 +96,11 @@ struct BackupJob: Codable, Identifiable {
     var progress: Double = 0
     var evidence: CleanupEvidence?
     var dedupKey: String { "\(account)|\(assetID)|\(assetRevision)|\(settings.mediaPolicy)" }
+    func transferDisposition(activeAccount: String) -> TransferDisposition {
+        if state == .cancelled || state == .completed { return .cancel }
+        if activeAccount.isEmpty || account != activeAccount || state != .transferring { return .pause }
+        return .run
+    }
 }
 struct CleanupEvidence: Codable {
     var account: String
