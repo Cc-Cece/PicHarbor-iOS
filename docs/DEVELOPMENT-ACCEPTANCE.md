@@ -1,8 +1,20 @@
-# 0.2 原生开发版交付与验收
+# 原生开发版交付与验收
 
 日期：2026-10-19。此版本供阶段验收，**不是完整计划已完成的声明**。
 
-## 可安装产物
+## 0.2.1 账号入口修复版
+
+- 生产代码提交：`22f5e48`；版本 0.2.1，构建号 3，最低 iOS 17.0。
+- [设备编译与 IPA 包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39178064264)：通过；下载后本机再次包检查通过。
+- 本机：`dist/PicHarbor-0.2.1-dev.ipa`，12,115,404 字节；解压 41,654,376 字节。
+- SHA-256：`73578bd66c3758a700b400b280dd5c017a37cdbb7141ee3c14959f775f76ef4e`。
+- 修复说明见 `ACCOUNT-FLOW-FIXES.md`。[最终回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39178066588)通过：32 项 Python、16 项原生单元、3 项界面测试，均为零失败，与安装包使用同一生产代码提交。
+- 界面实测连续两次打开账号入口和 Google 网页、取消返回、无效凭据留在当前页面且没有额外弹窗、无账号设置在终止重启后保存，以及既有 PhotoKit/详情/四入口/默认画质/深色/核验流程。已人工复核账号页面、错误页面及真实 Google 登录表单截图。
+- 最终报告和截图：GitHub 测试产物及本机 `build/account-fix-final-tests/simulator-test-results/`。没有使用真实账号；能打开表单不代表完成真实 Google 认证。
+- 真机复测顺序：覆盖升级 → 设置/账号/添加 Google 账号 → 打开 Google 页面 → 取消、重新打开 → 本机登录/凭据导入；确认失败留在页面并显示原因，再检查账号切换与原有备份。
+- 不需要先卸载旧应用。继续用相同 Sideloadly Apple 账号与应用标识设置覆盖安装。
+
+## 0.2.0 初始可安装产物（历史）
 
 - 生产代码提交：`b1249e9`。
 - [设备编译与 IPA 包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39157338820)：通过。
