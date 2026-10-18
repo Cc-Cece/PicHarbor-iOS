@@ -5,12 +5,13 @@ struct HarborRootView: View {
     @StateObject private var model = HarborModel()
     @Environment(\.scenePhase) private var scenePhase
     @State private var welcome = false
+    @State private var selectedTab = 0
     var body: some View {
-        TabView {
-            NavigationStack { LibraryView() }.tabItem { Label("照片", systemImage: "photo.on.rectangle") }
-            NavigationStack { BackupDashboard() }.tabItem { Label("备份", systemImage: "icloud.and.arrow.up") }
-            NavigationStack { ActivityView() }.tabItem { Label("活动", systemImage: "clock.arrow.circlepath") }
-            NavigationStack { HarborSettingsView() }.tabItem { Label("设置", systemImage: "gearshape") }
+        TabView(selection: $selectedTab) {
+            NavigationStack { LibraryView() }.tabItem { Label("照片", systemImage: "photo.on.rectangle") }.tag(0)
+            NavigationStack { BackupDashboard() }.tabItem { Label("备份", systemImage: "icloud.and.arrow.up") }.tag(1)
+            NavigationStack { ActivityView() }.tabItem { Label("活动", systemImage: "clock.arrow.circlepath") }.tag(2)
+            NavigationStack { HarborSettingsView() }.tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
         }
         .environmentObject(model)
         .tint(.blue)

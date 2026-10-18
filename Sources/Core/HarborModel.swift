@@ -17,6 +17,7 @@ final class HarborModel: ObservableObject {
     @Published var applePairAvailable = false
     @Published var initialized = false
     @Published var storageFailed = false
+    @Published private(set) var credentialStorageAvailable = true
     private var store: BackupStore?
     private var mappings: [AlbumMapping] = []
     private var assetIndex: [String: AssetSnapshot] = [:]
@@ -65,7 +66,8 @@ final class HarborModel: ObservableObject {
             jobs = try await repository.load(BackupJob.self, kind: "job")
             mappings = try await repository.load(AlbumMapping.self, kind: "album")
             assetIndex = Dictionary(uniqueKeysWithValues: try await repository.load(AssetSnapshot.self, kind: "asset").map { ($0.id, $0) })
-            accounts = try KeychainStore.accounts()
+            do { accounts = try KeychainStore.accounts(); credentialStorageAvailable = true }
+            catch { accounts = []; credentialStorageAvailable = false; engine.message = error.localizedDescription }
             try await loadSettings()
             let capabilities = try await engine.invoke("capabilities")
             applePairAvailable = capabilities["apple_pair"] as? Bool == true
@@ -490,7 +492,8 @@ final class HarborModel: ObservableObject {
             "states": Dictionary(grouping: jobs, by: { $0.state.rawValue }).mapValues(\.count),
             "error_codes": jobs.map(\.error).filter { !$0.isEmpty }, "runtime": engine.runtime,
             "apple_pair": applePairAvailable, "live_cleanup": false, "staged_bytes": stagedBytes,
-            "storage_failed": storageFailed, "os": ProcessInfo.processInfo.operatingSystemVersionString]
+            "storage_failed": storageFailed, "credential_storage_available": credentialStorageAvailable,
+            "os": ProcessInfo.processInfo.operatingSystemVersionString]
         return String(decoding: (try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys])) ?? Data(), as: UTF8.self)
     }
 }
