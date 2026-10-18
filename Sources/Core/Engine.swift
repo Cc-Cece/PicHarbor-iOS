@@ -1,0 +1,208 @@
+import Foundation
+import SwiftUI
+
+struct HarborError: LocalizedError {
+    let code: String
+    init(_ code: String) { self.code = code }
+    var errorDescription: String? {
+        switch code {
+        case "LOGIN_REQUIRED": return "需要重新登录 Google，或服务端要求额外验证。"
+        case "INVALID_CREDENTIAL": return "登录凭据无效。"
+        case "NETWORK_ERROR": return "网络请求失败，请检查网络后重试。"
+        case "RUNTIME_UNAVAILABLE": return "Python 运行环境不可用，请导出诊断报告。"
+        case "KEYCHAIN_ERROR": return "无法访问安全凭据存储。"
+        case "PHOTO_PERMISSION": return "请允许访问所选照片，然后重新选择。"
+        case "UNSUPPORTED_MEDIA": return "首轮仅支持普通静态照片，暂不支持 Live Photo 和视频。"
+        case "FILE_ACCESS": return "无法读取原件或写入暂存文件，请检查空间与照片权限。"
+        case "SOURCE_CHANGED": return "传输期间文件发生变化，请重新选择原件。"
+        case "ACCOUNT_CHANGED": return "账号已变化，请重新连接。"
+        case "REMOTE_NOT_VISIBLE": return "云端暂未按内容哈希确认，请稍后重新核验。"
+        case "WEB_LOGIN_REJECTED": return "Google 拒绝了应用内登录。可导入已有 gpmc 凭据验证，其余情况需要调整认证适配。"
+        case "INTERRUPTED": return "上次传输被中断；重新选择同一照片可查重并重试。"
+        default: return "操作未完成（\(code)），请重试或导出诊断报告。"
+        }
+    }
+}
+
+struct BackupObservation: Codable, Identifiable {
+    let id: String
+    let account: String
+    let name: String
+    let sha1: String
+    let sha256: String
+    let size: Int64
+    let remoteKey: String
+    let state: String
+    let origin: String
+    let error: String
+    let updated: Int64
+
+    var stateLabel: String {
+        switch state {
+        case "confirmed": return origin == "content_exists" ? "云端已存在 · 已查重" : "云端内容已确认"
+        case "confirmation_pending": return "待云端确认"
+        case "uploading": return "传输中"
+        case "interrupted": return "上次传输中断"
+        default: return "上传失败"
+        }
+    }
+}
+
+@MainActor
+final class Engine: ObservableObject {
+    @Published var ready = false
+    @Published var busy = false
+    @Published var account = ""
+    @Published var message = "正在检查运行环境"
+    @Published var phase = ""
+    @Published var progress: Double?
+    @Published var records: [BackupObservation] = []
+    @Published var runtime: [String: String] = [:]
+    private let queue = DispatchQueue(label: "io.picharbor.python", qos: .userInitiated)
+    private var booted = false
+    let home: URL
+
+    init() {
+        home = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PicHarbor", isDirectory: true)
+    }
+
+    func boot() async {
+        guard !booted else { return }
+        booted = true
+        busy = true
+        defer { busy = false }
+        do {
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            var excluded = home
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try excluded.setResourceValues(values)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: home.path)
+            // Staging contains disposable exports only; abandoned files cannot be resumed in A/B.
+            let staging = home.appendingPathComponent("Staging", isDirectory: true)
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            for file in try FileManager.default.contentsOfDirectory(at: staging, includingPropertiesForKeys: nil) {
+                try FileManager.default.removeItem(at: file)
+            }
+            ready = PythonBridge.start(home.path)
+            guard ready else { throw HarborError("RUNTIME_UNAVAILABLE") }
+            let info = try await invoke("probe")
+            for key in ["python", "tls", "sqlite"] { runtime[key] = info[key] as? String }
+            if let credential = try KeychainStore.load() {
+                try await connect(credential)
+            } else { message = "运行环境检查通过，请连接 Google 账号。" }
+        } catch { message = error.localizedDescription }
+    }
+
+    private func invoke(_ action: String, _ payload: [String: Any] = [:]) async throws -> [String: Any] {
+        let encoded = try JSONSerialization.data(withJSONObject: payload)
+        let input = String(decoding: encoded, as: UTF8.self)
+        let output: String = await withCheckedContinuation { continuation in
+            queue.async {
+                let result = PythonBridge.call(action, payload: input) { value in
+                    // Only whitelisted numeric progress reaches UI; no credentials or URLs.
+                    guard let data = value.data(using: .utf8),
+                          let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                    let stage = event["phase"] as? String ?? ""
+                    let done = event["completed"] as? Double ?? 0
+                    let total = event["total"] as? Double ?? 0
+                    Task { @MainActor in
+                        self.phase = stage
+                        self.progress = total > 0 ? min(1, done / total) : nil
+                    }
+                }
+                continuation.resume(returning: result)
+            }
+        }
+        let result = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] ?? [:]
+        guard result["ok"] as? Bool == true else { throw HarborError(result["error"] as? String ?? "ENGINE_ERROR") }
+        return result
+    }
+
+    private func connect(_ credential: String) async throws {
+        account = ""
+        records = []
+        let result = try await invoke("connect", ["credential": credential])
+        guard let saved = result["credential"] as? String, let email = result["account"] as? String else {
+            throw HarborError("INVALID_CREDENTIAL")
+        }
+        do { try KeychainStore.save(saved) }
+        catch { _ = try? await invoke("logout"); throw error }
+        account = email
+        try await reload()
+        message = "账号已连接，可以选择一张普通照片验证备份。"
+    }
+
+    func login(_ credential: String) async {
+        guard ready && !busy else { return }
+        busy = true
+        defer { busy = false }
+        do { try await connect(credential) }
+        catch { message = error.localizedDescription }
+    }
+
+    func logout() async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try KeychainStore.clear()
+            _ = try await invoke("logout")
+            account = ""; records = []; message = "已退出，设备上的历史记录保留并按账号隔离。"
+        } catch { message = error.localizedDescription }
+    }
+
+    private func reload() async throws {
+        let result = try await invoke("records", ["account": account])
+        let data = try JSONSerialization.data(withJSONObject: result["records"] ?? [])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        records = try decoder.decode([BackupObservation].self, from: data)
+    }
+
+    func backup(assetID: String, quality: String) async {
+        guard ready && !busy && !account.isEmpty else { return }
+        busy = true; phase = "exporting"; progress = nil
+        defer { busy = false; phase = ""; progress = nil }
+        do {
+            let photo = try await PhotoSource.exportOriginal(assetID: assetID, staging: home.appendingPathComponent("Staging"))
+            defer { try? FileManager.default.removeItem(at: photo.url) }
+            _ = try await invoke("upload", ["account": account, "path": photo.url.path, "name": photo.name, "quality": quality])
+            try await reload()
+            message = records.first?.stateLabel ?? "操作完成，请查看记录。"
+        } catch { message = error.localizedDescription; try? await reload() }
+    }
+
+    func verify(_ record: BackupObservation) async {
+        guard !busy && record.account == account else { return }
+        busy = true
+        defer { busy = false; phase = ""; progress = nil }
+        do {
+            _ = try await invoke("verify", ["id": record.id, "account": account])
+            try await reload()
+            message = "已重新查询云端，请查看记录状态。"
+        } catch { message = error.localizedDescription }
+    }
+
+    var diagnostics: String {
+        // Intentionally omit email, filenames, hashes, remote IDs, paths and free-form errors.
+        let value: [String: Any] = ["app": "PicHarbor A/B", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+            "runtime_ready": ready, "runtime": runtime, "record_count": records.count,
+            "states": records.map(\.state), "errors": records.map(\.error),
+            "device_os": ProcessInfo.processInfo.operatingSystemVersionString,
+            "bundle_bytes": Self.bundleBytes(), "note": "Hash existence is not cleanup eligibility. Device acceptance is manual."]
+        return String(data: (try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])) ?? Data(), encoding: .utf8) ?? "{}"
+    }
+
+    private static func bundleBytes() -> Int64 {
+        guard let files = FileManager.default.enumerator(at: Bundle.main.bundleURL, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]) else { return 0 }
+        var total: Int64 = 0
+        for case let file as URL in files {
+            if let info = try? file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]), info.isRegularFile == true {
+                total += Int64(info.fileSize ?? 0)
+            }
+        }
+        return total
+    }
+}

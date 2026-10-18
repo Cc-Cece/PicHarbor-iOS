@@ -19,3 +19,12 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+.docs/
+# Embedded Python build products and local verification
+Runtime/
+.runtime-cache/
+.python-deps/
+.venv/
+__pycache__/
+*.pyc

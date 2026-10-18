@@ -22,8 +22,8 @@ permissions:
 jobs:
   test:
     name: Run unit tests
-    runs-on: macos-latest
-    timeout-minutes: 40
+    runs-on: macos-15
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -33,6 +33,25 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
+
+      - name: Set up Python build tools
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Cache verified Python runtime archive
+        uses: actions/cache@v4
+        with:
+          path: .runtime-cache/*.tar.gz
+          key: python-ios-${{ runner.os }}-${{ hashFiles('tools/runtime-lock.json') }}
+
+      - name: Prepare pinned Python runtime and dependencies
+        run: python tools/prepare_python.py
+
+      - name: Test adapter offline
+        run: |
+          python -m pip install -r Python/requirements.lock
+          python -m unittest discover -s tests_python -v
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -52,11 +71,8 @@ jobs:
         id: sim
         run: |
           set -euo pipefail
-          # First available iPhone simulator on the runner.
-          NAME=$(xcrun simctl list devices available | grep -Eo 'iPhone [0-9]+( Pro)?( Max)?' | head -1)
-          if [ -z "$NAME" ]; then NAME="iPhone 16"; fi
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "Using simulator: $NAME"
+          ID=$(xcrun simctl list devices available -j | python -c 'import json,sys; print(next(d["udid"] for devices in json.load(sys.stdin)["devices"].values() for d in devices if d["name"].startswith("iPhone")))')
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
         env:
@@ -66,5 +82,14 @@ jobs:
           xcodebuild test \
             -project "${SCHEME}.xcodeproj" \
             -scheme "$SCHEME" \
-            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
+            -resultBundlePath build/TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload simulator test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-test-results
+          path: build/TestResults.xcresult
+          retention-days: 7

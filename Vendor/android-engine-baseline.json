@@ -1,0 +1,143 @@
+{
+  "source_repository": "C:\\Users\\Kanbara\\Code\\vscode\\get-and-see",
+  "source_commit": "2b7b335e7f0d2b4072bd99646a705ce94564d14d",
+  "source_subdirectory": "src/PicHarbor.Core/GooglePhotos/Embedded",
+  "copied_at_utc": "2026-10-18T10:17:53.9909391Z",
+  "note": "Working tree copied verbatim; unrelated source working-tree changes preserved. Hashes identify the actual copied content.",
+  "files": [
+    {
+      "path": "gpmc/api.py",
+      "sha256": "ea7ad5a9358999683e0ae54d11a0cb93df6c08e14b7d5978c47cc574092dbe9b"
+    },
+    {
+      "path": "gpmc/auth.py",
+      "sha256": "9b3e784affe4de76993bb8f5f4d04905a74995a876fb5ba31996b07b2c40d7e5"
+    },
+    {
+      "path": "gpmc/cli.py",
+      "sha256": "ab55f74e3f349bc860c8e82b72c1dd9c6fb4ec79b6e4c852e448fa3596afa93f"
+    },
+    {
+      "path": "gpmc/client.py",
+      "sha256": "ad56898ee5d76702ef42206ecd9c95ffa8450ceafa8c6a335bd5b7d513ae6ec2"
+    },
+    {
+      "path": "gpmc/db.py",
+      "sha256": "7208115c6e843a37ed7b1fbee0603f13cacb39964d842e977cc6beaf137b035d"
+    },
+    {
+      "path": "gpmc/db_update_parser.py",
+      "sha256": "50c177691d57c325eacba3da9fce07b633537350154d12984620b5c26fcf5c2b"
+    },
+    {
+      "path": "gpmc/exceptions.py",
+      "sha256": "619874a8d7130e712b6a166b04c1da9b80ca8933bd6f8d8db27ce3d46f990587"
+    },
+    {
+      "path": "gpmc/hash_handler.py",
+      "sha256": "70853b6ef6971ebecce0882d896965148aa14ba68a3920c4bdae18446cc7d5c0"
+    },
+    {
+      "path": "gpmc/message_types.py",
+      "sha256": "9e3f4e30aec02573218f545558a4e95670946e9716ee05bbed7ec808b02390c5"
+    },
+    {
+      "path": "gpmc/models.py",
+      "sha256": "81b03a3360308a21aad434fddbf9bdd850ddbbdbfd3b9c871e0272d559541046"
+    },
+    {
+      "path": "gpmc/utils.py",
+      "sha256": "1e1239cb71c53497381d37305fc7752cdabef253178157444f0a784c1541b586"
+    },
+    {
+      "path": "gpmc/__init__.py",
+      "sha256": "46d83009d4bba69fa7ceac990381e518b5714edc090f3d0b7cf22757373aa0a5"
+    },
+    {
+      "path": "blackboxprotobuf/py.typed",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "blackboxprotobuf/__init__.py",
+      "sha256": "8f36d7704bdbcbe70ae8840adcee2c632fd73dc82d57d4f1ee91063b14232b9f"
+    },
+    {
+      "path": "blackboxprotobuf/__main__.py",
+      "sha256": "83661572668c4976f53a1a2b91b2fb073e43ad88ba1f8f5995d2b5e3edc18bfa"
+    },
+    {
+      "path": "blackboxprotobuf/lib/api.py",
+      "sha256": "9f3fe25dba982dc4fcc8248d3cdd8e82dcefb0b065586634de98e655bdf4de58"
+    },
+    {
+      "path": "blackboxprotobuf/lib/config.py",
+      "sha256": "93328520120805f60cab8147f0d3e138ef894ee0340eac4924560b23a9bb5def"
+    },
+    {
+      "path": "blackboxprotobuf/lib/exceptions.py",
+      "sha256": "27d4d727030536ebec9bc8c34afafaeffb0a83f924c8eb13bd5a3296665f6257"
+    },
+    {
+      "path": "blackboxprotobuf/lib/protofile.py",
+      "sha256": "8ecb9bdfb943a9ce9ce1c8a0f7f563ab65e06c1b9e067af43f3376d3f6adbabe"
+    },
+    {
+      "path": "blackboxprotobuf/lib/pytypes.py",
+      "sha256": "6715e3984d5bf6053ca7d9250eda7d19c322d61903a44cda04aaeed152353f9a"
+    },
+    {
+      "path": "blackboxprotobuf/lib/typedef.py",
+      "sha256": "d9e3f4d0e7881943960f54702f90e261f132d77da1adcec770355c4f0cce2630"
+    },
+    {
+      "path": "blackboxprotobuf/lib/__init__.py",
+      "sha256": "77e248799dae6e34ec4714dc4e92359a05859cb5d8fb6013562c6a1c67c70cad"
+    },
+    {
+      "path": "blackboxprotobuf/lib/payloads/grpc.py",
+      "sha256": "7609fe403b622d0c6dc32a5c651d8930214ec3e7bed092d5f018f9751d794387"
+    },
+    {
+      "path": "blackboxprotobuf/lib/payloads/gzip.py",
+      "sha256": "72f0061256941d8a3825de4596282d416f28b6adf649a453b618a1dc29dd38c2"
+    },
+    {
+      "path": "blackboxprotobuf/lib/payloads/__init__.py",
+      "sha256": "90b8b0dfe6bcae6254222ca75bd521a1572b67082a1664e14f2a765e1e9b71ef"
+    },
+    {
+      "path": "blackboxprotobuf/lib/types/fixed.py",
+      "sha256": "8a7a4f53e79b2b5ba5315c20bdc7779b1dcfefdd31af931329c44c504e4ad838"
+    },
+    {
+      "path": "blackboxprotobuf/lib/types/length_delim.py",
+      "sha256": "19cbd31f2c4451b831b2c5553e22c26551f286d4add860406c321167e450ca96"
+    },
+    {
+      "path": "blackboxprotobuf/lib/types/type_maps.py",
+      "sha256": "a30ea47e0f6d692acb5dab3dbf1bc4af1f44c850c4d129d2dd4c138d221a4cbc"
+    },
+    {
+      "path": "blackboxprotobuf/lib/types/varint.py",
+      "sha256": "becf0900e77b0c604d46c21148d40de11884749bcda55a0a2852f31f5148735f"
+    },
+    {
+      "path": "blackboxprotobuf/lib/types/wiretypes.py",
+      "sha256": "93901b94770025d3178d57ef7566540558e7324115ed1255eaf17321bd2e8298"
+    },
+    {
+      "path": "blackboxprotobuf/lib/types/__init__.py",
+      "sha256": "275f0dd8ee704af36c8805d1cdc398c42aa6ec2a33299767a92d6322a28b460f"
+    }
+  ],
+  "supporting_files": [
+    {
+      "path": "reference/gpmc_bridge.py",
+      "sha256": "52c45ed6ead1a188f99f7cebd9a1e9afae01f1c7cd80d04ebb6f86320f73f173"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "283f7343bad5e795307c59db7dd2d92a529545278e776ca8978bd098897ea47f"
+    }
+  ]
+}

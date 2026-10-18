@@ -1,147 +1,62 @@
-# iOS SwiftUI App Template
+# PicHarbor iOS · A/B 验证版
 
-[![iOS Build (Unsigned IPA)](https://github.com/hoangnd107/ios-swiftui-app-template/actions/workflows/ios-build.yml/badge.svg)](https://github.com/hoangnd107/ios-swiftui-app-template/actions/workflows/ios-build.yml)
-[![Release (Unsigned IPA)](https://github.com/hoangnd107/ios-swiftui-app-template/actions/workflows/release.yml/badge.svg)](https://github.com/hoangnd107/ios-swiftui-app-template/actions/workflows/release.yml)
-[![Unit Tests](https://github.com/hoangnd107/ios-swiftui-app-template/actions/workflows/tests.yml/badge.svg)](https://github.com/hoangnd107/ios-swiftui-app-template/actions/workflows/tests.yml)
+SwiftUI 原生界面 + 内嵌 Python + gpmc，面向 iOS 17+ iPhone。开发者可在 Windows 编辑代码，由 GitHub Actions 的 macOS/Xcode 构建无签名 IPA，使用者自行重签安装。
 
-A starter for **native SwiftUI iOS apps** with a complete, free GitHub Actions
-pipeline — from building the app all the way to publishing a release — **without
-owning a Mac and without a paid Apple Developer account**.
+当前范围是运行环境与前台单张照片闭环。**云端编译、模拟器测试、真机免费自签、Google 实际认证与上传分别验收，不能互相替代。** 状态见 [验收记录](docs/VALIDATION.md)。
 
-- 🧱 **No `.xcodeproj` in git.** The Xcode project is generated from
-  [`project.yml`](project.yml) with [XcodeGen](https://github.com/yonomi/XcodeGen),
-  so there are no merge conflicts and no fragile project file.
-- 📦 **Unsigned `.ipa` on every push.** The **iOS Build (Unsigned IPA)** action
-  builds on a free `macos-latest` runner and uploads the IPA as an artifact —
-  sideload it with [Sideloadly](https://sideloadly.io) / [AltStore](https://altstore.io)
-  using a free Apple ID.
-- 🚀 **Tag → Release.** Push `v1.2.3` and the **Release** action builds the IPA
-  and publishes a GitHub Release with the `.ipa` attached and auto-generated notes.
-- ✅ **Unit tests on the simulator** (on PRs / on demand) to conserve free minutes.
-- 🌍 Builds offline with code signing disabled — nothing leaves the runner.
+## 功能
 
----
+- 检查 Python、TLS、SQLite、协议编解码与 gpmc 导入。
+- Google EmbeddedSetup 网页登录与已有 gpmc 凭据导入；凭据保存在本机 Keychain，不写入 Python 数据库、诊断或云端构建环境。
+- 通过 PhotoKit 导出一张普通照片的原始资源，前台计算哈希、查重、上传与提交。
+- 提交后再次按内容哈希查询云端，未确认时保存为待确认，可单独重新核验。
+- 当前账号最近 100 条记录持久化；重启后保留，账号隔离。中断的传输标记为中断，重新选择同一照片可查重重试。
+- 导出不含账号、照片名称、哈希、云端 ID 或凭据的诊断报告，以及包体文件字节数。
 
-## The pipeline
+首轮不支持视频、Live Photo、自动扫描、可靠后台传输或任何本地/云端删除。云端哈希存在不代表原件质量、复合资产完整性或安全清理资格。上传期间请保持前台。
 
-```
-                         ┌─────────────────────────────────────────┐
-  push to main  ───────▶ │  iOS Build (Unsigned IPA)                │ ─▶ IPA artifact
-  (or run manually)      │  xcodegen → xcodebuild (CODE_SIGNING=NO) │    (download & sideload)
-                         │  → Payload/ → zip → *.ipa                │
-                         └─────────────────────────────────────────┘
+## Windows 开发与云端构建
 
-  push tag  v* ────────▶ │  Release (Unsigned IPA)                  │ ─▶ GitHub Release
-                         │  same build  →  gh release create        │    with *.ipa attached
-                         └─────────────────────────────────────────┘
+1. 修改 Swift、Python 或工程配置并推送到本仓库 main。
+2. Actions 的 **iOS Build (Unsigned IPA)** 会准备固定版本的 Python iOS 运行环境，安装纯 Python 依赖，运行离线测试并构建 IPA。
+3. 打包检查确认 Python.framework、TLS/SQLite 等扩展、证书包、源码哈希与 framework 标记存在后，上传 IPA artifact。
+4. **Unit Tests (Simulator)** 可手动运行，测试真实嵌入的 iOS Python；PR 也会触发。
+5. 构建完成不自动发布版本。确认需要分发时再推送版本标签，或手动运行 Release 工作流。
 
-  pull request ────────▶ │  Unit Tests (Simulator)                  │ ─▶ pass / fail
-                         └─────────────────────────────────────────┘
-```
+Xcode 工程由 `project.yml` 生成。Python 标准库与扩展按官方 framework 形式打包，不在用户设备上下载 Python 或执行 pip 安装。
 
-All three workflows read the app/scheme name from `project.yml`'s `name:` field,
-so **you never edit the workflows when you rename the app.**
+## 安装与真机验收
 
----
+从 Actions 下载 IPA，先选择 Sideloadly 或 AltStore Classic 的一种进行免费 Apple 账号重签，确保其签署所有嵌套 framework。个人签名通常 7 天有效，需按工具提示信任开发者、开启开发者模式（如需要）并续签。
 
-## Quick start
+进入应用后依次完成 A 环境检查、Google 登录、普通照片上传、再次选择同一照片验证查重、退出重开验证记录保留。详细步骤与失败报告要求见 [真机验收表](docs/VALIDATION.md)。
 
-1. Click **“Use this template” → Create a new repository** (or
-   `gh repo create my-app --template hoangnd107/ios-swiftui-app-template`).
-2. **Rename the app** (see below).
-3. Push to `main`. The **iOS Build (Unsigned IPA)** action runs and uploads the
-   `.ipa` under the run’s **Artifacts**.
-4. When you’re ready to ship: `git tag v0.1.0 && git push origin v0.1.0` →
-   the **Release** action publishes a GitHub Release with the IPA attached.
+Google 可能拒绝嵌入式网页登录或要求额外设备验证。已有凭据导入仅为协议验证备用入口，不证明 iOS 网页登录已经通过；不会规避服务端验证。不要将任何凭据提交到仓库或发送到聊天。
 
-### Rename the app
+## 本地离线验证
 
-Everything keys off `project.yml`:
+使用 Python 3.13：
 
-1. `project.yml` → set `name:` to your app name (drives the scheme, `.xcodeproj`,
-   product, module, and IPA filename).
-2. `project.yml` → update `PRODUCT_BUNDLE_IDENTIFIER`, `bundleIdPrefix`, and
-   `INFOPLIST_KEY_CFBundleDisplayName`.
-3. Rename the test target `AppNameTests` (and its bundle id) to `<YourApp>Tests`.
-4. Optionally rename `struct AppNameApp` in
-   [`Sources/App/AppNameApp.swift`](Sources/App/AppNameApp.swift) — only `@main`
-   matters, not the name.
-5. Drop a real 1024×1024 PNG into
-   `Resources/Assets.xcassets/AppIcon.appiconset/` (replace the placeholder).
-
----
-
-## Project layout
-
-```
-.
-├── .github/workflows/
-│   ├── ios-build.yml      # iOS Build (Unsigned IPA) — push to main + manual
-│   ├── release.yml        # Release — on tag v*, builds + publishes the IPA
-│   └── tests.yml          # Unit Tests — PRs + manual (simulator)
-├── Sources/
-│   ├── App/AppNameApp.swift     # @main entry point
-│   └── Features/ContentView.swift
-├── Tests/
-│   └── AppNameTests.swift       # XCTest unit tests
-├── Resources/
-│   └── Assets.xcassets/         # AppIcon + AccentColor
-├── project.yml            # XcodeGen spec (single source of truth)
-├── VERSION                # marketing version used in the IPA filename
-├── .gitattributes         # forces LF endings (Windows-friendly)
-└── .gitignore
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r Python/requirements.lock
+.\.venv\Scripts\python.exe -m unittest discover -s tests_python -v
 ```
 
----
+上述测试使用模拟网络响应，验证状态逻辑与失败边界，不访问真实 Google 账号。Windows 上通过不代表 iOS 运行环境通过。
 
-## Local development (on a Mac)
+## 来源与更新
 
-```bash
-brew install xcodegen
-xcodegen generate          # creates AppName.xcodeproj from project.yml
-open AppName.xcodeproj      # build & run in Xcode
-```
+- `Vendor/`：从安卓参考项目复制的固定快照，包含已有修改；并非声称为纯上游。文件清单与 SHA-256 见 `Vendor/source-manifest.json`。
+- `Python/harbor_ios.py`：iOS 业务适配，不修改 Vendor 源码。
+- `Sources/Bridge/`：CPython C API 桥接，主线程初始化、串行后台调用。
+- `tools/runtime-lock.json`：固定 Python 3.13 iOS 运行环境及下载 SHA-256。
+- `Python/requirements.lock`：固定依赖；发布时保留发行元数据与许可。
 
-On Windows/Linux you don’t need Xcode — edit the Swift files and let the GitHub
-Actions runner build for you.
+更新 gpmc 时先审查与安卓扩展的差异，更新固定快照和哈希，再运行离线、模拟器及真机回归，最后重新打包。上游更新不自动保证现有接口和认证兼容。
 
-### Build an unsigned IPA locally (Mac)
+## 成本与许可证
 
-```bash
-xcodegen generate
-xcodebuild -project AppName.xcodeproj -scheme AppName -configuration Release \
-  -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-  clean build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
-mkdir -p Payload && cp -R build/Build/Products/Release-iphoneos/AppName.app Payload/
-zip -r AppName.ipa Payload
-```
+公开仓库使用标准 GitHub 托管 runner 的运行费用可免费，产物与缓存应合理保留；私有仓库受账户额度限制。不要求购买 Mac 或付费 Apple 开发者账号。
 
----
-
-## Installing the IPA (free Apple ID)
-
-1. Download the `.ipa` from the **Release** page, or from a build run’s
-   **Artifacts**.
-2. Open it in **Sideloadly** (or AltStore), sign in with a free Apple ID, and
-   install to your iPhone.
-3. On the device: **Settings → General → VPN & Device Management** → trust your
-   developer profile.
-4. Free Apple IDs expire after **7 days** — re-sideload to refresh.
-
-> The IPA is **unsigned** on purpose; the sideloading tool signs it on-device
-> with your Apple ID. This needs no paid Apple Developer Program membership.
-
----
-
-## Notes
-
-- `macos-latest` minutes are limited on free plans, so tests run only on PRs /
-  on demand — the routine job is the IPA build on `main`. Adjust triggers in
-  `.github/workflows/*.yml` to taste.
-- Deployment target is **iOS 17.0**; change it in `project.yml`.
-- The `Release` workflow needs `contents: write` permission (already set) and
-  uses the built-in `GITHUB_TOKEN` — no secrets to configure.
-
-## License
-
-[MIT](LICENSE)
+本项目遵循来源项目的 [GPL-3.0](LICENSE)；模板原 MIT 许可与第三方声明保留于 [NOTICE.md](NOTICE.md) 和 Vendor。分发 IPA 时应同时提供对应源码与构建说明。本应用不是 Google 官方客户端，不承诺上传配额结果。
