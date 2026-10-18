@@ -35,17 +35,17 @@ struct BackupPreferencesView: View {
     @EnvironmentObject private var model: HarborModel
     var body: some View {
         Form {
-            Section("上传画质") {
+            Section {
                 Picker("上传画质", selection: $model.settings.quality) { ForEach(UploadQuality.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden()
-            } footer: { Text("对应 gpmc 的既有上传模式，实际配额与云端处理结果以服务端为准。") }
-            Section("Live Photo 备份方式") {
+            } header: { Text("上传画质") } footer: { Text("对应 gpmc 的既有上传模式，实际配额与云端处理结果以服务端为准。") }
+            Section {
                 Picker("备份方式", selection: $model.settings.live) { ForEach(LiveStrategy.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden()
-            } footer: {
+            } header: { Text("Live Photo 备份方式") } footer: {
                 Text(model.settings.live == .motion ? "将对应照片与视频封装为单个 Motion Photo。云端播放与官方客户端取回需完成真机验收。" : model.applePairAvailable ? "保留苹果原始照片、视频与关联信息。" : "开发验证中：云端关联协议尚未验证。选择此方式的 Live Photo 任务会明确等待处理，不会退化为两个独立上传文件。")
             }
-            Section("编辑过的照片与视频") {
+            Section {
                 Picker("版本保留", selection: $model.settings.edits) { ForEach(EditPolicy.allCases) { Text($0.title).tag($0) } }
-            } footer: { Text("默认同时保留原始与编辑后版本，内容不同时在谷歌相册中分别显示；相同则去重。不保存可撤销的苹果编辑历史。") }
+            } header: { Text("编辑过的照片与视频") } footer: { Text("默认同时保留原始与编辑后版本，内容不同时在谷歌相册中分别显示；相同则去重。不保存可撤销的苹果编辑历史。") }
             Section {
                 Toggle("单向同步相簿", isOn: $model.settings.syncAlbums)
             } footer: { Text("开启后将本地用户相簿添加到应用映射的云端相册；不会因本地移除而删除云端内容。设置只对新任务生效，历史项目可在任务详情按当前设置重新备份。") }
@@ -181,10 +181,10 @@ struct ConnectionView: View {
                 }.padding(.vertical, 20)
                 Button("连接 Google 账号") { web = true }.disabled(connecting || !model.engine.ready)
             }
-            Section("已有 gpmc 凭据") {
+            Section {
                 SecureField("粘贴登录凭据", text: $credential).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Button { login(credential) } label: { if connecting { ProgressView("正在连接") } else { Text("导入并连接") } }.disabled(credential.isEmpty || connecting || !model.engine.ready)
-            } footer: { Text("凭据仅保存在本机钥匙串，不导出到诊断报告。应用内网页登录受 Google 规则影响时，可导入已有凭据。") }
+            } header: { Text("已有 gpmc 凭据") } footer: { Text("凭据仅保存在本机钥匙串，不导出到诊断报告。应用内网页登录受 Google 规则影响时，可导入已有凭据。") }
             Section { Text(model.engine.message).font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle("欢迎使用 PicHarbor").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("稍后") { dismiss() } } }

@@ -19,6 +19,7 @@ final class HarborModel: ObservableObject {
     @Published var storageFailed = false
     private var store: BackupStore?
     private var mappings: [AlbumMapping] = []
+    private var assetIndex: [String: AssetSnapshot] = [:]
     private var workers = Set<String>()
     private var subscriptions = Set<AnyCancellable>()
     private var timer: Task<Void, Never>?
@@ -60,6 +61,7 @@ final class HarborModel: ObservableObject {
             store = repository
             jobs = try await repository.load(BackupJob.self, kind: "job")
             mappings = try await repository.load(AlbumMapping.self, kind: "album")
+            assetIndex = Dictionary(uniqueKeysWithValues: try await repository.load(AssetSnapshot.self, kind: "asset").map { ($0.id, $0) })
             accounts = try KeychainStore.accounts()
             try await loadSettings()
             let capabilities = try await engine.invoke("capabilities")
@@ -71,6 +73,14 @@ final class HarborModel: ObservableObject {
                 let systemTask = existing.contains { $0.taskDescription?.hasPrefix(job.id + ":") == true }
                 let hasReceipt = receipts.contains { $0.jobID == job.id }
                 if !systemTask && !hasReceipt { job.state = .queued; try await persist(job) }
+            }
+            for var job in jobs where job.state == .paused {
+                for index in job.resources.indices {
+                    if let id = job.resources[index].transportID, !existing.contains(where: { $0.taskIdentifier == id }), !receipts.contains(where: { $0.id == id }) {
+                        job.resources[index].transportID = nil
+                    }
+                }
+                try await persist(job)
             }
             initialized = true
             for receipt in receipts { await receive(receipt) }
@@ -115,6 +125,7 @@ final class HarborModel: ObservableObject {
         // Waiting for active protocol calls prevents changing identity mid-commit.
         while !workers.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
         await engine.login(credential)
+        if engine.account.isEmpty { notice = engine.message }
         do { accounts = try KeychainStore.accounts(); try await loadSettings() } catch { notice = error.localizedDescription }
         cleanupReady = []; switching = false
         await replayReceipts(); await automaticScan(); await pump()
@@ -154,8 +165,30 @@ final class HarborModel: ObservableObject {
         } catch { notice = error.localizedDescription }
     }
     func automaticScan() async {
-        guard initialized, settings.automatic, !account.isEmpty, !switching, !cleanupRunning else { return }
+        guard initialized, !storageFailed else { return }
+        do { try await indexLibrary() } catch { fatalStorage(error); return }
+        guard settings.automatic, !account.isEmpty, !switching, !cleanupRunning else { return }
         await enqueue(library.scope(settings))
+    }
+    private func indexLibrary() async throws {
+        guard let store, !library.refreshing else { return }
+        var changed: [(String, AssetSnapshot)] = []
+        let accessible = Set(library.assets.map(\.localIdentifier))
+        for asset in library.assets {
+            let stamp = PhotoLibrary.stamp(asset)
+            if assetIndex[asset.localIdentifier]?.revision != stamp || assetIndex[asset.localIdentifier]?.accessible != true {
+                let value = AssetSnapshot(id: asset.localIdentifier, revision: stamp, mediaType: asset.mediaType.rawValue, accessible: true)
+                changed.append((value.id, value))
+            }
+        }
+        for var value in assetIndex.values where value.accessible && !accessible.contains(value.id) {
+            // This means inaccessible, not proof that the user deleted the photo.
+            value.accessible = false; changed.append((value.id, value))
+        }
+        if !changed.isEmpty {
+            try await store.saveBatch(changed, kind: "asset")
+            for (id, value) in changed { assetIndex[id] = value }
+        }
     }
     private func runnable(_ job: BackupJob) -> Bool {
         job.account == account && [.queued, .waiting, .confirming].contains(job.state) &&
@@ -318,6 +351,10 @@ final class HarborModel: ObservableObject {
     func resume(_ id: String) async {
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed, job.state != .cancelled else { return }
         job.error = ""; job.retryAt = nil; job.attempts = 0
+        let liveTasks = await transfer.tasks()
+        for index in job.resources.indices {
+            if let transportID = job.resources[index].transportID, !liveTasks.contains(where: { $0.taskIdentifier == transportID }) { job.resources[index].transportID = nil }
+        }
         if job.resources.contains(where: { $0.transportID != nil }) {
             job.state = .transferring; try? await persist(job); await transfer.resume(jobID: id)
         } else {
@@ -375,8 +412,17 @@ final class HarborModel: ObservableObject {
                 // Re-export/hash and re-query immediately before the system deletion request.
                 job.evidence = try await checkCleanup(job); try await persist(job); identifiers.insert(job.assetID)
             }
+            // A long batch must not let the first item's evidence expire while checking the last.
+            for id in cleanupReady {
+                guard let job = jobs.first(where: { $0.id == id }), job.evidence?.valid(job: job, settings: settings) == true,
+                      let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
+                      PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("CLEANUP_UNVERIFIED") }
+            }
+            let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            guard authorization == .authorized || authorization == .limited else { throw HarborError("PHOTO_PERMISSION") }
             let values = PHAsset.fetchAssets(withLocalIdentifiers: Array(identifiers), options: nil)
             try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.deleteAssets(values) }
+            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == authorization else { throw HarborError("PHOTO_PERMISSION") }
             let remaining = PHAsset.fetchAssets(withLocalIdentifiers: Array(identifiers), options: nil)
             var present = Set<String>(); remaining.enumerateObjects { asset, _, _ in present.insert(asset.localIdentifier) }
             for id in cleanupReady {

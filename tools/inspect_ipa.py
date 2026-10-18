@@ -1,6 +1,7 @@
 """Reject incomplete Python bundles before publishing an unsigned IPA."""
 import hashlib
 import json
+import plistlib
 from pathlib import Path
 import sys
 import zipfile
@@ -12,7 +13,12 @@ def inspect(path):
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         app = next(name for name in names if name.startswith("Payload/") and name.endswith(".app/Info.plist")).rsplit("/", 1)[0] + "/"
-        for required in ("Frameworks/Python.framework/Python", "app/harbor_ios.py", "app/certifi/cacert.pem",
+        info = plistlib.loads(archive.read(app + "Info.plist"))
+        if "processing" not in info.get("UIBackgroundModes", []):
+            raise RuntimeError("Missing background processing mode")
+        if "com.cccece.picharbor.processing" not in info.get("BGTaskSchedulerPermittedIdentifiers", []):
+            raise RuntimeError("Missing permitted processing task identifier")
+        for required in ("Frameworks/Python.framework/Python", "app/harbor_ios.py", "app/harbor_protocol.py", "app/certifi/cacert.pem",
                          "python/lib/python3.13/encodings/__init__.py", "Notices/NOTICE.md"):
             if app + required not in names:
                 raise RuntimeError(f"Missing {required}")

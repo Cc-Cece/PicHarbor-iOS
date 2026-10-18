@@ -99,7 +99,7 @@ private struct PhotoGrid: UIViewRepresentable {
     func updateUIView(_ grid: UICollectionView, context: Context) {
         let previous = context.coordinator.parent
         context.coordinator.parent = self
-        if previous.assets.map(\.localIdentifier) != assets.map(\.localIdentifier) { grid.reloadData() }
+        if previous.assets.map({ $0.localIdentifier + PhotoLibrary.stamp($0) }) != assets.map({ $0.localIdentifier + PhotoLibrary.stamp($0) }) { grid.reloadData() }
         else {
             for path in grid.indexPathsForVisibleItems {
                 guard path.item < assets.count, let cell = grid.cellForItem(at: path) as? PhotoCell else { continue }

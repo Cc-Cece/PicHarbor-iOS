@@ -105,3 +105,9 @@ struct AlbumMapping: Codable {
     var localID: String
     var remoteID: String
 }
+struct AssetSnapshot: Codable {
+    var id: String
+    var revision: String
+    var mediaType: Int
+    var accessible: Bool
+}

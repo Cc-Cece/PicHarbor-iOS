@@ -8,6 +8,11 @@ actor BackupStore {
     init(url: URL) throws {
         guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
         sqlite3_busy_timeout(db, 5000)
+        var versionQuery: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &versionQuery, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        let version = sqlite3_step(versionQuery) == SQLITE_ROW ? sqlite3_column_int(versionQuery, 0) : -1
+        sqlite3_finalize(versionQuery)
+        guard version >= 0 && version <= 1 else { throw HarborError("DATABASE_VERSION_UNSUPPORTED") }
         guard sqlite3_exec(db, "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS documents(kind TEXT NOT NULL,id TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(kind,id)); PRAGMA user_version=1;", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
     }
     deinit { sqlite3_close(db) }
@@ -43,5 +48,12 @@ actor BackupStore {
         sqlite3_bind_text(statement, 1, kind, -1, transient)
         sqlite3_bind_text(statement, 2, id, -1, transient)
         guard sqlite3_step(statement) == SQLITE_DONE else { throw HarborError("DATABASE_ERROR") }
+    }
+    func saveBatch<T: Encodable>(_ values: [(String, T)], kind: String) throws {
+        guard sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        do {
+            for (id, value) in values { try save(value, kind: kind, id: id) }
+            guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        } catch { sqlite3_exec(db, "ROLLBACK", nil, nil, nil); throw error }
     }
 }

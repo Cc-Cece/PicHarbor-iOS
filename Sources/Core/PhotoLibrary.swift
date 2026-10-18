@@ -16,6 +16,8 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     @Published var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @Published var revision = 0
     @Published var refreshing = false
+    @Published private(set) var changedIdentifiers = Set<String>()
+    @Published private(set) var historyAvailable = false
     let images = PHCachingImageManager()
     private var registered = false
     private var refreshingAgain = false
@@ -28,6 +30,21 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         guard status == .authorized || status == .limited else { assets = []; albums = []; return }
         if refreshing { refreshingAgain = true; return }
         refreshing = true
+        let historyToken = PHPhotoLibrary.shared().currentChangeToken
+        changedIdentifiers = []
+        historyAvailable = false
+        if let data = UserDefaults.standard.data(forKey: "photoChangeToken"),
+           let previous = try? NSKeyedUnarchiver.unarchivedObject(ofClass: PHPersistentChangeToken.self, from: data) {
+            do {
+                let history = try PHPhotoLibrary.shared().fetchPersistentChanges(since: previous)
+                for change in history {
+                    let details = try change.changeDetails(for: .asset)
+                    changedIdentifiers.formUnion(details.insertedLocalIdentifiers)
+                    changedIdentifiers.formUnion(details.updatedLocalIdentifiers)
+                }
+                historyAvailable = true
+            } catch { /* Expired/unavailable history uses the complete reconciliation below. */ }
+        }
         if !registered { PHPhotoLibrary.shared().register(self); registered = true }
         let snapshot = await Task.detached(priority: .userInitiated) { () -> ([PHAsset], [LibraryAlbum]) in
             let options = PHFetchOptions()
@@ -42,6 +59,9 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             return (values, groups.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending })
         }.value
         assets = snapshot.0; albums = snapshot.1; revision += 1; refreshing = false
+        if let encoded = try? NSKeyedArchiver.archivedData(withRootObject: historyToken, requiringSecureCoding: true) {
+            UserDefaults.standard.set(encoded, forKey: "photoChangeToken")
+        }
         // Reconciliation at every launch also covers expired history and permission changes.
         if refreshingAgain { refreshingAgain = false; await refresh() }
     }
