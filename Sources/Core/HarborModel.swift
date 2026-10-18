@@ -196,8 +196,9 @@ final class HarborModel: ObservableObject {
         do { accounts = try KeychainStore.accounts(); try await loadSettings() } catch { notice = error.localizedDescription }
         cleanupReady = []; switching = false
     }
-    func enqueue(_ assets: [PHAsset], force: Bool = false) async {
+    func enqueue(_ assets: [PHAsset], force: Bool = false, feedback: Bool = true) async {
         guard initialized, !account.isEmpty, !storageFailed, !switching, let store else { notice = "请先连接 Google 账号。"; return }
+        guard !assets.isEmpty else { if feedback { notice = "当前范围没有可备份的照片或视频，请检查范围和相册权限。" }; return }
         let snapshot = settings
         let targetAccount = account
         let membership = snapshot.syncAlbums ? library.memberships(for: Set(assets.map(\.localIdentifier))) : [:]
@@ -221,8 +222,8 @@ final class HarborModel: ObservableObject {
                 updateAssetStates(additions)
                 do { try await store.saveBatch(additions.map { ($0.id, $0) }, kind: "job") }
                 catch { fatalStorage(error); throw error }
-                notice = "已加入备份队列。"
-            }
+                if feedback { notice = "已加入备份队列。" }
+            } else if feedback { notice = "这些项目已有备份任务或已经完成，请到活动中查看或重试。" }
             await pump()
         } catch { notice = error.localizedDescription }
     }
@@ -230,7 +231,7 @@ final class HarborModel: ObservableObject {
         guard initialized, !storageFailed else { return }
         do { try await indexLibrary() } catch { fatalStorage(error); return }
         guard settings.automatic, settings.scopeConfirmed == true, !account.isEmpty, !switching, !cleanupRunning else { return }
-        await enqueue(library.scope(settings))
+        await enqueue(library.scope(settings), feedback: false)
     }
     private func indexLibrary() async throws {
         guard let store, !library.refreshing else { return }
@@ -484,6 +485,7 @@ final class HarborModel: ObservableObject {
     func verifyCleanup() async {
         guard !account.isEmpty else { notice = "请先在设置中连接 Google 账号。"; return }
         guard !cleanupRunning, workers.isEmpty, !visibleJobs.contains(where: { $0.state.active }), !account.isEmpty else { notice = "请先暂停或完成正在运行的备份。"; return }
+        guard visibleJobs.contains(where: { $0.state == .completed }) else { notice = "当前账号还没有可核验的已完成备份。请先完成备份，再检查空间清理。"; return }
         cleanupRunning = true; cleanupReady = []; cleanupResults = [:]
         defer { cleanupRunning = false }
         do {
@@ -557,6 +559,10 @@ final class HarborModel: ObservableObject {
             "error_codes": jobs.map(\.error).filter { !$0.isEmpty }, "runtime": engine.runtime,
             "apple_pair": applePairAvailable, "live_cleanup": false, "staged_bytes": stagedBytes,
             "storage_failed": storageFailed, "credential_storage_available": credentialStorageAvailable,
+            "initialized": initialized, "engine_ready": engine.ready, "engine_busy": engine.busy,
+            "account_switching": switching,
+            "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+            "app_build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
             "os": ProcessInfo.processInfo.operatingSystemVersionString]
         return String(decoding: (try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys])) ?? Data(), as: UTF8.self)
     }

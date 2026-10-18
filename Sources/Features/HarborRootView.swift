@@ -16,6 +16,16 @@ struct HarborRootView: View {
         .environmentObject(model)
         .tint(.blue)
         .preferredColorScheme(model.settings.appearance == "dark" ? .dark : model.settings.appearance == "light" ? .light : nil)
+        .safeAreaInset(edge: .top) {
+            if model.notice == "已加入备份队列。" {
+                HStack {
+                    Label("已加入备份队列", systemImage: "checkmark.circle.fill").font(.subheadline)
+                    Spacer()
+                    Button("查看活动") { model.notice = ""; selectedTab = 2 }
+                    Button { model.notice = "" } label: { Image(systemName: "xmark") }.accessibilityLabel("关闭备份提示")
+                }.padding().background(.regularMaterial)
+            }
+        }
         .task { await model.boot(); welcome = model.initialized && model.account.isEmpty && selectedTab == 0 }
         .sheet(isPresented: $welcome) { NavigationStack { ConnectionView() }.environmentObject(model) }
         .alert("PicHarbor", isPresented: Binding(get: { !model.notice.isEmpty && model.notice != "已加入备份队列。" }, set: { if !$0 { model.notice = "" } })) {

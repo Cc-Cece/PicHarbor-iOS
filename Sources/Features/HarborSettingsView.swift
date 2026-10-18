@@ -235,8 +235,8 @@ struct PermissionView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("照片访问", value: model.library.status == .authorized ? "完整访问" : model.library.status == .limited ? "有限访问" : "尚未允许")
-                Button("请求相册访问") { Task { await model.library.authorize() } }
+                LabeledContent("照片访问", value: model.library.status == .authorized ? "完整访问" : model.library.status == .limited ? "有限访问" : model.library.status == .denied ? "已拒绝，请到系统设置修改" : model.library.status == .restricted ? "受系统限制" : "尚未请求")
+                if model.library.status == .notDetermined { Button("请求相册访问") { Task { await model.library.authorize() } } }
                 if model.library.status == .limited { Button("管理授权内容") { model.library.manageLimited() } }
                 Button("打开系统设置") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
             } footer: { Text("有限授权仅显示和备份已授权内容。权限减少不会被视为照片已经删除。原件位于 iCloud 时需联网读取。") }

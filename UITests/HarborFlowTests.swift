@@ -92,6 +92,12 @@ final class HarborFlowTests: XCTestCase {
         app.buttons["外观"].tap()
         app.buttons["深色"].tap()
         capture("appearance-dark")
+        app.tabBars.buttons["备份"].tap()
+        app.buttons["释放 iPhone 空间"].tap()
+        app.buttons["开始检查"].tap()
+        XCTAssertTrue(app.alerts.staticTexts["请先在设置中连接 Google 账号。"].waitForExistence(timeout: 5))
+        capture("cleanup-account-required")
+        app.alerts.buttons["好"].tap()
     }
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
