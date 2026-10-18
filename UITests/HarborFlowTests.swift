@@ -7,7 +7,7 @@ final class HarborFlowTests: XCTestCase {
         let later = app.buttons["稍后"]
         if later.waitForExistence(timeout: 30) { later.tap() }
         app.tabBars.buttons["设置"].tap()
-        app.buttons["连接 Google 账号"].tap()
+        app.buttons["settings.account"].tap()
         XCTAssertTrue(app.navigationBars["账号"].waitForExistence(timeout: 5))
         for _ in 0..<2 {
             let add = app.buttons["添加 Google 账号"]
@@ -20,7 +20,15 @@ final class HarborFlowTests: XCTestCase {
                 return
             }
             capture("account-connection")
-            app.buttons["连接 Google 账号"].tap()
+            let field = app.secureTextFields["粘贴登录凭据"]
+            field.tap(); field.typeText("androidId=invalid-test-fixture")
+            app.buttons["导入并连接"].tap()
+            XCTAssertTrue(app.staticTexts["connection.error"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.navigationBars["欢迎使用 PicHarbor"].exists)
+            capture("account-invalid-credential")
+            let google = app.buttons["connection.google"]
+            if !google.isHittable { app.swipeDown() }
+            google.tap()
             XCTAssertTrue(app.navigationBars["连接 Google"].waitForExistence(timeout: 10))
             XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
             capture("account-google-web")
@@ -28,6 +36,21 @@ final class HarborFlowTests: XCTestCase {
             app.buttons["稍后"].tap()
             XCTAssertTrue(app.navigationBars["账号"].waitForExistence(timeout: 5))
         }
+    }
+
+    func testPreferencesPersistWithoutAccount() {
+        let app = XCUIApplication()
+        app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap()
+        app.buttons["备份偏好"].tap()
+        app.buttons["计配额原画质"].tap()
+        app.terminate(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap()
+        app.buttons["备份偏好"].tap()
+        XCTAssertTrue(app.buttons["计配额原画质"].isSelected)
+        app.buttons["不计配额原画质"].tap()
     }
 
     func testNativeNavigationAndPreferenceScreens() {

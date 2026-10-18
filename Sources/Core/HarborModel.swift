@@ -31,7 +31,8 @@ final class HarborModel: ObservableObject {
     private var subscriptions = Set<AnyCancellable>()
     private var timer: Task<Void, Never>?
     private var starting = false
-    private var switching = false
+    @Published private(set) var switching = false
+    @Published private(set) var connectionError = ""
     private let transfer = BackgroundTransfer.shared
     var account: String { engine.account }
     var visibleJobs: [BackupJob] { jobs.filter { $0.account == account }.sorted { $0.created > $1.created } }
@@ -147,41 +148,53 @@ final class HarborModel: ObservableObject {
         assetStates = updated
     }
     struct AccountSettings: Codable { var account: String; var settings: BackupSettings; var generation: Int64? }
-    func saveSettings() async {
-        guard !account.isEmpty, let store else { return }
+    @discardableResult
+    func saveSettings() async -> Bool {
+        guard let store else { notice = "设置尚未就绪，请等待初始化完成后重试。"; return false }
+        let targetAccount = account
+        let snapshot = settings
         do {
-            let generation = (settingsGeneration[account] ?? 0) + 1
-            settingsGeneration[account] = generation
-            try await store.save(AccountSettings(account: account, settings: settings, generation: generation), kind: "settings", id: account, revision: generation)
+            let generation = (settingsGeneration[targetAccount] ?? 0) + 1
+            settingsGeneration[targetAccount] = generation
+            try await store.save(AccountSettings(account: targetAccount, settings: snapshot, generation: generation), kind: "settings", id: targetAccount, revision: generation)
             cleanupReady = []
             await automaticScan(); await pump()
-        } catch { fatalStorage(error) }
+            return true
+        } catch { fatalStorage(error); return false }
     }
-    func connect(_ credential: String) async {
-        guard !switching && !cleanupRunning else { return }
+    @discardableResult
+    func connect(_ credential: String) async -> Bool {
+        connectionError = ""
+        guard !switching && !engine.busy else { connectionError = HarborError("ACCOUNT_BUSY").localizedDescription; return false }
+        guard !cleanupRunning else { connectionError = HarborError("CLEANUP_BUSY").localizedDescription; return false }
+        guard initialized, !storageFailed else { connectionError = "应用尚未就绪，请等待初始化完成并检查诊断。"; return false }
         switching = true
         await pauseAll()
         // Waiting for active protocol calls prevents changing identity mid-commit.
         while !workers.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
-        await engine.login(credential)
-        if engine.account.isEmpty { notice = engine.message }
+        let connected = await engine.login(credential)
+        if !connected { connectionError = engine.message }
         do { accounts = try KeychainStore.accounts(); credentialStorageAvailable = true; try await loadSettings() } catch { notice = error.localizedDescription }
         cleanupReady = []; switching = false
         await replayReceipts(); await automaticScan(); await pump()
+        return connected
     }
     func switchAccount(_ value: String) async {
         do {
             guard let credential = try KeychainStore.load(account: value) else { throw HarborError("LOGIN_REQUIRED") }
-            await connect(credential)
+            if !(await connect(credential)) { notice = connectionError }
         } catch { notice = error.localizedDescription }
     }
     func logout() async {
-        guard !switching && !cleanupRunning else { return }
+        guard !switching && !engine.busy else { notice = HarborError("ACCOUNT_BUSY").localizedDescription; return }
+        guard !cleanupRunning else { notice = HarborError("CLEANUP_BUSY").localizedDescription; return }
         switching = true
         await pauseAll()
         while !workers.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
         await engine.logout()
-        accounts = (try? KeychainStore.accounts()) ?? []; settings = BackupSettings(); cleanupReady = []; switching = false
+        if !account.isEmpty { notice = engine.message }
+        do { accounts = try KeychainStore.accounts(); try await loadSettings() } catch { notice = error.localizedDescription }
+        cleanupReady = []; switching = false
     }
     func enqueue(_ assets: [PHAsset], force: Bool = false) async {
         guard initialized, !account.isEmpty, !storageFailed, !switching, let store else { notice = "请先连接 Google 账号。"; return }
@@ -469,6 +482,7 @@ final class HarborModel: ObservableObject {
         job.state = .cancelled; job.evidence = nil; try? await persist(job); await transfer.cancel(jobID: id)
     }
     func verifyCleanup() async {
+        guard !account.isEmpty else { notice = "请先在设置中连接 Google 账号。"; return }
         guard !cleanupRunning, workers.isEmpty, !visibleJobs.contains(where: { $0.state.active }), !account.isEmpty else { notice = "请先暂停或完成正在运行的备份。"; return }
         cleanupRunning = true; cleanupReady = []; cleanupResults = [:]
         defer { cleanupRunning = false }

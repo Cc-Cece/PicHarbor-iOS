@@ -3,6 +3,25 @@ import XCTest
 
 final class PicHarborTests: XCTestCase {
     @MainActor
+    func testLoginRejectedWhileBusyIsNotReportedAsSuccess() async {
+        let engine = Engine()
+        engine.ready = true; engine.busy = true; engine.account = "existing@example.com"
+        let success = await engine.login("unused")
+        XCTAssertFalse(success)
+        XCTAssertEqual(engine.account, "existing@example.com")
+        XCTAssertEqual(engine.message, HarborError("ACCOUNT_BUSY").localizedDescription)
+    }
+
+    @MainActor
+    func testLoginWithoutRuntimeHasActionableFailure() async {
+        let engine = Engine()
+        let success = await engine.login("unused")
+        XCTAssertFalse(success)
+        XCTAssertEqual(engine.message, HarborError("RUNTIME_UNAVAILABLE").localizedDescription)
+        XCTAssertFalse(engine.busy)
+    }
+
+    @MainActor
     func testEmbeddedRuntimeImportsGpmcAndNativeExtensions() throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         XCTAssertTrue(PythonBridge.start(home.path))

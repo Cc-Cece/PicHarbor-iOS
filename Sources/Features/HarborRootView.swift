@@ -16,7 +16,7 @@ struct HarborRootView: View {
         .environmentObject(model)
         .tint(.blue)
         .preferredColorScheme(model.settings.appearance == "dark" ? .dark : model.settings.appearance == "light" ? .light : nil)
-        .task { await model.boot(); welcome = model.initialized && model.account.isEmpty }
+        .task { await model.boot(); welcome = model.initialized && model.account.isEmpty && selectedTab == 0 }
         .sheet(isPresented: $welcome) { NavigationStack { ConnectionView() }.environmentObject(model) }
         .alert("PicHarbor", isPresented: Binding(get: { !model.notice.isEmpty && model.notice != "已加入备份队列。" }, set: { if !$0 { model.notice = "" } })) {
             Button("好") { model.notice = "" }
@@ -39,6 +39,7 @@ struct BackupDashboard: View {
                         .font(.system(size: 44)).foregroundStyle(.blue).accessibilityHidden(true)
                     Text(model.activeCount > 0 ? "备份进行中" : "让回忆安心留存").font(.title2.bold())
                     Text(model.account.isEmpty ? "连接 Google 账号，开始备份你的照片与视频。" : model.account).font(.subheadline).foregroundStyle(.secondary)
+                    if model.account.isEmpty { NavigationLink("连接 Google 账号") { ConnectionView() } }
                     HStack {
                         metric("已备份", model.completedCount)
                         Spacer()
@@ -159,6 +160,7 @@ struct JobDetailView: View {
                         Button("按当前设置重新备份") { Task {
                             let assets = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil)
                             if let asset = assets.firstObject { await model.enqueue([asset], force: true) }
+                            else { model.notice = "无法读取这项照片，请检查相册权限或确认照片仍在本机图库中。" }
                         } }
                     } else if job.state != .cancelled {
                         if job.state.active || job.state == .queued || job.state == .waiting { Button("暂停", systemImage: "pause") { Task { await model.pause(id) } } }

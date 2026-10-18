@@ -11,7 +11,7 @@ struct HarborSettingsView: View {
                         Image(systemName: "person.crop.circle.fill").font(.system(size: 40)).foregroundStyle(.blue)
                         VStack(alignment: .leading, spacing: 5) { Text(model.account.isEmpty ? "连接 Google 账号" : model.account).font(.headline).lineLimit(1); Text("凭据仅保存在本机钥匙串").font(.caption).foregroundStyle(.secondary) }
                     }.padding(.vertical, 8)
-                }
+                }.accessibilityIdentifier("settings.account")
             }
             Section("备份") {
                 NavigationLink { BackupPreferencesView() } label: { Label("备份偏好", systemImage: "icloud.and.arrow.up") }
@@ -84,8 +84,9 @@ struct BackupScopeView: View {
                 Button("确认范围与设置") { Task {
                     model.settings.selectedAlbums = all ? [] : Array(selected).sorted(); model.settings.automatic = automatic
                     model.settings.scopeConfirmed = true
-                    await model.saveSettings(); dismiss()
+                    if await model.saveSettings() { dismiss() }
                 } }.disabled(model.account.isEmpty || (!all && selected.isEmpty))
+                if model.account.isEmpty { NavigationLink("请先连接 Google 账号") { AccountListView() } }
             } footer: { Text("自动备份会识别范围内新增和修改内容。系统后台安排不保证即时，打开应用可继续。") }
         }.navigationTitle("备份范围").navigationBarTitleDisplayMode(.inline)
         .onAppear { selected = Set(model.settings.selectedAlbums); all = selected.isEmpty; automatic = model.settings.scopeConfirmed == true ? model.settings.automatic : true }
@@ -159,7 +160,6 @@ struct CleanupPolicyView: View {
 
 struct AccountListView: View {
     @EnvironmentObject private var model: HarborModel
-    @State private var add = false
     @State private var logout = false
     var body: some View {
         List {
@@ -168,11 +168,13 @@ struct AccountListView: View {
                     Button { Task { await model.switchAccount(account) } } label: { HStack { Label(account, systemImage: "person.crop.circle").foregroundStyle(.primary); Spacer(); if account == model.account { Image(systemName: "checkmark") } } }
                         .disabled(model.engine.busy || model.cleanupRunning)
                 }
-                Button("添加 Google 账号", systemImage: "plus") { add = true }.disabled(model.engine.busy || model.cleanupRunning)
+                NavigationLink { ConnectionView() } label: { Label("添加 Google 账号", systemImage: "plus") }
+                    .accessibilityIdentifier("account.add")
             }
+            if model.engine.busy || model.switching { Section { ProgressView("正在连接或切换账号…") } }
+            if model.cleanupRunning { Section { Text("正在核验或清理照片，完成后可连接账号。").foregroundStyle(.secondary) } }
             if !model.account.isEmpty { Section { Button("退出当前账号", role: .destructive) { logout = true } } footer: { Text("移除本机凭据并暂停任务；历史记录保留并按账号隔离。") } }
         }.navigationTitle("账号").navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $add) { NavigationStack { ConnectionView() }.environmentObject(model) }
         .confirmationDialog("退出当前账号？", isPresented: $logout, titleVisibility: .visible) { Button("退出", role: .destructive) { Task { await model.logout() } } }
     }
 }
@@ -183,6 +185,9 @@ struct ConnectionView: View {
     @State private var web = false
     @State private var credential = ""
     @State private var connecting = false
+    @State private var pendingCredential: String?
+    @State private var loginError = ""
+    private var unavailable: Bool { connecting || model.engine.busy || model.switching || model.cleanupRunning || !model.initialized }
     var body: some View {
         List {
             Section {
@@ -191,20 +196,37 @@ struct ConnectionView: View {
                     Text("回忆有处安放").font(.largeTitle.bold())
                     Text("将 iPhone 照片与视频备份到 Google Photos。原生浏览，持续记录进度，由你决定何时清理。").foregroundStyle(.secondary)
                 }.padding(.vertical, 20)
-                Button("连接 Google 账号") { web = true }.disabled(connecting || !model.engine.ready)
+                Button("连接 Google 账号") { loginError = ""; web = true }
+                    .disabled(unavailable || !model.engine.ready).accessibilityIdentifier("connection.google")
             }
             Section {
                 SecureField("粘贴登录凭据", text: $credential).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button { login(credential) } label: { if connecting { ProgressView("正在连接") } else { Text("导入并连接") } }.disabled(credential.isEmpty || connecting || !model.engine.ready)
+                Button { login(credential) } label: { if connecting { ProgressView("正在连接") } else { Text("导入并连接") } }.disabled(credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || unavailable || !model.engine.ready)
             } header: { Text("已有 gpmc 凭据") } footer: { Text("凭据仅保存在本机钥匙串，不导出到诊断报告。应用内网页登录受 Google 规则影响时，可导入已有凭据。") }
-            Section { Text(model.engine.message).font(.footnote).foregroundStyle(.secondary) }
+            Section {
+                if connecting || model.engine.busy || model.switching { ProgressView(connecting ? "正在连接 Google，请稍候…" : "正在准备账号连接…") }
+                else if model.cleanupRunning { Text("请等待照片核验或清理完成后连接账号。") }
+                else if !model.initialized { Text("应用初始化尚未完成。请检查运行环境后重试。") }
+                if !loginError.isEmpty { Text(loginError).foregroundStyle(.red).accessibilityIdentifier("connection.error") }
+                Text(model.engine.message).font(.footnote).foregroundStyle(.secondary)
+                if !model.engine.ready { Button("重新检查运行环境") { Task { await model.boot() } } }
+            }
         }.navigationTitle("欢迎使用 PicHarbor").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("稍后") { dismiss() } } }
-        .sheet(isPresented: $web) { GoogleLoginView(token: { login($0) }) }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("稍后") { dismiss() }.disabled(connecting) } }
+        .interactiveDismissDisabled(connecting)
+        .sheet(isPresented: $web, onDismiss: {
+            // Finish dismissing WebKit before connecting/dismissing this screen.
+            if let value = pendingCredential { pendingCredential = nil; login(value) }
+        }) { GoogleLoginView(token: { pendingCredential = $0 }) }
     }
     private func login(_ value: String) {
         connecting = true
-        Task { await model.connect(value); connecting = false; credential = ""; if !model.account.isEmpty { dismiss() } }
+        loginError = ""
+        Task {
+            let success = await model.connect(value)
+            connecting = false; credential = ""
+            if success { dismiss() } else { loginError = model.connectionError }
+        }
     }
 }
 

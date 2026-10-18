@@ -8,6 +8,8 @@ struct HarborError: LocalizedError {
         switch code {
         case "LOGIN_REQUIRED": return "需要重新登录 Google，或服务端要求额外验证。"
         case "INVALID_CREDENTIAL": return "登录凭据无效。"
+        case "ACCOUNT_BUSY": return "正在连接或切换账号，请等待当前操作完成。"
+        case "CLEANUP_BUSY": return "正在核验或清理照片，请等待完成后再操作账号。"
         case "NETWORK_ERROR": return "网络请求失败，请检查网络后重试。"
         case "RUNTIME_UNAVAILABLE": return "Python 运行环境不可用，请导出诊断报告。"
         case "KEYCHAIN_ERROR": return "无法访问安全凭据存储。"
@@ -104,7 +106,7 @@ final class Engine: ObservableObject {
             if let credential = try KeychainStore.load() {
                 try await connect(credential)
             } else { message = "运行环境检查通过，请连接 Google 账号。" }
-        } catch { message = error.localizedDescription }
+        } catch { message = error.localizedDescription; if !ready { booted = false } }
     }
 
     func invoke(_ action: String, _ payload: [String: Any] = [:]) async throws -> [String: Any] {
@@ -150,12 +152,14 @@ final class Engine: ObservableObject {
         message = "账号已连接。"
     }
 
-    func login(_ credential: String) async {
-        guard ready && !busy else { return }
+    @discardableResult
+    func login(_ credential: String) async -> Bool {
+        guard ready else { message = HarborError("RUNTIME_UNAVAILABLE").localizedDescription; return false }
+        guard !busy else { message = HarborError("ACCOUNT_BUSY").localizedDescription; return false }
         busy = true
         defer { busy = false }
-        do { try await connect(credential) }
-        catch { message = error.localizedDescription }
+        do { try await connect(credential); return true }
+        catch { message = error.localizedDescription; return false }
     }
 
     func logout() async {
