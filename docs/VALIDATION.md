@@ -8,12 +8,16 @@
 | --- | --- | --- |
 | gpmc 来源固定 | 已完成 | Vendor 原样复制安卓工作树快照，逐文件 SHA-256；来源基线与许可保留 |
 | Python 业务适配离线测试 | 已通过 | Windows Python 3.13，12 项；网络使用模拟响应，不代表真实协议验证 |
-| SwiftUI + CPython 云端设备构建 | 待运行 | 需 Actions 构建及 IPA 打包检查 |
-| iOS 模拟器实际加载 Python/gpmc | 待运行 | XCTest 检查 TLS、SQLite、协议编解码与 gpmc 导入 |
+| SwiftUI + CPython 云端设备构建 | 已通过 | [构建 39146252827](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39146252827)，提交 f030436；IPA 打包检查通过 |
+| iOS 模拟器实际加载 Python/gpmc | 已通过 | [模拟器测试 39146258203](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39146258203)，提交 f030436；2 项 XCTest、0 失败，覆盖真实运行环境与待确认状态显示 |
 | 免费自签后安装与启动 | 待真机验收 | 包括 Python.framework 和全部嵌套模块重签 |
 | iOS Google 网页认证 | 待真机验收 | 不能用已有凭据导入替代此项 |
 | 单张原始照片真实上传与云端确认 | 待真机验收 | 不使用构建环境保存真实账号凭据 |
 | 重复选择查重、重启保留记录 | 待真机验收 | 按当前账号隔离；只显示最近 100 条 |
+
+首个成功构建的完整应用：`PicHarbor-0.1.0-1.ipa`，压缩 11,620,954 字节（约 11.1 MiB），包内文件合计 39,832,778 字节（约 38.0 MiB）。这些是整个应用的大小，不是 Python 的单独增量，也不等同于系统设置中的实际磁盘占用。
+
+[下载首个 IPA artifact](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39146252827/artifacts/12142987917)（通常需登录 GitHub，artifact 保留 14 天）。下载后解压得到 IPA，再通过工具重签安装。代码实现与自动检查已通过；A 的免费自签真机部分、B 的真实账号与媒体闭环仍待设备持有人验证，首轮整体未验收完成。
 
 ## A：免费自签与运行环境
 
