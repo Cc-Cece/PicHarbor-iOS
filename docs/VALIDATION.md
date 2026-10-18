@@ -21,6 +21,10 @@
 
 ## A：免费自签与运行环境
 
+首选工具已确认为 Windows 版 Sideloadly；该选择不代表实际安装已验证。按 [Sideloadly 官网](https://sideloadly.io/)说明准备 Windows 的 iTunes/iCloud 依赖，首次采用 USB 连接并在手机上信任电脑。将解压后的 `.ipa` 拖入工具，选择设备，以使用者自己的免费 Apple 账号签名；保留默认安装选项，不移除 Python 所需 framework。账号密码与验证码只在工具或 Apple 验证界面输入，不发到聊天或仓库。
+
+如系统要求信任开发者配置或开启开发者模式，按设备提示完成。首次验收先检查 Python 是否启动，再尝试 Google 登录；若重签、安装或启动失败，保留错误代码与经过隐私处理的日志。
+
 1. 从成功的构建任务下载 unsigned IPA，记录构建链接、提交号、安装工具及其版本、iPhone 型号与 iOS 版本。
 2. 使用 Sideloadly 或 AltStore Classic 重签，确认工具能签署全部嵌套 framework。按提示信任配置并启用开发者模式（如需要）。
 3. 冷启动应用，确认“Python 已启动”，显示 Python 3.13、OpenSSL 和 SQLite 版本。
