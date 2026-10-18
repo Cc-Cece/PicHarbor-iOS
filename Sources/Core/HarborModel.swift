@@ -175,10 +175,17 @@ final class HarborModel: ObservableObject {
         while !workers.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
         let connected = await engine.login(credential)
         if !connected { connectionError = engine.message }
-        do { accounts = try KeychainStore.accounts(); credentialStorageAvailable = true; try await loadSettings() } catch { notice = error.localizedDescription }
+        if connected {
+            do { accounts = try KeychainStore.accounts(); credentialStorageAvailable = true }
+            catch { credentialStorageAvailable = false; connectionError = error.localizedDescription }
+        }
+        // Failed authentication must keep its own error instead of triggering an
+        // unrelated account-enumeration alert, particularly in unsigned tests.
+        do { try await loadSettings() }
+        catch { connectionError = error.localizedDescription; fatalStorage(error) }
         cleanupReady = []; switching = false
         await replayReceipts(); await automaticScan(); await pump()
-        return connected
+        return connected && connectionError.isEmpty
     }
     func switchAccount(_ value: String) async {
         do {

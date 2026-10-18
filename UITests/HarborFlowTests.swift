@@ -25,6 +25,8 @@ final class HarborFlowTests: XCTestCase {
             app.buttons["导入并连接"].tap()
             XCTAssertTrue(app.staticTexts["connection.error"].waitForExistence(timeout: 10))
             XCTAssertTrue(app.navigationBars["欢迎使用 PicHarbor"].exists)
+            XCTAssertEqual(app.staticTexts["connection.error"].label, "登录凭据无效。")
+            XCTAssertFalse(app.alerts.firstMatch.exists, "登录失败应在当前页面显示，不应被额外账号读取错误覆盖")
             capture("account-invalid-credential")
             let google = app.buttons["connection.google"]
             if !google.isHittable { app.swipeDown() }
