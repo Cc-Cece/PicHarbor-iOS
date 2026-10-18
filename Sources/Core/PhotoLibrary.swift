@@ -1,0 +1,139 @@
+import Photos
+import PhotosUI
+import SwiftUI
+import CryptoKit
+
+struct LibraryAlbum: Identifiable {
+    var id: String
+    var title: String
+    var count: Int
+}
+
+@MainActor
+final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
+    @Published var assets: [PHAsset] = []
+    @Published var albums: [LibraryAlbum] = []
+    @Published var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @Published var revision = 0
+    @Published var refreshing = false
+    let images = PHCachingImageManager()
+    private var registered = false
+    private var refreshingAgain = false
+    func authorize() async {
+        status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        await refresh()
+    }
+    func refresh() async {
+        status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else { assets = []; albums = []; return }
+        if refreshing { refreshingAgain = true; return }
+        refreshing = true
+        if !registered { PHPhotoLibrary.shared().register(self); registered = true }
+        let snapshot = await Task.detached(priority: .userInitiated) { () -> ([PHAsset], [LibraryAlbum]) in
+            let options = PHFetchOptions()
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            options.predicate = NSPredicate(format: "mediaType == %d OR mediaType == %d", PHAssetMediaType.image.rawValue, PHAssetMediaType.video.rawValue)
+            var values: [PHAsset] = []
+            PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in values.append(asset) }
+            var groups: [LibraryAlbum] = []
+            PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil).enumerateObjects { collection, _, _ in
+                groups.append(LibraryAlbum(id: collection.localIdentifier, title: collection.localizedTitle ?? "相簿", count: PHAsset.fetchAssets(in: collection, options: nil).count))
+            }
+            return (values, groups.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending })
+        }.value
+        assets = snapshot.0; albums = snapshot.1; revision += 1; refreshing = false
+        // Reconciliation at every launch also covers expired history and permission changes.
+        if refreshingAgain { refreshingAgain = false; await refresh() }
+    }
+    nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
+        Task { @MainActor [weak self] in await self?.refresh() }
+    }
+    func scope(_ settings: BackupSettings) -> [PHAsset] {
+        guard !settings.selectedAlbums.isEmpty else { return assets }
+        var ids = Set<String>()
+        for id in settings.selectedAlbums {
+            if let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil).firstObject {
+                PHAsset.fetchAssets(in: collection, options: nil).enumerateObjects { asset, _, _ in ids.insert(asset.localIdentifier) }
+            }
+        }
+        return assets.filter { ids.contains($0.localIdentifier) }
+    }
+    func memberships(for ids: Set<String>) -> [String: [String]] {
+        var result: [String: [String]] = [:]
+        for album in albums {
+            guard let group = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [album.id], options: nil).firstObject else { continue }
+            PHAsset.fetchAssets(in: group, options: nil).enumerateObjects { asset, _, _ in
+                if ids.contains(asset.localIdentifier) { result[asset.localIdentifier, default: []].append(album.id) }
+            }
+        }
+        return result
+    }
+    static func stamp(_ asset: PHAsset) -> String {
+        "\(asset.modificationDate?.timeIntervalSince1970 ?? 0):\(asset.pixelWidth):\(asset.pixelHeight):\(asset.duration):\(asset.mediaSubtypes.rawValue)"
+    }
+    func manageLimited() {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              var controller = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return }
+        while let presented = controller.presentedViewController { controller = presented }
+        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: controller)
+    }
+}
+
+enum ResourceExporter {
+    static func export(assetID: String, settings: BackupSettings, directory: URL) async throws -> [MediaResource] {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject else { throw HarborError("PHOTO_PERMISSION") }
+        let resources = PHAssetResource.assetResources(for: asset)
+        let live = asset.mediaSubtypes.contains(.photoLive)
+        let video = asset.mediaType == .video
+        guard asset.mediaType == .image || video else { throw HarborError("UNSUPPORTED_MEDIA") }
+        var result: [MediaResource] = []
+        let versions = settings.edits == .both ? ["original", "current"] : [settings.edits.rawValue]
+        for version in versions {
+            let current = version == "current"
+            let originalType: PHAssetResourceType = video ? .video : .photo
+            let currentType: PHAssetResourceType = video ? .fullSizeVideo : .fullSizePhoto
+            guard let image = resources.first(where: { $0.type == (current ? currentType : originalType) }) ?? resources.first(where: { $0.type == originalType }) else { throw HarborError("RESOURCE_MISSING") }
+            var pair = [(image, "\(version).\(video ? "video" : "photo")")]
+            if live {
+                // Never mix edited stills with an original paired video.
+                let desired: PHAssetResourceType = current && image.type == .fullSizePhoto ? .fullSizePairedVideo : .pairedVideo
+                guard let clip = resources.first(where: { $0.type == desired }) else { throw HarborError("LIVE_PAIR_MISSING") }
+                pair.append((clip, "\(version).pairedVideo"))
+            }
+            for (resource, role) in pair {
+                try Task.checkCancellation()
+                let name = (resource.originalFilename as NSString).lastPathComponent
+                let path = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension((name as NSString).pathExtension)
+                let options = PHAssetResourceRequestOptions(); options.isNetworkAccessAllowed = true
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    PHAssetResourceManager.default().writeData(for: resource, toFile: path, options: options) { error in
+                        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                    }
+                }
+                let digest = try await Task.detached { try hash(path) }.value
+                result.append(MediaResource(role: role, path: path.path, name: name, sha1: digest.0, sha256: digest.1, size: digest.2))
+            }
+        }
+        // Keep one representation only when the complete version resource set matches.
+        if settings.edits == .both {
+            let original = result.filter { $0.role.hasPrefix("original.") }.map { $0.sha256 }.sorted()
+            let current = result.filter { $0.role.hasPrefix("current.") }.map { $0.sha256 }.sorted()
+            if original == current {
+                for resource in result where resource.role.hasPrefix("current.") { try? FileManager.default.removeItem(atPath: resource.path) }
+                result.removeAll { $0.role.hasPrefix("current.") }
+            }
+        }
+        return result
+    }
+    static func hash(_ url: URL) throws -> (String, String, Int64) {
+        let before = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let input = try FileHandle(forReadingFrom: url); defer { try? input.close() }
+        var sha1 = Insecure.SHA1(), sha256 = SHA256(), size: Int64 = 0
+        while let data = try input.read(upToCount: 1024 * 1024), !data.isEmpty {
+            try Task.checkCancellation(); sha1.update(data: data); sha256.update(data: data); size += Int64(data.count)
+        }
+        let after = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        guard before.fileSize == after.fileSize, before.contentModificationDate == after.contentModificationDate, size == Int64(before.fileSize ?? -1), size > 0 else { throw HarborError("SOURCE_CHANGED") }
+        return (sha1.finalize().map { String(format: "%02x", $0) }.joined(), sha256.finalize().map { String(format: "%02x", $0) }.joined(), size)
+    }
+}

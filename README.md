@@ -6,6 +6,8 @@ SwiftUI 原生界面 + 内嵌 Python + gpmc，面向 iOS 17+ iPhone。开发者�
 
 2026-10-19：云端构建、打包检查、12 项离线测试和 2 项 iOS 模拟器测试通过；用户确认 Windows + Sideloadly 的首轮真机验证全部通过，三种上传模式符合预期。A、B 阶段已验收，后续批量任务、后台能力与安全清理尚不在当前范围内。
 
+UI 已获得用户认可，网页原型仅本机预览。后续产品要求见 [需求基线](docs/REQUIREMENTS.md)：不计配额原画质默认、PhotoKit 直接图库及增量依据、两种 Live Photo 备份方式。新增 [MotionPhoto2 参考记录](docs/MOTIONPHOTO2-REFERENCE.md)。这些要求尚未实现；下一步完整计划仅为预告，本轮只更新文档。
+
 ## 功能
 
 - 检查 Python、TLS、SQLite、协议编解码与 gpmc 导入。

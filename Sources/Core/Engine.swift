@@ -12,7 +12,15 @@ struct HarborError: LocalizedError {
         case "RUNTIME_UNAVAILABLE": return "Python 运行环境不可用，请导出诊断报告。"
         case "KEYCHAIN_ERROR": return "无法访问安全凭据存储。"
         case "PHOTO_PERMISSION": return "请允许访问所选照片，然后重新选择。"
-        case "UNSUPPORTED_MEDIA": return "首轮仅支持普通静态照片，暂不支持 Live Photo 和视频。"
+        case "UNSUPPORTED_MEDIA": return "暂不支持此媒体格式，原件会保留。"
+        case "PAIR_PROTOCOL_UNVERIFIED": return "苹果原始资源的云端配对协议尚未验证；原件已保留，不会按两个普通文件上传。"
+        case "LIVE_KEYFRAME_MISSING": return "无法读取 Live Photo 关键帧，已保留原件。"
+        case "LIVE_PAIR_MISSING": return "无法取得同一版本的完整 Live Photo 资源。"
+        case "MOTION_FORMAT_UNSUPPORTED", "MOTION_METADATA_ERROR": return "动态照片封装未完成，原件已保留。"
+        case "LIVE_CLEANUP_UNVERIFIED": return "此 Live Photo 尚无完整关联与官方客户端取回验证，暂不允许清理。"
+        case "CLEANUP_UNVERIFIED": return "完整资源或云端核验未通过，原件会保留。"
+        case "DATABASE_ERROR": return "无法读写任务数据库，请检查剩余空间。"
+        case "UPLOAD_EXPIRED": return "上传授权已过期，可重新准备传输。"
         case "FILE_ACCESS": return "无法读取原件或写入暂存文件，请检查空间与照片权限。"
         case "SOURCE_CHANGED": return "传输期间文件发生变化，请重新选择原件。"
         case "ACCOUNT_CHANGED": return "账号已变化，请重新连接。"
@@ -79,12 +87,9 @@ final class Engine: ObservableObject {
             values.isExcludedFromBackup = true
             try excluded.setResourceValues(values)
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: home.path)
-            // Staging contains disposable exports only; abandoned files cannot be resumed in A/B.
+            // Durable background transfers may still own these files after relaunch.
             let staging = home.appendingPathComponent("Staging", isDirectory: true)
             try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-            for file in try FileManager.default.contentsOfDirectory(at: staging, includingPropertiesForKeys: nil) {
-                try FileManager.default.removeItem(at: file)
-            }
             ready = PythonBridge.start(home.path)
             guard ready else { throw HarborError("RUNTIME_UNAVAILABLE") }
             let info = try await invoke("probe")
@@ -95,8 +100,11 @@ final class Engine: ObservableObject {
         } catch { message = error.localizedDescription }
     }
 
-    private func invoke(_ action: String, _ payload: [String: Any] = [:]) async throws -> [String: Any] {
-        let encoded = try JSONSerialization.data(withJSONObject: payload)
+    func invoke(_ action: String, _ payload: [String: Any] = [:]) async throws -> [String: Any] {
+        let requestID = UUID().uuidString
+        var envelope = payload
+        envelope["protocol_version"] = 2; envelope["request_id"] = requestID
+        let encoded = try JSONSerialization.data(withJSONObject: envelope)
         let input = String(decoding: encoded, as: UTF8.self)
         let output: String = await withCheckedContinuation { continuation in
             queue.async {
@@ -116,6 +124,7 @@ final class Engine: ObservableObject {
             }
         }
         let result = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] ?? [:]
+        guard result["protocol_version"] as? Int == 2, result["request_id"] as? String == requestID else { throw HarborError("PROTOCOL_VERSION") }
         guard result["ok"] as? Bool == true else { throw HarborError(result["error"] as? String ?? "ENGINE_ERROR") }
         return result
     }
@@ -127,11 +136,11 @@ final class Engine: ObservableObject {
         guard let saved = result["credential"] as? String, let email = result["account"] as? String else {
             throw HarborError("INVALID_CREDENTIAL")
         }
-        do { try KeychainStore.save(saved) }
+        do { try KeychainStore.save(saved, account: email) }
         catch { _ = try? await invoke("logout"); throw error }
         account = email
         try await reload()
-        message = "账号已连接，可以选择一张普通照片验证备份。"
+        message = "账号已连接。"
     }
 
     func login(_ credential: String) async {

@@ -4,9 +4,10 @@ import SwiftUI
 /// `@main` attribute is what matters, not the name.
 @main
 struct PicHarborApp: App {
+  @UIApplicationDelegateAdaptor(HarborAppDelegate.self) private var delegate
   var body: some Scene {
     WindowGroup {
-      ValidationView()
+      HarborRootView()
     }
   }
 }

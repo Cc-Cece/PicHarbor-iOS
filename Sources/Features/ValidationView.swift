@@ -5,7 +5,7 @@ struct ValidationView: View {
     @State private var showLogin = false
     @State private var showPicker = false
     @State private var importedCredential = ""
-    @State private var quality = "quota"
+    @State private var quality = "original"
 
     var body: some View {
         NavigationStack {

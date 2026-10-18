@@ -98,6 +98,7 @@ class Service:
     def connect(self, value):
         # Clear old identity even when the new connection fails.
         self.api, self.account = None, ""
+        self.protocol = None
         credential = value["credential"].strip()
         if not credential or len(credential) > 16384 or any(c in credential for c in "\r\n"):
             raise Failure("INVALID_CREDENTIAL")
@@ -110,6 +111,8 @@ class Service:
         api = self.api_factory(credential, timeout=60)
         _ = api.bearer_token
         self.api, self.account = api, account
+        from harbor_protocol import Protocol
+        self.protocol = Protocol(self)
         return {"account": account, "credential": credential}
 
     def records(self):
@@ -157,7 +160,7 @@ class Service:
         return record
 
     def upload(self, value):
-        quality = value.get("quality", "quota")
+        quality = value.get("quality", "original")
         if quality not in ("quota", "original", "saver"):
             raise Failure("INVALID_QUALITY")
         path = self.path(value["path"])
@@ -193,6 +196,9 @@ class Service:
         return self.confirm(record)
 
     def dispatch(self, action, value):
+        from harbor_protocol import Protocol
+        if action == "capabilities":
+            return Protocol.capabilities()
         if action == "probe":
             import ssl
             import sys
@@ -210,6 +216,8 @@ class Service:
             raise Failure("LOGIN_REQUIRED")
         if value.get("account") != self.account:
             raise Failure("ACCOUNT_CHANGED")
+        if action in Protocol.actions:
+            return self.protocol.dispatch(action, value)
         if action == "records":
             return {"records": self.records()}
         if action == "upload":
@@ -235,7 +243,14 @@ def initialize(home):
 
 
 def dispatch(action, payload):
+    request_id = ""
     try:
-        return json.dumps({"ok": True, **_service.dispatch(action, json.loads(payload))})
+        value = json.loads(payload)
+        request_id = value.get("request_id", "")
+        if value.get("protocol_version", 2) != 2:
+            raise Failure("PROTOCOL_VERSION")
+        return json.dumps({"ok": True, "protocol_version": 2, "request_id": request_id, **_service.dispatch(action, value)})
     except Exception as error:
-        return json.dumps({"ok": False, "error": classify(error)})
+        code = classify(error)
+        return json.dumps({"ok": False, "protocol_version": 2, "request_id": request_id, "error": code,
+                           "failure": {"code": code, "retryable": code == "NETWORK_ERROR"}})
