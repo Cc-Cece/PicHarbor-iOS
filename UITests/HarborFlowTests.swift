@@ -1,6 +1,35 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testAddGoogleAccountCanBeOpenedRepeatedly() {
+        let app = XCUIApplication()
+        app.launch()
+        let later = app.buttons["稍后"]
+        if later.waitForExistence(timeout: 30) { later.tap() }
+        app.tabBars.buttons["设置"].tap()
+        app.buttons["连接 Google 账号"].tap()
+        XCTAssertTrue(app.navigationBars["账号"].waitForExistence(timeout: 5))
+        for _ in 0..<2 {
+            let add = app.buttons["添加 Google 账号"]
+            XCTAssertTrue(add.waitForExistence(timeout: 5))
+            XCTAssertTrue(add.isEnabled)
+            add.tap()
+            guard app.navigationBars["欢迎使用 PicHarbor"].waitForExistence(timeout: 5) else {
+                capture("account-add-failed")
+                XCTFail("添加账号没有打开登录入口")
+                return
+            }
+            capture("account-connection")
+            app.buttons["连接 Google 账号"].tap()
+            XCTAssertTrue(app.navigationBars["连接 Google"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
+            capture("account-google-web")
+            app.buttons["取消"].tap()
+            app.buttons["稍后"].tap()
+            XCTAssertTrue(app.navigationBars["账号"].waitForExistence(timeout: 5))
+        }
+    }
+
     func testNativeNavigationAndPreferenceScreens() {
         let app = XCUIApplication()
         app.launch()
