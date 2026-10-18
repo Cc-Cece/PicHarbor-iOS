@@ -136,6 +136,16 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(result["request_id"], "r")
             self.assertEqual(result["failure"]["code"], "PROTOCOL_VERSION")
 
+    def test_motion_requires_dynamic_metadata_for_every_version(self):
+        protocol = self.service.protocol
+        protocol.snapshot_at = time.monotonic()
+        protocol.snapshot = {"original": {"motion": True, "status": 100, "trash": 0},
+                             "edited": {"motion": False, "status": 100, "trash": 0}}
+        result = self.service.dispatch("motion_status", {"account": self.service.account, "keys": ["original", "edited"]})
+        self.assertFalse(result["recognized"])
+        protocol.snapshot["edited"]["motion"] = True
+        self.assertTrue(self.service.dispatch("motion_status", {"account": self.service.account, "keys": ["original", "edited"]})["recognized"])
+
 
 if __name__ == "__main__":
     unittest.main()

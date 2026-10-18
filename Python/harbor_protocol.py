@@ -14,7 +14,7 @@ from gpmc.db_update_parser import parse_db_update, _parse_media_item, _get_neste
 
 class Protocol:
     actions = {"prepare_upload", "commit_resource", "confirm_resource", "sync_cloud",
-               "check_cleanup", "create_album", "add_to_album", "pair_apple"}
+               "check_cleanup", "create_album", "add_to_album", "pair_apple", "motion_status"}
 
     def __init__(self, service):
         self.service = service
@@ -82,6 +82,15 @@ class Protocol:
         if action == "sync_cloud":
             self.synchronize()
             return {"count": len(self.snapshot), "complete": True}
+        if action == "motion_status":
+            keys = value.get("keys", [])
+            if not isinstance(keys, list) or not keys or not all(isinstance(key, str) and key for key in keys):
+                raise Failure("INVALID_REMOTE_KEYS")
+            if not 0 <= time.monotonic() - self.snapshot_at < 30:
+                self.synchronize()
+            return {"recognized": all(self.snapshot.get(key, {}).get("motion") is True and
+                                      self.snapshot.get(key, {}).get("status") == 100 and
+                                      self.snapshot.get(key, {}).get("trash") == 0 for key in keys)}
         if action == "check_cleanup":
             key = self.api.find_remote_media_by_hash(self.digest(value))
             if not key:
@@ -123,6 +132,7 @@ class Protocol:
                         trash = _get_nested(details, "16", "3")
                         empty = (isinstance(marker, (bytes, str)) and not marker) or (isinstance(marker, dict) and "3" not in marker)
                         values[item.media_key] = {"size": details.get("10"), "status": details.get("11"),
+                            "motion": item.is_micro_video,
                             "original": item.is_original_quality if _get_nested(details, "35", "3") is not None else None,
                             "trash": 0 if trash is None and empty else trash}
                     except (TypeError, ValueError, KeyError, RuntimeError):

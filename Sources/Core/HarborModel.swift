@@ -196,20 +196,39 @@ final class HarborModel: ObservableObject {
     }
     func pump() async {
         guard initialized, !account.isEmpty, engine.ready, !storageFailed, !switching, !cleanupRunning else { return }
-        let occupying = Set(jobs.filter { $0.account == account && $0.state == .transferring }.map(\.id)).union(workers)
+        await collectFinishedStaging()
         let candidates = jobs.filter(runnable).sorted { $0.created < $1.created }
-        var slots = max(0, 2 - occupying.count)
-        for var job in candidates where slots > 0 {
+        for var job in candidates {
+            // persist() can yield to another pump; recheck occupancy and identity each iteration.
+            guard !switching, !cleanupRunning, !storageFailed, runnable(job) else { continue }
+            let occupying = Set(jobs.filter { $0.account == account && $0.state == .transferring }.map(\.id)).union(workers)
+            if occupying.count >= 2 { break }
             guard network.connected && (!job.settings.wifiOnly || network.wifi) else {
                 if job.state != .waiting { job.state = .waiting; job.error = "WAITING_NETWORK"; try? await persist(job) }
                 continue
             }
-            workers.insert(job.id); slots -= 1
+            workers.insert(job.id)
             Task { [weak self] in
                 guard let self else { return }
                 await self.process(job)
                 self.workers.remove(job.id)
                 await self.pump()
+            }
+        }
+    }
+    private func collectFinishedStaging() async {
+        let tasks = await transfer.tasks()
+        let referenced = Set(tasks.compactMap { $0.taskDescription?.components(separatedBy: ":").first })
+        let receipts = (try? transfer.pendingReceipts()) ?? []
+        for job in jobs where [.completed, .cancelled].contains(job.state) && !workers.contains(job.id) && !referenced.contains(job.id) {
+            let directory = engine.home.appendingPathComponent("Staging/\(job.id)", isDirectory: true)
+            try? FileManager.default.removeItem(at: directory)
+            for resource in job.resources {
+                if let path = resource.responsePath { try? FileManager.default.removeItem(atPath: path) }
+                if let id = resource.transportID { try? FileManager.default.removeItem(at: engine.home.appendingPathComponent("Staging/response-\(id).bin")) }
+            }
+            for receipt in receipts where receipt.jobID == job.id {
+                try? FileManager.default.removeItem(atPath: receipt.responsePath); transfer.acknowledge(receipt)
             }
         }
     }
@@ -228,9 +247,17 @@ final class HarborModel: ObservableObject {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if job.resources.isEmpty {
                 job.state = .preparing; job.error = ""; try await persist(job)
+                await PreparationGate.shared.acquire()
+                do {
+                try checkpoint(job)
                 if job.isLive && job.settings.live == .applePair && !applePairAvailable { throw HarborError("PAIR_PROTOCOL_UNVERIFIED") }
                 guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
                       PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("SOURCE_CHANGED") }
+                // Only an unreferenced preparation directory is discarded, never a transfer file.
+                try? FileManager.default.removeItem(at: directory)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+                guard free > 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
                 job.sources = try await ResourceExporter.export(assetID: job.assetID, settings: job.settings, directory: directory)
                 try checkpoint(job)
                 if job.isLive {
@@ -239,6 +266,8 @@ final class HarborModel: ObservableObject {
                 } else { job.resources = job.sources }
                 try checkpoint(job)
                 try await persist(job)
+                } catch { await PreparationGate.shared.release(); throw error }
+                await PreparationGate.shared.release()
             }
             for index in job.resources.indices where !job.resources[index].confirmed {
                 try checkpoint(job)
@@ -276,6 +305,9 @@ final class HarborModel: ObservableObject {
                         job.resources[index].remoteKey = plan["remote_key"] as? String ?? ""
                         job.resources[index].confirmed = true; try await persist(job)
                     } else {
+                        let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+                        // Background URLSession may make its own file copy.
+                        guard free > resource.size + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
                         let task = try transfer.create(job: job, resource: resource, plan: plan)
                         job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
                         do { try await persist(job) } catch { task.cancel(); throw error }
@@ -285,6 +317,12 @@ final class HarborModel: ObservableObject {
                 }
             }
             try checkpoint(job)
+            if job.isLive {
+                job.state = .confirming; try await persist(job)
+                let dynamic = try await engine.invoke("motion_status", ["account": job.account, "keys": job.resources.map(\.remoteKey)])
+                try checkpoint(job)
+                guard dynamic["recognized"] as? Bool == true else { throw HarborError("REMOTE_MOTION_PENDING") }
+            }
             if job.settings.syncAlbums && !job.albumIDs.isEmpty {
                 job.albumsPending = true; try await persist(job)
                 try await synchronizeAlbums(job)
@@ -298,8 +336,8 @@ final class HarborModel: ObservableObject {
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
             job.error = code; job.attempts += 1
-            if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE"].contains(code) && job.attempts <= 3 {
-                job.state = code == "REMOTE_NOT_VISIBLE" ? .confirming : .waiting
+            if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) && job.attempts <= 3 {
+                job.state = ["REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) ? .confirming : .waiting
                 job.retryAt = Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5)
             } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "SOURCE_CHANGED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
             try? await persist(job)

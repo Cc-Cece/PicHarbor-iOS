@@ -80,4 +80,17 @@ final class BackupCoreTests: XCTestCase {
         let decoded = try JSONDecoder().decode(MediaResource.self, from: JSONEncoder().encode(resource))
         XCTAssertEqual(decoded.size, 5_368_709_120)
     }
+    func testTenThousandAssetIndexBatchRoundTrip() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try BackupStore(url: directory.appendingPathComponent("index.sqlite"))
+        let values = (0..<10_000).map { index in
+            (String(index), AssetSnapshot(id: String(index), revision: "v1", mediaType: 1, accessible: true))
+        }
+        try await store.saveBatch(values, kind: "asset")
+        let read = try await store.load(AssetSnapshot.self, kind: "asset")
+        XCTAssertEqual(read.count, 10_000)
+        XCTAssertTrue(read.allSatisfy(\.accessible))
+    }
 }

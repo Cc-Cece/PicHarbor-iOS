@@ -86,10 +86,19 @@ jobs:
             -resultBundlePath build/TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Export native screenshots
+        if: always()
+        run: |
+          if [ -d build/TestResults.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/screenshots || true
+          fi
+
       - name: Upload simulator test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: simulator-test-results
-          path: build/TestResults.xcresult
+          path: |
+            build/TestResults.xcresult
+            build/screenshots
           retention-days: 7

@@ -73,6 +73,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cccece.picharbor.tests
         GENERATE_INFOPLIST_FILE: "YES"
 
+  PicHarborUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: PicHarbor
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cccece.picharbor.uitests
+        TEST_TARGET_NAME: PicHarbor
+        GENERATE_INFOPLIST_FILE: "YES"
+
 schemes:
   PicHarbor:
     build:
@@ -85,5 +98,6 @@ schemes:
       config: Debug
       targets:
         - PicHarborTests
+        - PicHarborUITests
     archive:
       config: Release

@@ -144,6 +144,7 @@ struct JobDetailView: View {
                     LabeledContent("创建时间") { Text(job.created, style: .time) }
                 }
                 if !job.error.isEmpty { Section("需要处理") { Text(HarborError(job.error).localizedDescription).foregroundStyle(.secondary) } }
+                if job.isLive && job.state == .completed { Section { Text("云端动态标记已确认。官方客户端取回仍需真机验证，本地资源暂不参与清理。").font(.footnote).foregroundStyle(.secondary) } }
                 Section("资源") {
                     ForEach(job.resources) { resource in
                         VStack(alignment: .leading, spacing: 5) {
