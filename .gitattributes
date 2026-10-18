@@ -12,3 +12,6 @@ VERSION text eol=lf
 
 # Treat the placeholder icon as binary.
 *.png binary
+
+# Pin copied upstream bytes exactly; source-manifest.json hashes raw files.
+Vendor/** -text
