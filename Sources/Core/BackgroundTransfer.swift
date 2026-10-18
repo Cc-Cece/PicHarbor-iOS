@@ -22,6 +22,7 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PicHarbor/Staging", isDirectory: true)
     }
+    private var lastProgress: [Int: TimeInterval] = [:]
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.background(withIdentifier: Self.identifier)
         configuration.sessionSendsLaunchEvents = true
@@ -80,9 +81,13 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
         } catch { dataTask.cancel() }
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        let now = Date.timeIntervalSinceReferenceDate
+        guard totalBytesSent == totalBytesExpectedToSend || now - (lastProgress[task.taskIdentifier] ?? 0) >= 0.25 else { return }
+        lastProgress[task.taskIdentifier] = now
         onProgress?(task.taskDescription?.components(separatedBy: ":").first ?? "", totalBytesSent, totalBytesExpectedToSend)
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        lastProgress.removeValue(forKey: task.taskIdentifier)
         let parts = (task.taskDescription ?? "").components(separatedBy: ":")
         guard parts.count == 2 else { return }
         let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
@@ -118,11 +123,10 @@ final class NetworkStatus: ObservableObject {
 
 final class HarborAppDelegate: NSObject, UIApplicationDelegate {
     static let processingID = "com.cccece.picharbor.processing"
-    static var wake: (@MainActor () async -> Void)?
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil) { task in
             let operation = Task { @MainActor in
-                await Self.wake?()
+                await HarborModel.shared.backgroundWake()
                 task.setTaskCompleted(success: !Task.isCancelled)
                 Self.schedule()
             }
@@ -134,6 +138,14 @@ final class HarborAppDelegate: NSObject, UIApplicationDelegate {
         guard identifier == BackgroundTransfer.identifier else { completionHandler(); return }
         BackgroundTransfer.shared.backgroundCompletion = completionHandler
         BackgroundTransfer.shared.activate()
+        Task { @MainActor in
+            var lease = UIBackgroundTaskIdentifier.invalid
+            lease = application.beginBackgroundTask(withName: "Finish backup confirmation") {
+                if lease != .invalid { application.endBackgroundTask(lease); lease = .invalid }
+            }
+            await HarborModel.shared.backgroundWake()
+            if lease != .invalid { application.endBackgroundTask(lease) }
+        }
     }
     static func schedule() {
         let request = BGProcessingTaskRequest(identifier: processingID)

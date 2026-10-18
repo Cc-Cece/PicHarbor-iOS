@@ -22,6 +22,7 @@ struct BackupSettings: Codable, Equatable {
     var live: LiveStrategy = .motion
     var edits: EditPolicy = .both
     var automatic = false
+    var scopeConfirmed: Bool?
     var wifiOnly = true
     var syncAlbums = false
     var selectedAlbums: [String] = []

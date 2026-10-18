@@ -58,13 +58,15 @@ struct BackupScopeView: View {
     @EnvironmentObject private var model: HarborModel
     @Environment(\.dismiss) private var dismiss
     @State private var selected = Set<String>()
+    @State private var all = true
     @State private var automatic = true
     var body: some View {
         Form {
             Section {
-                Button { selected = [] } label: { HStack { Text("全部可访问照片与视频"); Spacer(); if selected.isEmpty { Image(systemName: "checkmark") } } }
+                Button { selected = []; all = true } label: { HStack { Text("全部可访问照片与视频"); Spacer(); if all { Image(systemName: "checkmark") } } }
                 ForEach(model.library.albums) { album in
                     Button {
+                        all = false
                         if selected.contains(album.id) { selected.remove(album.id) } else { selected.insert(album.id) }
                     } label: {
                         HStack { Text(album.title).foregroundStyle(.primary); Spacer(); Text(album.count.formatted()).foregroundStyle(.secondary); if selected.contains(album.id) { Image(systemName: "checkmark") } }
@@ -74,27 +76,36 @@ struct BackupScopeView: View {
                 Text(model.library.status == .limited ? "有限授权下仅备份你授权的项目，系统可能不提供完整用户相簿。" : "照片和视频均包含在范围中。选中相簿按成员合并去重，不重复上传同一个项目。")
             }
             Section {
+                LabeledContent("将备份", value: "\(scopeCount) 项")
                 Toggle("确认后开启自动备份", isOn: $automatic)
                 LabeledContent("上传画质", value: model.settings.quality.title)
                 LabeledContent("Live Photo", value: model.settings.live.title)
                 LabeledContent("网络", value: model.settings.wifiOnly ? "仅 Wi-Fi" : "Wi-Fi 与蜂窝")
                 Button("确认范围与设置") { Task {
-                    model.settings.selectedAlbums = Array(selected).sorted(); model.settings.automatic = automatic
+                    model.settings.selectedAlbums = all ? [] : Array(selected).sorted(); model.settings.automatic = automatic
+                    model.settings.scopeConfirmed = true
                     await model.saveSettings(); dismiss()
-                } }.disabled(model.account.isEmpty)
+                } }.disabled(model.account.isEmpty || (!all && selected.isEmpty))
             } footer: { Text("自动备份会识别范围内新增和修改内容。系统后台安排不保证即时，打开应用可继续。") }
         }.navigationTitle("备份范围").navigationBarTitleDisplayMode(.inline)
-        .onAppear { selected = Set(model.settings.selectedAlbums); automatic = model.settings.automatic || model.visibleJobs.isEmpty }
+        .onAppear { selected = Set(model.settings.selectedAlbums); all = selected.isEmpty; automatic = model.settings.scopeConfirmed == true ? model.settings.automatic : true }
+    }
+    private var scopeCount: Int {
+        if all { return model.library.assets.count }
+        if selected.isEmpty { return 0 }
+        var draft = model.settings; draft.selectedAlbums = Array(selected)
+        return model.library.scope(draft).count
     }
 }
 
 struct NetworkPreferencesView: View {
     @EnvironmentObject private var model: HarborModel
+    @State private var scope = false
     var body: some View {
         Form {
             Section {
                 Toggle("仅通过 Wi-Fi 备份", isOn: $model.settings.wifiOnly)
-                Toggle("自动备份", isOn: Binding(get: { model.settings.automatic }, set: { value in model.settings.automatic = value }))
+                Toggle("自动备份", isOn: Binding(get: { model.settings.automatic }, set: { value in if value { scope = true } else { model.settings.automatic = false } }))
                 NavigationLink("检查备份范围") { BackupScopeView() }
             } footer: { Text("网络设置对新建任务生效；已创建任务保留原设置。关闭自动备份不会取消手动任务，可在活动中暂停任务。") }
             Section("后台执行") {
@@ -104,6 +115,7 @@ struct NetworkPreferencesView: View {
                 LabeledContent("暂存资源", value: ByteCountFormatter.string(fromByteCount: model.stagedBytes, countStyle: .file))
             }
         }.navigationTitle("网络与后台").navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $scope) { NavigationStack { BackupScopeView() } }
         .onChange(of: model.settings) { _, _ in Task { await model.saveSettings() } }
     }
 }

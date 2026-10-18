@@ -100,7 +100,7 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
 }
 
 enum ResourceExporter {
-    static func export(assetID: String, settings: BackupSettings, directory: URL) async throws -> [MediaResource] {
+    static func export(assetID: String, settings: BackupSettings, directory: URL, control: ExportControl? = nil) async throws -> [MediaResource] {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject else { throw HarborError("PHOTO_PERMISSION") }
         let resources = PHAssetResource.assetResources(for: asset)
         let live = asset.mediaSubtypes.contains(.photoLive)
@@ -124,12 +124,7 @@ enum ResourceExporter {
                 try Task.checkCancellation()
                 let name = (resource.originalFilename as NSString).lastPathComponent
                 let path = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension((name as NSString).pathExtension)
-                let options = PHAssetResourceRequestOptions(); options.isNetworkAccessAllowed = true
-                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    PHAssetResourceManager.default().writeData(for: resource, toFile: path, options: options) { error in
-                        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
-                    }
-                }
+                try await PhotoResourceWriter.write(resource: resource, url: path, control: control)
                 let digest = try await Task.detached { try hash(path) }.value
                 result.append(MediaResource(role: role, path: path.path, name: name, sha1: digest.0, sha256: digest.1, size: digest.2))
             }

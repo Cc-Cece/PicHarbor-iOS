@@ -4,6 +4,7 @@ import Combine
 
 @MainActor
 final class HarborModel: ObservableObject {
+    static let shared = HarborModel()
     let engine = Engine()
     let library = PhotoLibrary()
     let network = NetworkStatus()
@@ -25,6 +26,7 @@ final class HarborModel: ObservableObject {
     private let albumGate = PreparationGate()
     private var workers = Set<String>()
     private var collectedStaging = Set<String>()
+    private var exports: [String: ExportControl] = [:]
     private var subscriptions = Set<AnyCancellable>()
     private var timer: Task<Void, Never>?
     private var starting = false
@@ -40,7 +42,13 @@ final class HarborModel: ObservableObject {
         library.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
         library.$revision.dropFirst().sink { [weak self] _ in Task { @MainActor in await self?.automaticScan() } }.store(in: &subscriptions)
         network.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
-        network.$connected.combineLatest(network.$wifi).dropFirst().sink { [weak self] _, _ in Task { @MainActor in await self?.pump() } }.store(in: &subscriptions)
+        network.$connected.combineLatest(network.$wifi).dropFirst().sink { [weak self] connected, wifi in
+            Task { @MainActor in
+                guard let self else { return }
+                for control in self.exports.values where !connected || (control.wifiOnly && !wifi) { control.cancel("WAITING_NETWORK") }
+                await self.pump()
+            }
+        }.store(in: &subscriptions)
         transfer.onReceipt = { [weak self] receipt in Task { @MainActor in await self?.receive(receipt) } }
         transfer.onProgress = { [weak self] id, sent, total in
             Task { @MainActor in
@@ -48,11 +56,10 @@ final class HarborModel: ObservableObject {
                 self.jobs[index].progress = min(1, Double(sent) / Double(total))
             }
         }
-        HarborAppDelegate.wake = { [weak self] in
-            guard let self else { return }
-            await self.boot(); await self.library.refresh(); await self.automaticScan(); await self.pump()
-            while !self.workers.isEmpty && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(100)) }
-        }
+    }
+    func backgroundWake() async {
+        await boot(); await library.refresh(); await automaticScan(); await pump()
+        while !workers.isEmpty && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(100)) }
     }
     func boot() async {
         guard !initialized && !starting else { return }
@@ -155,29 +162,38 @@ final class HarborModel: ObservableObject {
         accounts = (try? KeychainStore.accounts()) ?? []; settings = BackupSettings(); cleanupReady = []; switching = false
     }
     func enqueue(_ assets: [PHAsset], force: Bool = false) async {
-        guard initialized, !account.isEmpty, !storageFailed, !switching else { notice = "请先连接 Google 账号。"; return }
+        guard initialized, !account.isEmpty, !storageFailed, !switching, let store else { notice = "请先连接 Google 账号。"; return }
         let snapshot = settings
+        let targetAccount = account
         let membership = snapshot.syncAlbums ? library.memberships(for: Set(assets.map(\.localIdentifier))) : [:]
         do {
             var known = Set(jobs.filter { $0.state != .cancelled }.map(\.dedupKey))
+            let active = Set(jobs.filter { $0.state.active || $0.state == .queued || $0.state == .paused }.map(\.dedupKey))
+            var additions: [BackupJob] = []
+            var planned = Set<String>()
             for asset in assets {
-                var job = BackupJob(account: account, assetID: asset.localIdentifier, assetRevision: PhotoLibrary.stamp(asset), settings: snapshot)
+                var job = BackupJob(account: targetAccount, assetID: asset.localIdentifier, assetRevision: PhotoLibrary.stamp(asset), settings: snapshot)
                 job.isLive = asset.mediaSubtypes.contains(.photoLive)
                 job.albumIDs = membership[asset.localIdentifier] ?? []
                 job.forceUpload = force
                 if !force && known.contains(job.dedupKey) { continue }
-                if jobs.contains(where: { $0.dedupKey == job.dedupKey && ($0.state.active || $0.state == .queued || $0.state == .paused) }) { continue }
+                if active.contains(job.dedupKey) || planned.contains(job.dedupKey) { continue }
                 known.insert(job.dedupKey)
-                try await persist(job)
+                planned.insert(job.dedupKey); job.generation = 1; additions.append(job)
             }
-            notice = "已加入备份队列。"
+            if !additions.isEmpty {
+                jobs.append(contentsOf: additions)
+                do { try await store.saveBatch(additions.map { ($0.id, $0) }, kind: "job") }
+                catch { fatalStorage(error); throw error }
+                notice = "已加入备份队列。"
+            }
             await pump()
         } catch { notice = error.localizedDescription }
     }
     func automaticScan() async {
         guard initialized, !storageFailed else { return }
         do { try await indexLibrary() } catch { fatalStorage(error); return }
-        guard settings.automatic, !account.isEmpty, !switching, !cleanupRunning else { return }
+        guard settings.automatic, settings.scopeConfirmed == true, !account.isEmpty, !switching, !cleanupRunning else { return }
         await enqueue(library.scope(settings))
     }
     private func indexLibrary() async throws {
@@ -246,12 +262,14 @@ final class HarborModel: ObservableObject {
     private func checkpoint(_ job: BackupJob) throws {
         guard !switching, job.account == account else { throw HarborError("ACCOUNT_CHANGED") }
         guard let current = jobs.first(where: { $0.id == job.id }), current.state != .paused, current.state != .cancelled else { throw HarborError("JOB_PAUSED") }
+        guard network.connected && (!job.settings.wifiOnly || network.wifi) else { throw HarborError("WAITING_NETWORK") }
     }
     private func payload(_ resource: MediaResource, account: String) -> [String: Any] {
         ["account": account, "sha1": resource.sha1, "sha256": resource.sha256, "size": resource.size]
     }
     private func process(_ initial: BackupJob) async {
         var job = initial
+        defer { exports.removeValue(forKey: job.id) }
         do {
             try checkpoint(job)
             let directory = engine.home.appendingPathComponent("Staging/\(job.id)", isDirectory: true)
@@ -269,7 +287,9 @@ final class HarborModel: ObservableObject {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
                 guard free > 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
-                job.sources = try await ResourceExporter.export(assetID: job.assetID, settings: job.settings, directory: directory)
+                let control = ExportControl(wifiOnly: job.settings.wifiOnly); exports[job.id] = control
+                job.sources = try await ResourceExporter.export(assetID: job.assetID, settings: job.settings, directory: directory, control: control)
+                if let code = control.failure { throw HarborError(code) }
                 try checkpoint(job)
                 if job.isLive {
                     guard job.settings.live == .motion else { throw HarborError("PAIR_PROTOCOL_UNVERIFIED") }
@@ -349,7 +369,8 @@ final class HarborModel: ObservableObject {
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
             job.error = code; job.attempts += 1
-            if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) && job.attempts <= 3 {
+            if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
+            else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) && job.attempts <= 3 {
                 job.state = ["REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) ? .confirming : .waiting
                 job.retryAt = Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5)
             } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "SOURCE_CHANGED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
@@ -400,6 +421,7 @@ final class HarborModel: ObservableObject {
     }
     func pause(_ id: String) async {
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed else { return }
+        exports[id]?.cancel("JOB_PAUSED")
         job.state = .paused; try? await persist(job); await transfer.pause(jobID: id)
     }
     func pauseAll() async { for job in visibleJobs where job.state.active || job.state == .queued || job.state == .waiting { await pause(job.id) } }
@@ -419,6 +441,7 @@ final class HarborModel: ObservableObject {
     }
     func cancel(_ id: String) async {
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed else { return }
+        exports[id]?.cancel("JOB_PAUSED")
         job.state = .cancelled; job.evidence = nil; try? await persist(job); await transfer.cancel(jobID: id)
     }
     func verifyCleanup() async {
@@ -437,6 +460,7 @@ final class HarborModel: ObservableObject {
         } catch { notice = error.localizedDescription }
     }
     private func checkCleanup(_ job: BackupJob) async throws -> CleanupEvidence {
+        guard network.connected && (!settings.wifiOnly || network.wifi) else { throw HarborError("WAITING_NETWORK") }
         guard job.account == account, job.state == .completed, !job.isLive else { throw HarborError(job.isLive ? "LIVE_CLEANUP_UNVERIFIED" : "CLEANUP_UNVERIFIED") }
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
               PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("SOURCE_CHANGED") }
@@ -444,7 +468,9 @@ final class HarborModel: ObservableObject {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         var full = job.settings; full.edits = .both
-        let current = try await ResourceExporter.export(assetID: job.assetID, settings: full, directory: directory)
+        let control = ExportControl(wifiOnly: settings.wifiOnly); exports[job.id] = control
+        defer { exports.removeValue(forKey: job.id) }
+        let current = try await ResourceExporter.export(assetID: job.assetID, settings: full, directory: directory, control: control)
         guard Set(current.map(\.sha256)).isSubset(of: Set(job.sources.map(\.sha256))), !current.isEmpty else { throw HarborError("CLEANUP_UNVERIFIED") }
         for source in current {
             var request = payload(source, account: job.account)

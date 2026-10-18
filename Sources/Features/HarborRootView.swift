@@ -2,7 +2,7 @@ import SwiftUI
 import Photos
 
 struct HarborRootView: View {
-    @StateObject private var model = HarborModel()
+    @StateObject private var model = HarborModel.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var welcome = false
     @State private var selectedTab = 0
