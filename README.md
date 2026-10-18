@@ -4,6 +4,8 @@ SwiftUI 原生界面 + 内嵌 Python + gpmc，面向 iOS 17+ iPhone。开发者�
 
 当前正在实施完整原生应用。**云端编译、模拟器测试、真机免费自签、Google 实际认证与上传分别验收，不能互相替代。** A/B 历史状态见 [验收记录](docs/VALIDATION.md)，新版本状态见 [实施与验收台账](docs/IMPLEMENTATION.md)。
 
+0.2 开发版的可安装产物、自动测试证据与剩余事项见 [开发版验收说明](docs/DEVELOPMENT-ACCEPTANCE.md)。本机 IPA：`dist/PicHarbor-0.2.0-dev.ipa`。苹果原始资源云端配对尚未实现，不将整个计划标为完成。
+
 2026-10-19：旧 A/B 版本已通过云端检查和用户真机验证，三种上传模式符合预期。完整实施已获批准，新版增加原生图库、任务持久化、后台文件传输、Motion Photo 封装与四入口界面；这些新增能力需要独立验收。
 
 UI 已获得用户认可，网页原型仅本机预览，不部署或同步源码。需求见 [需求基线](docs/REQUIREMENTS.md)，封装参考见 [MotionPhoto2 记录](docs/MOTIONPHOTO2-REFERENCE.md)。
