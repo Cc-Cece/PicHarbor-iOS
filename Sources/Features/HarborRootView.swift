@@ -173,6 +173,7 @@ struct JobDetailView: View {
 struct CleanupView: View {
     @EnvironmentObject private var model: HarborModel
     @State private var confirm = false
+    @State private var selected = Set<String>()
     var body: some View {
         List {
             Section {
@@ -187,21 +188,30 @@ struct CleanupView: View {
             }
             Section("检查结果") {
                 ForEach(model.visibleJobs.filter { model.cleanupResults[$0.id] != nil }) { job in
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(job.sources.first?.name ?? "备份资源").lineLimit(1)
-                        Text(model.cleanupResults[job.id] ?? "").font(.caption).foregroundStyle(model.cleanupReady.contains(job.id) ? .green : .secondary)
+                    HStack {
+                        if model.cleanupReady.contains(job.id) {
+                            Button {
+                                if selected.contains(job.id) { selected.remove(job.id) } else { selected.insert(job.id) }
+                            } label: { Image(systemName: selected.contains(job.id) ? "checkmark.circle.fill" : "circle") }
+                                .accessibilityLabel(selected.contains(job.id) ? "取消选择此项目" : "选择此项目").disabled(model.cleanupRunning)
+                        }
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(job.sources.first?.name ?? "备份资源").lineLimit(1)
+                            Text(model.cleanupResults[job.id] ?? "").font(.caption).foregroundStyle(model.cleanupReady.contains(job.id) ? .green : .secondary)
+                        }
                     }
                 }
             }
             if !model.cleanupReady.isEmpty {
                 Section {
-                    Button("清理 \(model.cleanupReady.count) 项", role: .destructive) { confirm = true }.disabled(model.cleanupRunning)
+                    Button("清理所选 \(selected.count) 项", role: .destructive) { confirm = true }.disabled(model.cleanupRunning || selected.isEmpty)
                 } footer: { Text("启用 iCloud 照片时，删除会同步到同一图库的其他设备。照片通常会进入系统“最近删除”。") }
             }
         }.navigationTitle("释放空间").navigationBarTitleDisplayMode(.inline)
+        .onChange(of: model.cleanupReady) { _, values in selected = Set(values) }
         .alert("确认从 iPhone 相册删除？", isPresented: $confirm) {
-            Button("继续核验并请求删除", role: .destructive) { Task { await model.deleteVerified() } }
+            Button("继续核验并请求删除", role: .destructive) { Task { await model.deleteVerified(ids: Array(selected)) } }
             Button("取消", role: .cancel) {}
-        } message: { Text("将重新核验 \(model.cleanupReady.count) 项，之后由系统再次请求删除授权。iCloud 照片的删除会同步。谷歌相册中的内容不会被删除。") }
+        } message: { Text("将重新核验 \(selected.count) 项，之后由系统再次请求删除授权。iCloud 照片的删除会同步。谷歌相册中的内容不会被删除。") }
     }
 }

@@ -67,6 +67,7 @@ struct MediaResource: Codable, Identifiable, Equatable {
 }
 struct BackupJob: Codable, Identifiable {
     var id = UUID().uuidString
+    var generation: Int64?
     var account: String
     var assetID: String
     var assetRevision: String

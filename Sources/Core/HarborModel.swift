@@ -20,7 +20,10 @@ final class HarborModel: ObservableObject {
     private var store: BackupStore?
     private var mappings: [AlbumMapping] = []
     private var assetIndex: [String: AssetSnapshot] = [:]
+    private var settingsGeneration: [String: Int64] = [:]
+    private let albumGate = PreparationGate()
     private var workers = Set<String>()
+    private var collectedStaging = Set<String>()
     private var subscriptions = Set<AnyCancellable>()
     private var timer: Task<Void, Never>?
     private var starting = false
@@ -100,20 +103,25 @@ final class HarborModel: ObservableObject {
     private func persist(_ value: BackupJob) async throws {
         guard let store else { throw HarborError("DATABASE_ERROR") }
         var value = value; value.updated = Date()
-        do { try await store.save(value, kind: "job", id: value.id) }
-        catch { fatalStorage(error); throw error }
+        value.generation = (jobs.first(where: { $0.id == value.id })?.generation ?? 0) + 1
+        // Publish intent before yielding: pause/cancel must see the latest transport ID.
         if let index = jobs.firstIndex(where: { $0.id == value.id }) { jobs[index] = value } else { jobs.append(value) }
+        do { try await store.save(value, kind: "job", id: value.id, revision: value.generation ?? 0) }
+        catch { fatalStorage(error); throw error }
     }
     private func loadSettings() async throws {
         guard let store else { return }
         let saved = try await store.load(AccountSettings.self, kind: "settings")
+        settingsGeneration = Dictionary(uniqueKeysWithValues: saved.map { ($0.account, $0.generation ?? 0) })
         settings = saved.first(where: { $0.account == account })?.settings ?? BackupSettings()
     }
-    struct AccountSettings: Codable { var account: String; var settings: BackupSettings }
+    struct AccountSettings: Codable { var account: String; var settings: BackupSettings; var generation: Int64? }
     func saveSettings() async {
         guard !account.isEmpty, let store else { return }
         do {
-            try await store.save(AccountSettings(account: account, settings: settings), kind: "settings", id: account)
+            let generation = (settingsGeneration[account] ?? 0) + 1
+            settingsGeneration[account] = generation
+            try await store.save(AccountSettings(account: account, settings: settings, generation: generation), kind: "settings", id: account, revision: generation)
             cleanupReady = []
             await automaticScan(); await pump()
         } catch { fatalStorage(error) }
@@ -220,7 +228,7 @@ final class HarborModel: ObservableObject {
         let tasks = await transfer.tasks()
         let referenced = Set(tasks.compactMap { $0.taskDescription?.components(separatedBy: ":").first })
         let receipts = (try? transfer.pendingReceipts()) ?? []
-        for job in jobs where [.completed, .cancelled].contains(job.state) && !workers.contains(job.id) && !referenced.contains(job.id) {
+        for job in jobs where [.completed, .cancelled].contains(job.state) && !workers.contains(job.id) && !referenced.contains(job.id) && !collectedStaging.contains(job.id) {
             let directory = engine.home.appendingPathComponent("Staging/\(job.id)", isDirectory: true)
             try? FileManager.default.removeItem(at: directory)
             for resource in job.resources {
@@ -230,6 +238,7 @@ final class HarborModel: ObservableObject {
             for receipt in receipts where receipt.jobID == job.id {
                 try? FileManager.default.removeItem(atPath: receipt.responsePath); transfer.acknowledge(receipt)
             }
+            collectedStaging.insert(job.id)
         }
     }
     private func checkpoint(_ job: BackupJob) throws {
@@ -311,7 +320,9 @@ final class HarborModel: ObservableObject {
                         let task = try transfer.create(job: job, resource: resource, plan: plan)
                         job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
                         do { try await persist(job) } catch { task.cancel(); throw error }
-                        task.resume()
+                        let current = jobs.first(where: { $0.id == job.id })?.state
+                        if current == .cancelled { task.cancel() }
+                        else if current != .paused { task.resume() }
                         return
                     }
                 }
@@ -345,6 +356,8 @@ final class HarborModel: ObservableObject {
     }
     private func synchronizeAlbums(_ job: BackupJob) async throws {
         guard let store else { throw HarborError("DATABASE_ERROR") }
+        await albumGate.acquire()
+        do {
         let keys = job.resources.map(\.remoteKey)
         for local in job.albumIDs {
             try checkpoint(job)
@@ -358,6 +371,8 @@ final class HarborModel: ObservableObject {
                 try await store.save(map, kind: "album", id: job.account + ":" + local); mappings.append(map)
             }
         }
+        } catch { await albumGate.release(); throw error }
+        await albumGate.release()
     }
     private func replayReceipts() async {
         do { for receipt in try transfer.pendingReceipts() { await receive(receipt) } }
@@ -438,20 +453,21 @@ final class HarborModel: ObservableObject {
         return CleanupEvidence(account: job.account, revision: job.assetRevision, policy: settings.cleanupPolicy,
             manifest: job.sources.map { "\($0.role):\($0.sha256)" }.sorted())
     }
-    func deleteVerified() async {
-        guard !cleanupRunning, !cleanupReady.isEmpty else { return }
+    func deleteVerified(ids: [String]? = nil) async {
+        let selected = ids ?? cleanupReady
+        guard !cleanupRunning, !selected.isEmpty, Set(selected).isSubset(of: Set(cleanupReady)) else { return }
         cleanupRunning = true
         defer { cleanupRunning = false; cleanupReady = [] }
         do {
             var identifiers = Set<String>()
-            for id in cleanupReady {
+            for id in selected {
                 guard var job = jobs.first(where: { $0.id == id }), let evidence = job.evidence,
                       evidence.valid(job: job, settings: settings) else { throw HarborError("CLEANUP_UNVERIFIED") }
                 // Re-export/hash and re-query immediately before the system deletion request.
                 job.evidence = try await checkCleanup(job); try await persist(job); identifiers.insert(job.assetID)
             }
             // A long batch must not let the first item's evidence expire while checking the last.
-            for id in cleanupReady {
+            for id in selected {
                 guard let job = jobs.first(where: { $0.id == id }), job.evidence?.valid(job: job, settings: settings) == true,
                       let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
                       PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("CLEANUP_UNVERIFIED") }
@@ -463,7 +479,7 @@ final class HarborModel: ObservableObject {
             guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == authorization else { throw HarborError("PHOTO_PERMISSION") }
             let remaining = PHAsset.fetchAssets(withLocalIdentifiers: Array(identifiers), options: nil)
             var present = Set<String>(); remaining.enumerateObjects { asset, _, _ in present.insert(asset.localIdentifier) }
-            for id in cleanupReady {
+            for id in selected {
                 cleanupResults[id] = jobs.first(where: { $0.id == id }).map { present.contains($0.assetID) ? "仍保留在相册" : "系统已完成删除请求" } ?? "请检查系统相册"
             }
             notice = "清理请求已完成，请查看结果。"; await library.refresh()

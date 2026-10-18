@@ -1,6 +1,9 @@
 import XCTest
 import ImageIO
 import UIKit
+import Darwin
+import AVFoundation
+import UniformTypeIdentifiers
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
@@ -92,5 +95,89 @@ final class BackupCoreTests: XCTestCase {
         let read = try await store.load(AssetSnapshot.self, kind: "asset")
         XCTAssertEqual(read.count, 10_000)
         XCTAssertTrue(read.allSatisfy(\.accessible))
+    }
+    func testLateWriteCannotUndoPersistedPause() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try BackupStore(url: directory.appendingPathComponent("race.sqlite"))
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: BackupSettings())
+        job.state = .paused
+        try await store.save(job, kind: "job", id: job.id, revision: 10)
+        job.state = .transferring
+        try await store.save(job, kind: "job", id: job.id, revision: 9)
+        let values = try await store.load(BackupJob.self, kind: "job")
+        XCTAssertEqual(values.first?.state, .paused)
+    }
+    func testActualFileBeyondFourGiBHashesWithBoundedMemory() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertTrue(FileManager.default.createFile(atPath: file.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: file)
+        let length: UInt64 = 4 * 1024 * 1024 * 1024 + 17
+        try handle.truncate(atOffset: length) // Sparse fixture: no multi-GB repo or artifact.
+        try handle.seek(toOffset: length - 1); try handle.write(contentsOf: Data([1])); try handle.close()
+        var before = rusage(); getrusage(RUSAGE_SELF, &before)
+        let digest = try ResourceExporter.hash(file)
+        var after = rusage(); getrusage(RUSAGE_SELF, &after)
+        XCTAssertEqual(digest.2, Int64(length))
+        XCTAssertEqual(digest.0.count, 40); XCTAssertEqual(digest.1.count, 64)
+        XCTAssertLessThan(after.ru_maxrss - before.ru_maxrss, 256 * 1024 * 1024)
+    }
+    func testHEICContainerRetainsImageAndUsesMpvdHeader() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let still = directory.appendingPathComponent("source.heic"), video = directory.appendingPathComponent("source.mov")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { context in UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 64, height: 64)) }
+        guard let destination = CGImageDestinationCreateWithURL(still as CFURL, UTType.heic.identifier as CFString, 1, nil) else { throw XCTSkip("HEIC encoder unavailable in this simulator") }
+        CGImageDestinationAddImage(destination, try XCTUnwrap(image.cgImage), nil)
+        guard CGImageDestinationFinalize(destination) else { throw XCTSkip("HEIC encoding unsupported in this simulator") }
+        let clip = Data("video-tail".utf8); try clip.write(to: video)
+        let output = try MotionPhoto.mux(still: still, video: video, timestamp: 0, directory: directory)
+        let data = try Data(contentsOf: output)
+        XCTAssertEqual(data.suffix(clip.count), clip)
+        XCTAssertEqual(String(decoding: data.dropLast(clip.count).suffix(4), as: UTF8.self), "mpvd")
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(output as CFURL, nil))
+        XCTAssertNotNil(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let metadata = try XCTUnwrap(CGImageSourceCopyMetadataAtIndex(source, 0, nil))
+        XCTAssertEqual(CGImageMetadataCopyStringValueWithPath(metadata, nil, "Camera:MotionPhoto" as CFString) as String?, "1")
+    }
+    func testKeyframeIsReadFromRealQuickTimeTimedMetadata() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let video = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 64, AVVideoHeightKey: 64])
+        let pixels = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: video, sourcePixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 64, kCVPixelBufferHeightKey as String: 64])
+        writer.add(video)
+        let identifier = "mdta/com.apple.quicktime.still-image-time"
+        var format: CMFormatDescription?
+        let specification: [String: Any] = [kCMMetadataFormatDescriptionMetadataSpecificationKey_Identifier as String: identifier,
+            kCMMetadataFormatDescriptionMetadataSpecificationKey_DataType as String: kCMMetadataBaseDataType_SInt8]
+        XCTAssertEqual(CMMetadataFormatDescriptionCreateWithMetadataSpecifications(allocator: kCFAllocatorDefault, metadataType: kCMMetadataFormatType_Boxed, metadataSpecifications: [specification] as CFArray, formatDescriptionOut: &format), noErr)
+        let metadata = AVAssetWriterInput(mediaType: .metadata, outputSettings: nil, sourceFormatHint: format)
+        let adaptor = AVAssetWriterInputMetadataAdaptor(assetWriterInput: metadata)
+        writer.add(metadata)
+        XCTAssertTrue(writer.startWriting()); writer.startSession(atSourceTime: .zero)
+        let item = AVMutableMetadataItem(); item.identifier = AVMetadataIdentifier(rawValue: identifier)
+        item.value = NSNumber(value: Int8(0)); item.dataType = kCMMetadataBaseDataType_SInt8 as String
+        XCTAssertTrue(adaptor.append(AVTimedMetadataGroup(items: [item], timeRange: CMTimeRange(start: CMTime(value: 6, timescale: 24), duration: CMTime(value: 1, timescale: 24)))))
+        metadata.markAsFinished()
+        var buffer: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 64, 64, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
+        let pixel = try XCTUnwrap(buffer)
+        CVPixelBufferLockBaseAddress(pixel, [])
+        if let pointer = CVPixelBufferGetBaseAddress(pixel) { memset(pointer, 0, CVPixelBufferGetDataSize(pixel)) }
+        CVPixelBufferUnlockBaseAddress(pixel, [])
+        let deadline = Date(timeIntervalSinceNow: 20)
+        for index in 0..<24 {
+            while !video.isReadyForMoreMediaData && Date() < deadline { try await Task.sleep(for: .milliseconds(2)) }
+            XCTAssertTrue(video.isReadyForMoreMediaData)
+            XCTAssertTrue(pixels.append(pixel, withPresentationTime: CMTime(value: Int64(index), timescale: 24)))
+        }
+        video.markAsFinished(); await writer.finishWriting()
+        XCTAssertEqual(writer.status, .completed)
+        let timestamp = try await MotionPhoto.presentationTime(url)
+        XCTAssertEqual(timestamp, 250000)
     }
 }

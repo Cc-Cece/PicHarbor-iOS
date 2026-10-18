@@ -84,8 +84,14 @@ enum MotionPhoto {
         }
         let input = try FileHandle(forReadingFrom: video); defer { try? input.close() }
         var copied: Int64 = 0
-        while let block = try input.read(upToCount: 1024 * 1024), !block.isEmpty {
-            try Task.checkCancellation(); try output.write(contentsOf: block); copied += Int64(block.count)
+        while true {
+            let count = try autoreleasepool { () throws -> Int in
+                try Task.checkCancellation()
+                guard let block = try input.read(upToCount: 1024 * 1024), !block.isEmpty else { return 0 }
+                try output.write(contentsOf: block); copied += Int64(block.count)
+                return block.count
+            }
+            if count == 0 { break }
         }
         guard copied == length else { throw HarborError("SOURCE_CHANGED") }
         try output.synchronize()

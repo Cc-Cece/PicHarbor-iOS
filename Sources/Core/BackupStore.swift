@@ -12,18 +12,27 @@ actor BackupStore {
         guard sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &versionQuery, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
         let version = sqlite3_step(versionQuery) == SQLITE_ROW ? sqlite3_column_int(versionQuery, 0) : -1
         sqlite3_finalize(versionQuery)
-        guard version >= 0 && version <= 1 else { throw HarborError("DATABASE_VERSION_UNSUPPORTED") }
-        guard sqlite3_exec(db, "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS documents(kind TEXT NOT NULL,id TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(kind,id)); PRAGMA user_version=1;", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        guard version >= 0 && version <= 2 else { throw HarborError("DATABASE_VERSION_UNSUPPORTED") }
+        guard sqlite3_exec(db, "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS documents(kind TEXT NOT NULL,id TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(kind,id));", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        var columns: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM pragma_table_info('documents') WHERE name='revision'", -1, &columns, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        let hasRevision = sqlite3_step(columns) == SQLITE_ROW && sqlite3_column_int(columns, 0) == 1
+        sqlite3_finalize(columns)
+        if !hasRevision {
+            guard sqlite3_exec(db, "ALTER TABLE documents ADD COLUMN revision INTEGER NOT NULL DEFAULT 0", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        }
+        guard sqlite3_exec(db, "PRAGMA user_version=2", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
     }
     deinit { sqlite3_close(db) }
-    func save<T: Encodable>(_ value: T, kind: String, id: String) throws {
+    func save<T: Encodable>(_ value: T, kind: String, id: String, revision: Int64 = 0) throws {
         let data = try JSONEncoder().encode(value)
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO documents(kind,id,payload) VALUES(?,?,?)", -1, &statement, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        guard sqlite3_prepare_v2(db, "INSERT INTO documents(kind,id,payload,revision) VALUES(?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET payload=excluded.payload,revision=excluded.revision WHERE excluded.revision>=documents.revision", -1, &statement, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_text(statement, 1, kind, -1, transient)
         sqlite3_bind_text(statement, 2, id, -1, transient)
         _ = data.withUnsafeBytes { sqlite3_bind_blob(statement, 3, $0.baseAddress, Int32($0.count), transient) }
+        sqlite3_bind_int64(statement, 4, revision)
         guard sqlite3_step(statement) == SQLITE_DONE else { throw HarborError("DATABASE_ERROR") }
     }
     func load<T: Decodable>(_ type: T.Type, kind: String) throws -> [T] {

@@ -149,8 +149,14 @@ enum ResourceExporter {
         let before = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         let input = try FileHandle(forReadingFrom: url); defer { try? input.close() }
         var sha1 = Insecure.SHA1(), sha256 = SHA256(), size: Int64 = 0
-        while let data = try input.read(upToCount: 1024 * 1024), !data.isEmpty {
-            try Task.checkCancellation(); sha1.update(data: data); sha256.update(data: data); size += Int64(data.count)
+        while true {
+            let count = try autoreleasepool { () throws -> Int in
+                try Task.checkCancellation()
+                guard let data = try input.read(upToCount: 1024 * 1024), !data.isEmpty else { return 0 }
+                sha1.update(data: data); sha256.update(data: data); size += Int64(data.count)
+                return data.count
+            }
+            if count == 0 { break }
         }
         let after = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         guard before.fileSize == after.fileSize, before.contentModificationDate == after.contentModificationDate, size == Int64(before.fileSize ?? -1), size > 0 else { throw HarborError("SOURCE_CHANGED") }

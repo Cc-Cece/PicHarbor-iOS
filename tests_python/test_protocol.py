@@ -5,7 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "Python"), str(ROOT / "Vendor")]
@@ -145,6 +145,52 @@ class ProtocolTests(unittest.TestCase):
         self.assertFalse(result["recognized"])
         protocol.snapshot["edited"]["motion"] = True
         self.assertTrue(self.service.dispatch("motion_status", {"account": self.service.account, "keys": ["original", "edited"]})["recognized"])
+
+    def test_complete_paged_snapshot_preserves_quality_trash_and_motion_presence(self):
+        self.service.api.get_library_state = lambda _: {"1": {"1": "next", "6": "token", "2": {
+            "1": "plain", "2": {"10": 6, "11": 100, "16": b"", "35": {"3": 2}}}}}
+        self.service.api.get_library_page_init = lambda _: {"1": {"6": "final", "2": {
+            "1": "motion", "2": {"10": 12, "11": 100, "16": {"3": 123}, "35": {"3": 2}},
+            "5": {"5": {"2": {"4": {"1": 3}}}}}}}
+        self.service.protocol.synchronize()
+        self.assertTrue(self.service.protocol.snapshot["plain"]["original"])
+        self.assertEqual(self.service.protocol.snapshot["plain"]["trash"], 0)
+        self.assertEqual(self.service.protocol.snapshot["motion"]["trash"], 123)
+        self.assertTrue(self.service.protocol.snapshot["motion"]["motion"])
+        self.assertGreater(self.service.protocol.snapshot_at, 0)
+
+    def test_cyclic_pagination_never_publishes_partial_snapshot(self):
+        response = {"1": {"1": "repeat", "6": "token"}}
+        self.service.api.get_library_state = lambda _: response
+        self.service.api.get_library_page_init = lambda _: response
+        with self.assertRaisesRegex(Failure, "SYNC_CYCLE"):
+            self.service.protocol.synchronize()
+        self.assertEqual(self.service.protocol.snapshot_at, 0)
+
+    def test_original_access_range_fallback_reads_headers_not_body(self):
+        head, ranged = MagicMock(), MagicMock()
+        head.status_code, head.headers = 405, {}
+        ranged.status_code, ranged.headers = 206, {"Content-Range": "bytes 0-0/6", "Content-Length": "1"}
+        head.__enter__.return_value = head
+        ranged.__enter__.return_value = ranged
+        session = MagicMock(); session.__enter__.return_value = session
+        session.request.side_effect = [head, ranged]
+        self.service.api._new_session = lambda: session
+        self.service.api.get_download_urls = lambda _: {"1": {"5": {"2": {"6": "https://lh3.googleusercontent.com/original"}}}}
+        self.assertTrue(self.service.protocol.original_access("key", 6))
+        self.assertEqual(session.request.call_args.kwargs["headers"]["Range"], "bytes=0-0")
+        ranged.iter_content.assert_not_called()
+
+    def test_original_access_never_follows_external_redirect(self):
+        response = MagicMock(); response.status_code = 302
+        response.headers = {"Location": "https://attacker.test/signed"}
+        response.__enter__.return_value = response
+        session = MagicMock(); session.__enter__.return_value = session
+        session.request.return_value = response
+        self.service.api._new_session = lambda: session
+        self.service.api.get_download_urls = lambda _: {"1": {"5": {"2": {"6": "https://lh3.googleusercontent.com/original"}}}}
+        self.assertFalse(self.service.protocol.original_access("key", 6))
+        self.assertEqual(session.request.call_count, 1)
 
 
 if __name__ == "__main__":
