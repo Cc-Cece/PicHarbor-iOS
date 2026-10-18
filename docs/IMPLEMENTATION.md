@@ -34,6 +34,8 @@ gpmc Vendor 文件保持固定快照。本轮适配在 Python/harbor_protocol.py
 
 ## 尚未证明，不能标为完成
 
+Live Photo 的具体协议线索和逐项验收表见 `LIVE-PHOTO-VALIDATION.md`。
+
 - 苹果原始资源在 Google Photos 的真实云端关联协议。当前 capability apple_pair=false，任务明确报 PAIR_PROTOCOL_UNVERIFIED；不会发送猜测 RPC 或分别上传两个独立文件冒充支持。
 - 两种方式的官方 Google Photos iOS 客户端保存回相册后，动态、声音、关键帧、HDR、编辑版本正确性。
 - Live Photo 清理资格：没有完整配对/取回证据前，一律保留原件。

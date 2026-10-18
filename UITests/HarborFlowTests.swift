@@ -8,6 +8,20 @@ final class HarborFlowTests: XCTestCase {
         if later.waitForExistence(timeout: 30) { capture("welcome"); later.tap() }
         XCTAssertTrue(app.tabBars.buttons["照片"].waitForExistence(timeout: 10))
         capture("photos-permission")
+        let authorize = app.buttons["允许访问相册"]
+        if authorize.exists {
+            authorize.tap()
+            let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+            let allow = springboard.buttons["Allow Full Access"]
+            XCTAssertTrue(allow.waitForExistence(timeout: 10))
+            if allow.exists { allow.tap() }
+        }
+        XCTAssertTrue(app.collectionViews.cells.firstMatch.waitForExistence(timeout: 10))
+        capture("photos-authorized")
+        app.collectionViews.cells.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["照片详情"].waitForExistence(timeout: 5))
+        capture("photo-detail")
+        app.buttons["关闭"].tap()
         app.tabBars.buttons["备份"].tap()
         XCTAssertTrue(app.navigationBars["备份"].waitForExistence(timeout: 5)); capture("backup")
         app.buttons["备份偏好"].tap()
