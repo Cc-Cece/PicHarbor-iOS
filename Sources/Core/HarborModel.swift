@@ -66,6 +66,7 @@ final class HarborModel: ObservableObject {
     func boot() async {
         guard !initialized && !starting else { return }
         starting = true
+        storageFailed = false
         defer { starting = false }
         await engine.boot()
         guard engine.ready else { notice = engine.message; return }

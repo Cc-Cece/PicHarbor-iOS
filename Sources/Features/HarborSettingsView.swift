@@ -209,7 +209,7 @@ struct ConnectionView: View {
                 else if !model.initialized { Text("应用初始化尚未完成。请检查运行环境后重试。") }
                 if !loginError.isEmpty { Text(loginError).foregroundStyle(.red).accessibilityIdentifier("connection.error") }
                 Text(model.engine.message).font(.footnote).foregroundStyle(.secondary)
-                if !model.engine.ready { Button("重新检查运行环境") { Task { await model.boot() } } }
+                if !model.initialized && !model.engine.busy { Button("重新检查运行环境") { Task { await model.boot() } } }
             }
         }.navigationTitle("欢迎使用 PicHarbor").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("稍后") { dismiss() }.disabled(connecting) } }
