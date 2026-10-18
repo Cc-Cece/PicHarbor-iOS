@@ -360,8 +360,9 @@ final class HarborModel: ObservableObject {
                         job.resources[index].confirmed = true; try await persist(job)
                     } else {
                         let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+                        let reserved = jobs.flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
                         // Background URLSession may make its own file copy.
-                        guard free > resource.size + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
+                        guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
                         let task = try transfer.create(job: job, resource: resource, plan: plan)
                         job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
                         do { try await persist(job) } catch { task.cancel(); throw error }
@@ -499,7 +500,7 @@ final class HarborModel: ObservableObject {
             var request = payload(source, account: job.account)
             request["cloud_state"] = settings.cloudState; request["original_access"] = settings.originalAccess
             let result = try await engine.invoke("check_cleanup", request)
-            guard result["eligible"] as? Bool == true else { throw HarborError("CLEANUP_UNVERIFIED") }
+            guard result["eligible"] as? Bool == true else { throw HarborError(result["reason"] as? String ?? "CLEANUP_UNVERIFIED") }
         }
         return CleanupEvidence(account: job.account, revision: job.assetRevision, policy: settings.cleanupPolicy,
             manifest: job.sources.map { "\($0.role):\($0.sha256)" }.sorted())

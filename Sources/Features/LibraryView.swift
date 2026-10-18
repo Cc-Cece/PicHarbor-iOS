@@ -145,7 +145,7 @@ private final class PhotoCell: UICollectionViewCell {
         super.init(frame: frame)
         image.contentMode = .scaleAspectFill; image.clipsToBounds = true; image.backgroundColor = .secondarySystemBackground
         badge.textColor = .white; badge.font = .systemFont(ofSize: 25, weight: .bold); badge.textAlignment = .right
-        subtitle.textColor = .white; subtitle.font = .systemFont(ofSize: 11, weight: .semibold)
+        subtitle.textColor = .white; subtitle.font = .preferredFont(forTextStyle: .caption2); subtitle.adjustsFontForContentSizeCategory = true
         cloud.tintColor = .white; cloud.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8); cloud.layer.cornerRadius = 5; cloud.contentMode = .scaleAspectFit
         for view in [image, badge, subtitle, cloud] { view.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(view) }
         NSLayoutConstraint.activate([
@@ -190,6 +190,7 @@ private struct AssetDetailView: View {
     @State private var player: AVPlayer?
     @State private var loading = true
     @State private var previewError = false
+    @State private var previewRequest: PHImageRequestID?
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
@@ -209,22 +210,25 @@ private struct AssetDetailView: View {
         }
         .navigationTitle("照片详情").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
-        .onAppear { load() }.onDisappear { player?.pause() }
+        .onAppear { load() }.onDisappear {
+            player?.pause()
+            if let request = previewRequest { model.library.images.cancelImageRequest(request) }
+        }
     }
     private func load() {
         if asset.mediaType == .video {
             let options = PHVideoRequestOptions(); options.isNetworkAccessAllowed = true
-            model.library.images.requestPlayerItem(forVideo: asset, options: options) { value, _ in
+            previewRequest = model.library.images.requestPlayerItem(forVideo: asset, options: options) { value, _ in
                 Task { @MainActor in loading = false; previewError = value == nil; if let value { player = AVPlayer(playerItem: value) } }
             }
         } else if asset.mediaSubtypes.contains(.photoLive) {
             let options = PHLivePhotoRequestOptions(); options.isNetworkAccessAllowed = true
-            model.library.images.requestLivePhoto(for: asset, targetSize: CGSize(width: 1200, height: 1600), contentMode: .aspectFit, options: options) { value, info in
+            previewRequest = model.library.images.requestLivePhoto(for: asset, targetSize: CGSize(width: 1200, height: 1600), contentMode: .aspectFit, options: options) { value, info in
                 Task { @MainActor in live = value; loading = info?[PHImageResultIsDegradedKey] as? Bool == true; previewError = value == nil && !loading }
             }
         } else {
             let options = PHImageRequestOptions(); options.isNetworkAccessAllowed = true
-            model.library.images.requestImage(for: asset, targetSize: CGSize(width: 1600, height: 2000), contentMode: .aspectFit, options: options) { value, info in
+            previewRequest = model.library.images.requestImage(for: asset, targetSize: CGSize(width: 1600, height: 2000), contentMode: .aspectFit, options: options) { value, info in
                 Task { @MainActor in image = value; loading = info?[PHImageResultIsDegradedKey] as? Bool == true; previewError = value == nil && !loading }
             }
         }
