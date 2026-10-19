@@ -124,12 +124,25 @@ class Protocol:
                 checks.append(reason)
             return {"recognized": not any(checks), "reason": next((reason for reason in checks if reason), "")}
         if action == "check_cleanup":
-            key = self.api.find_remote_media_by_hash(self.digest(value))
+            paired_video = value.get("paired_video", False)
+            if type(paired_video) is not bool:
+                raise Failure("INVALID_CHECK_POLICY")
+            if paired_video:
+                from harbor_live import LiveProtocol
+                key = LiveProtocol(self).motion_key(self.digest(value))
+            else:
+                key = self.api.find_remote_media_by_hash(self.digest(value))
             if not key:
                 return {"eligible": False, "reason": "REMOTE_MISSING"}
             state, access = value.get("cloud_state", True), value.get("original_access", True)
             if type(state) is not bool or type(access) is not bool:
                 raise Failure("INVALID_CHECK_POLICY")
+            # The still item's length/download URL cannot prove access to the
+            # paired movie. Keep enabled checks conservative until that protocol
+            # has independent evidence; the explicit reduced policy can use the
+            # fresh hash proof without claiming original-access verification.
+            if paired_video and (state or access):
+                return {"eligible": False, "reason": "LIVE_COMPONENT_UNVERIFIED"}
             if state:
                 if not (self.snapshot_at > 0 and 0 <= time.monotonic() - self.snapshot_at < 300):
                     if value.get("refresh_if_stale") is True:

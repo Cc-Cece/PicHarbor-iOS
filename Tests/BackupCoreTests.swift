@@ -9,6 +9,37 @@ import SwiftUI
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    func testLiveCleanupConsentMigratesOffAndInvalidatesEvidence() throws {
+        var settings = BackupSettings()
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+        json.removeValue(forKey: "allowUnverifiedLiveCleanup")
+        XCTAssertFalse(try JSONDecoder().decode(BackupSettings.self, from: JSONSerialization.data(withJSONObject: json)).allowsUnverifiedLiveCleanup)
+        var job = try pairedJob(); job.state = .completed
+        let evidence = CleanupEvidence(account: job.account, revision: job.assetRevision, policy: settings.cleanupPolicy, manifest: [])
+        XCTAssertFalse(LiveCleanupPolicy.permits(job, settings: settings))
+        settings.allowUnverifiedLiveCleanup = true
+        XCTAssertTrue(LiveCleanupPolicy.permits(job, settings: settings))
+        XCTAssertFalse(evidence.valid(job: job, settings: settings))
+        job.resources[1].confirmed = false
+        XCTAssertFalse(LiveCleanupPolicy.permits(job, settings: settings))
+        XCTAssertFalse(CleanupCandidates.policyMatches(BackupSettings(), current: settings))
+        XCTAssertEqual(settings.mediaPolicy, BackupSettings().mediaPolicy)
+    }
+    func testLookupUploadAndSaveHaveDistinctUserFacingStages() throws {
+        var job = try pairedJob(); job.settings.strictLiveConfirmation = false
+        job.resources = [MediaResource(role: "original.photo", path: "p", name: "p")]
+        job.state = .confirming; job.failureStage = "prepare_upload"
+        XCTAssertEqual(job.displayStatus, "检查是否已备份"); XCTAssertEqual(job.flowIndex, 1)
+        job.state = .transferring
+        XCTAssertEqual(job.displayStatus, "上传照片"); XCTAssertEqual(job.flowIndex, 2)
+        job.state = .committing
+        XCTAssertEqual(job.displayStatus, "确认保存"); XCTAssertEqual(job.flowIndex, 3)
+        job.state = .confirming; job.failureStage = "pair_lookup"
+        job.livePairs?[0].submitted = true
+        XCTAssertEqual(job.flowIndex, 3, "An uncertain submitted pair is a save check, not pre-upload dedup")
+        job.isLive = false; job.mediaKind = "video"
+        XCTAssertEqual(job.flowSteps.first, "准备视频"); XCTAssertEqual(job.flowSteps[2], "上传视频")
+    }
     func testCleanupSnapshotRejectsNetworkAndVerificationChangesOnly() {
         let captured = BackupSettings()
         var changed = captured; changed.wifiOnly = false
@@ -46,7 +77,7 @@ final class BackupCoreTests: XCTestCase {
         job.settings.strictLiveConfirmation = false
         XCTAssertEqual(job.dedupKey, identity, "Checking policy must never cause an automatic media re-upload")
         XCTAssertTrue(job.standardConfirmationPassed)
-        XCTAssertFalse(job.flowSteps.contains("严格核验"))
+        XCTAssertFalse(job.flowSteps.contains("等待云端处理"))
         job.resources[1].confirmed = false
         XCTAssertFalse(job.standardConfirmationPassed)
         job.resources[1].confirmed = true; job.resources[1].remoteKey = "other"
@@ -100,7 +131,7 @@ final class BackupCoreTests: XCTestCase {
             }.padding(24).frame(width: 390).background(Color(uiColor: .systemBackground)))
             guard let image = renderer.uiImage else { return XCTFail("Missing flow render") }
             let attachment = XCTAttachment(image: image); attachment.name = strict ? "task-flow-strict" : "task-flow-standard"; attachment.lifetime = .keepAlways; add(attachment)
-            XCTAssertEqual(job.flowIndex, strict ? 3 : job.flowSteps.count - 1)
+            XCTAssertEqual(job.flowIndex, strict ? 4 : job.flowSteps.count - 1)
         }
     }
 

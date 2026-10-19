@@ -20,12 +20,18 @@ struct HarborRootView: View {
         .safeAreaInset(edge: .top) {
             if model.notice == "已加入备份队列。" {
                 HStack {
-                    Label("已加入备份队列", systemImage: "checkmark.circle.fill").font(.subheadline)
+                    Label("已加入备份队列 · \(model.queueNoticeCount) 项", systemImage: "checkmark.circle.fill").font(.subheadline)
                     Spacer()
                     Button("查看活动") { model.notice = ""; selectedTab = 2 }
                     Button { model.notice = "" } label: { Image(systemName: "xmark") }.accessibilityLabel("关闭备份提示")
                 }.padding().background(.regularMaterial)
             }
+        }
+        .task(id: model.queueNoticeID) {
+            guard model.notice == "已加入备份队列。" else { return }
+            let identifier = model.queueNoticeID
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            if identifier == model.queueNoticeID && model.notice == "已加入备份队列。" { model.notice = "" }
         }
         .task {
             await model.boot()
@@ -104,7 +110,7 @@ struct JobRow: View {
                 .font(.title2).foregroundStyle(job.state == .completed ? .green : .blue).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 Text(job.sources.first?.name ?? (job.isLive ? "Live Photo" : "照片或视频")).lineLimit(1)
-                Text(job.albumsPending ? "媒体已备份 · 等待相簿同步" : job.state.title).font(.caption).foregroundStyle(.secondary)
+                Text(job.albumsPending ? "已备份 · 等待相簿同步" : job.displayStatus).font(.caption).foregroundStyle(.secondary)
                 if job.state == .transferring { ProgressView(value: job.progress).accessibilityLabel("上传进度") }
             }
             Spacer()

@@ -13,15 +13,15 @@ struct JobDetailView: View {
         List {
             if let job {
                 Section {
-                    HStack(spacing: 16) { TaskThumbnail(assetID: job.assetID); JobRow(job: job) }
+                    HStack(spacing: 16) { AssetThumbnail(assetID: job.assetID); JobRow(job: job) }
                     Text(job.settings.quality.title + (job.isLive ? " · " + job.settings.live.title : "")).font(.caption).foregroundStyle(.secondary)
-                    Text(job.verificationLevel == "strict" ? "严格核验通过" : job.verificationLevel == "standard" ? "标准核验通过" : job.state == .completed ? "历史任务，未单独记录核验级别" : job.settings.requiresStrictConfirmation ? "本任务使用严格核验" : "本任务使用标准核验").font(.caption).foregroundStyle(.secondary)
+                    Text(job.verificationLevel == "strict" ? "已确认动态处理完成" : job.verificationLevel == "standard" ? "已确认云端保存" : job.state == .completed ? "历史备份记录" : job.settings.requiresStrictConfirmation ? "保存后继续等待动态处理" : "云端保存确认后完成").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("备份流程") { TaskFlowView(job: job) }
                 Section(job.state == .failed || job.state == .attention ? "需要处理" : "当前状态") {
                     Text(job.friendlyMessage).foregroundStyle(.secondary)
                     if job.state == .transferring { ProgressView(value: job.progress).accessibilityLabel("上传进度") }
-                    if job.state == .completed && job.isLive { Text("Live Photo 完整资源取回验证开放前，本机原件会保留。").font(.footnote).foregroundStyle(.secondary) }
+                    if job.state == .completed && job.isLive { Text("清理前仍需单独检查，可在空间清理核验中调整。").font(.footnote).foregroundStyle(.secondary) }
                 }
                 Section {
                     if job.state == .completed {
@@ -131,25 +131,5 @@ struct TaskAdvancedInformation: View {
             Section { ShareLink(item: job.diagnosticText) { Label("导出脱敏诊断", systemImage: "square.and.arrow.up") } }
         }.navigationTitle("高级信息").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
-    }
-}
-
-private struct TaskThumbnail: View {
-    let assetID: String
-    @State private var image: UIImage?
-    @State private var request: PHImageRequestID?
-    var body: some View {
-        Group {
-            if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else { Image(systemName: "photo").font(.title).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
-        }.frame(width: 64, height: 64).background(Color(uiColor: .secondarySystemBackground)).clipShape(RoundedRectangle(cornerRadius: 12))
-        .onAppear {
-            let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            guard authorization == .authorized || authorization == .limited else { return }
-            guard request == nil, let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject else { return }
-            let options = PHImageRequestOptions(); options.isNetworkAccessAllowed = false
-            request = PHImageManager.default().requestImage(for: asset, targetSize: CGSize(width: 160, height: 160), contentMode: .aspectFill, options: options) { value, _ in DispatchQueue.main.async { image = value } }
-        }.onDisappear { if let request { PHImageManager.default().cancelImageRequest(request) }; request = nil }
-        .accessibilityHidden(true)
     }
 }

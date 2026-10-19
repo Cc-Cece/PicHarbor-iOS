@@ -22,7 +22,8 @@ struct HarborError: LocalizedError {
         case "LIVE_KEYFRAME_MISSING": return "无法读取 Live Photo 关键帧，已保留原件。"
         case "LIVE_PAIR_MISSING": return "无法取得同一版本的完整 Live Photo 资源。"
         case "MOTION_FORMAT_UNSUPPORTED", "MOTION_METADATA_ERROR": return "动态照片封装未完成，原件已保留。"
-        case "LIVE_CLEANUP_UNVERIFIED": return "此 Live Photo 尚无完整关联与官方客户端取回验证，暂不允许清理。"
+        case "LIVE_CLEANUP_UNVERIFIED": return LiveCleanupPolicy.waitingMessage
+        case "LIVE_COMPONENT_UNVERIFIED": return "照片和视频已保存，但暂时无法完成动态视频的额外检查。原件已保留，可在空间清理核验中查看检查选项。"
         case "CLEANUP_UNVERIFIED": return "完整资源或云端核验未通过，原件会保留。"
         case "CLEANUP_CANCELLED": return "检查已停止，原件会保留。"
         case "CLEANUP_POLICY_CHANGED": return "清理检查策略已变化，请按新策略重新检查。"

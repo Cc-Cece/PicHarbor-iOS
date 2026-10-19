@@ -1,6 +1,32 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testQueueNoticeHidesAfterThirtySeconds() {
+        let app = XCUIApplication(); app.launchArguments += ["--task-review-fixture", "--queue-notice-fixture"]; app.launch()
+        XCTAssertTrue(app.buttons["关闭备份提示"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.staticTexts["已加入备份队列 · 2 项"].exists)
+        let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["关闭备份提示"])
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 35), .completed)
+        XCTAssertTrue(app.navigationBars["活动"].exists)
+    }
+    func testLiveCleanupRequiresConsentAndPersistsIt() {
+        let app = XCUIApplication(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap(); app.buttons["空间清理核验"].tap()
+        let toggle = app.switches["cleanup.allowLive"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "0")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertTrue(app.alerts["可能影响动态照片的完整取回"].waitForExistence(timeout: 5))
+        app.alerts.buttons["暂不开启"].tap(); XCTAssertEqual(toggle.value as? String, "0")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        app.alerts.buttons["了解风险并开启"].tap(); XCTAssertEqual(toggle.value as? String, "1")
+        capture("cleanup-live-consent")
+        app.terminate(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap(); app.buttons["空间清理核验"].tap()
+        XCTAssertEqual(app.switches["cleanup.allowLive"].value as? String, "1")
+        setSwitch(app.switches["cleanup.allowLive"], on: false)
+    }
     func testBatchNavigationTaskFlowAndAdvancedInformationSheet() {
         let app = XCUIApplication(); app.launchArguments.append("--task-review-fixture"); app.launch()
         let batch = app.buttons["activity.batch"].firstMatch
@@ -9,6 +35,10 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["备份批次"].waitForExistence(timeout: 5)); capture("activity-batch-list")
         app.buttons["activity.task.ui-live"].tap()
         XCTAssertTrue(app.navigationBars["任务详情"].waitForExistence(timeout: 5))
+        app.buttons["photo.preview.ui-only-asset"].tap()
+        XCTAssertTrue(app.navigationBars["照片详情"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["无法查看照片"].exists)
+        app.buttons["关闭"].tap()
         XCTAssertTrue(app.staticTexts["备份流程"].exists)
         XCTAssertFalse(app.staticTexts["REMOTE_MOTION_NOT_DYNAMIC"].exists)
         capture("task-main-flow")
@@ -23,13 +53,13 @@ final class HarborFlowTests: XCTestCase {
     func testAdvancedBackupChecksDefaultOffAndPersist() {
         let app = XCUIApplication(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
-        app.tabBars.buttons["设置"].tap(); app.buttons["高级备份检查"].tap()
+        openAdvancedChecks(app)
         let toggle = app.switches["backup.strict"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "0")
         setSwitch(toggle, on: true); capture("advanced-backup-checks")
         app.terminate(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
-        app.tabBars.buttons["设置"].tap(); app.buttons["高级备份检查"].tap()
+        openAdvancedChecks(app)
         XCTAssertEqual(app.switches["backup.strict"].value as? String, "1")
         setSwitch(app.switches["backup.strict"], on: false)
     }
@@ -38,20 +68,20 @@ final class HarborFlowTests: XCTestCase {
         app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap(); app.buttons["备份偏好"].tap()
-        let joint = app.buttons["原始配对 · 联合提交（测试）"]
+        let joint = app.buttons["原始照片配对"]
         if !joint.isHittable { app.swipeUp() }
         XCTAssertTrue(joint.waitForExistence(timeout: 5)); joint.tap()
         capture("live-pair-joint-preference")
-        let repair = app.buttons["原始配对 · 先照片后视频（测试）"]
+        let repair = app.buttons["原始照片配对（分步上传）"]
         if !repair.isHittable { app.swipeUp() }
         repair.tap()
         app.terminate(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap(); app.buttons["备份偏好"].tap()
-        if !app.buttons["原始配对 · 先照片后视频（测试）"].isHittable { app.swipeUp() }
-        XCTAssertTrue(app.buttons["原始配对 · 先照片后视频（测试）"].isSelected)
+        if !app.buttons["原始照片配对（分步上传）"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["原始照片配对（分步上传）"].isSelected)
         capture("live-pair-reconcile-preference")
-        let motion = app.buttons["Motion Photo"]
+        let motion = app.buttons["动态照片封装"]
         if !motion.isHittable { app.swipeDown() }
         motion.tap()
     }
@@ -188,6 +218,13 @@ final class HarborFlowTests: XCTestCase {
         let value = NSPredicate(format: "value == %@", on ? "1" : "0")
         expectation(for: value, evaluatedWith: element)
         waitForExpectations(timeout: 5)
+    }
+    private func openAdvancedChecks(_ app: XCUIApplication) {
+        app.tabBars.buttons["设置"].tap()
+        XCTAssertFalse(app.buttons["高级备份检查"].exists)
+        app.buttons["备份偏好"].tap()
+        for _ in 0..<4 { if app.buttons["高级备份检查"].isHittable { break }; app.swipeUp() }
+        app.buttons["高级备份检查"].tap()
     }
     private func authorizePhotosIfNeeded(in app: XCUIApplication) {
         let authorize = app.buttons["允许访问相册"]

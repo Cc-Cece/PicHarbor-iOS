@@ -17,7 +17,6 @@ struct HarborSettingsView: View {
                 NavigationLink { BackupPreferencesView() } label: { Label("备份偏好", systemImage: "icloud.and.arrow.up") }
                 NavigationLink { BackupScopeView() } label: { Label("备份范围", systemImage: "rectangle.stack") }
                 NavigationLink { NetworkPreferencesView() } label: { Label("网络与后台", systemImage: "wifi") }
-                NavigationLink { AdvancedBackupChecksView() } label: { Label("高级备份检查", systemImage: "slider.horizontal.3") }
             }
             Section("设备") {
                 NavigationLink { PermissionView() } label: { Label("相册访问", systemImage: "photo.badge.checkmark") }
@@ -38,21 +37,19 @@ struct BackupPreferencesView: View {
         Form {
             Section {
                 Picker("上传画质", selection: $model.settings.quality) { ForEach(UploadQuality.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden()
-            } header: { Text("上传画质") } footer: { Text("对应 gpmc 的既有上传模式，实际配额与云端处理结果以服务端为准。") }
+            } header: { Text("上传画质") } footer: { Text("是否占用空间，以 Google 相册显示为准。") }
             Section {
                 Picker("备份方式", selection: $model.settings.live) { ForEach(LiveStrategy.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden()
             } header: { Text("Live Photo 备份方式") } footer: {
-                Text(model.settings.live == .motion ? "将照片与视频封装为单个 Motion Photo。封装件与本机原件在谷歌相册中可能分别显示。" : model.settings.live == .applePair ? "测试方式：分别传输原始照片和配对视频，再联合提交为一个项目。原图已在云端时自动走补视频路径。请先用新的专用样本测试。" : "测试方式：先确认原始照片已在云端，再上传视频并关联到该照片。用于对比联合提交及补动态路径，不会独立提交普通视频。")
-                if model.settings.live != .motion {
-                    Text("动态播放、同机识别、官方客户端取回及实际配额均需真机验证；当前 Live Photo 不参与本地清理。切换方式不会自动重新备份历史图库。").foregroundStyle(.secondary)
-                }
+                Text(model.settings.live == .motion ? "将照片和动态视频合成一个文件备份。同机查看时可能出现两张。" : model.settings.live == .applePair ? "将原始照片和动态视频一起备份。" : "先备份照片，再关联动态视频。")
+                Text("切换方式只影响新任务，已有照片不会自动重新上传。")
             }
             Section {
                 Picker("版本保留", selection: $model.settings.edits) { ForEach(EditPolicy.allCases) { Text($0.title).tag($0) } }
-            } header: { Text("编辑过的照片与视频") } footer: { Text("默认同时保留原始与编辑后版本，内容不同时在谷歌相册中分别显示；相同则去重。不保存可撤销的苹果编辑历史。") }
+            } header: { Text("编辑过的照片与视频") } footer: { Text("同时保留修改前后的内容；内容相同只备份一份。不保留撤销编辑的记录。") }
             Section {
                 Toggle("单向同步相簿", isOn: $model.settings.syncAlbums)
-            } footer: { Text("开启后将本地用户相簿添加到应用映射的云端相册；不会因本地移除而删除云端内容。设置只对新任务生效，历史项目可在任务详情按当前设置重新备份。") }
+            } footer: { Text("将本机相簿同步到 Google 相册。从本机相簿移除照片，不会删除云端内容。只对新任务生效。") }
             Section { NavigationLink("高级备份检查") { AdvancedBackupChecksView() } }
         }.navigationTitle("备份偏好").navigationBarTitleDisplayMode(.inline)
         .onChange(of: model.settings) { _, _ in Task { await model.saveSettings() } }
@@ -64,16 +61,16 @@ struct AdvancedBackupChecksView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("严格核验 Live Photo 动态就绪", isOn: Binding(get: { model.settings.requiresStrictConfirmation }, set: { value in
+                Toggle("等待云端完成动态处理", isOn: Binding(get: { model.settings.requiresStrictConfirmation }, set: { value in
                     model.settings.strictLiveConfirmation = value; Task { await model.saveSettings() }
                 })).accessibilityIdentifier("backup.strict")
             } footer: {
-                Text("默认关闭。标准模式在云端内容保存、原始照片与视频配对确认后完成；开启后继续等待云端处理状态与动态标记，蓝色对勾表示配对已确认、尚未完成。")
+                Text("默认关闭。开启后，照片和视频保存成功后还会等待动态处理完成。蓝色对勾表示已保存，仍在等待处理。")
             }
             Section {
-                Button("应用到已有待确认任务") { Task { await model.applyConfirmationPolicyToPending() } }
+                Button("对等待确认的任务使用此设置") { Task { await model.applyConfirmationPolicyToPending() } }
                     .disabled(!model.visibleJobs.contains { [.paired, .confirming].contains($0.state) && $0.confirmationOnly })
-            } footer: { Text("只更新待确认任务的检查策略，保留账号、画质、资源及批次。已完成记录保持原样，不重新上传。清理资格仍需单独检查，Live Photo 清理尚未开放。") }
+            } footer: { Text("不会重新上传照片，也不影响已完成的任务。清理本地照片前仍需单独检查。") }
         }.navigationTitle("高级备份检查").navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -133,9 +130,9 @@ struct NetworkPreferencesView: View {
                 Toggle("自动备份", isOn: Binding(get: { model.settings.automatic }, set: { value in if value { scope = true } else { model.settings.automatic = false } }))
                 NavigationLink("检查备份范围") { BackupScopeView() }
                 if model.updatingNetwork { ProgressView("正在为未完成任务应用网络设置…") }
-            } footer: { Text("网络设置立即应用于当前账号的未完成任务，手动暂停的任务保持暂停。已开始的文件传输可能从文件开头重新发送；画质与 Live Photo 等内容设置仍保留任务创建时的选择。关闭自动备份不会取消已有任务。") }
+            } footer: { Text("网络设置立即生效，手动暂停的任务保持暂停。正在上传的文件可能需要重传。关闭自动备份不会取消已有任务。") }
             Section("后台执行") {
-                Text("大文件由系统后台传输。图库扫描、封装与提交由系统尽力安排，前台打开时可靠继续。系统强制结束、低电量或网络限制可能延后任务。").foregroundStyle(.secondary)
+                Text("后台备份由 iPhone 安排，低电量或网络限制时可能延后。打开应用可继续备份。").foregroundStyle(.secondary)
                 LabeledContent("当前网络", value: !model.network.connected ? "未连接" : model.network.wifi ? "Wi-Fi" : "蜂窝网络")
                 LabeledContent("低电量模式", value: ProcessInfo.processInfo.isLowPowerModeEnabled ? "已开启" : "未开启")
                 LabeledContent("暂存资源", value: ByteCountFormatter.string(fromByteCount: model.stagedBytes, countStyle: .file))
@@ -150,36 +147,52 @@ struct CleanupPolicyView: View {
     @EnvironmentObject private var model: HarborModel
     @State private var state = true
     @State private var access = true
+    @State private var allowLive = false
+    @State private var liveConfirmation = false
     @State private var confirmation = false
     @State private var acknowledgment = ""
     var body: some View {
         Form {
             Section {
-                Label(state && access ? "完整核验" : "已降低核验强度", systemImage: state && access ? "checkmark.shield" : "exclamationmark.triangle")
-                    .foregroundStyle(state && access ? .blue : .orange)
-                Text("账号匹配、本地内容读取与哈希、服务端内容匹配、删除前变化检查，以及用户和系统确认始终启用。").font(.subheadline).foregroundStyle(.secondary)
+                Label(state && access && !allowLive ? "完整核验" : "已放宽清理检查", systemImage: state && access && !allowLive ? "checkmark.shield" : "exclamationmark.triangle")
+                    .foregroundStyle(state && access && !allowLive ? .blue : .orange)
+                Text("清理前会核对账号和照片内容，最后由你确认删除。").font(.subheadline).foregroundStyle(.secondary)
             }
             Section("额外核验") {
                 Toggle("最新云端状态", isOn: $state)
-                Text("检查回收站、处理状态、原画质标记与大小。").font(.caption).foregroundStyle(.secondary)
+                Text("确认云端照片正常保存，没有被删除。").font(.caption).foregroundStyle(.secondary)
                 Toggle("云端原件访问", isOn: $access)
-                Text("获取原件地址并检查可访问性与大小，不完整下载。").font(.caption).foregroundStyle(.secondary)
+                Text("确认云端原件可以读取，文件大小正确。").font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("允许清理尚未完整验证的 Live Photo", isOn: Binding(get: { allowLive }, set: { value in
+                    if value { liveConfirmation = true }
+                    else { allowLive = false; applyLive() }
+                })).accessibilityIdentifier("cleanup.allowLive")
+                    .disabled(model.cleanupRunning)
+            } footer: {
+                Text("默认关闭。开启后，照片和动态视频均已保存即可继续清理检查；取回后可能需要重新配对，部分动态效果可能无法恢复。其他已开启的检查仍会执行。")
             }
             Section {
                 Button("应用核验策略") {
                     if (!state && model.settings.cloudState) || (!access && model.settings.originalAccess) { acknowledgment = ""; confirmation = true }
                     else { apply() }
                 }.disabled(model.cleanupRunning)
-                Button("恢复完整核验") { state = true; access = true; apply() }.disabled(model.cleanupRunning)
-            } footer: { Text("改变策略会使已有清理资格失效。已开启的检查失败时不会被自动跳过。") }
-        }.navigationTitle("清理核验").navigationBarTitleDisplayMode(.inline)
-        .onAppear { state = model.settings.cloudState; access = model.settings.originalAccess }
+                Button("恢复完整核验") { state = true; access = true; allowLive = false; model.settings.allowUnverifiedLiveCleanup = false; apply() }.disabled(model.cleanupRunning)
+            } footer: { Text("修改设置后需重新检查。检查未通过的照片会保留。") }
+        }.navigationTitle("空间清理核验").navigationBarTitleDisplayMode(.inline)
+        .onAppear { state = model.settings.cloudState; access = model.settings.originalAccess; allowLive = model.settings.allowsUnverifiedLiveCleanup }
+        .alert("可能影响动态照片的完整取回", isPresented: $liveConfirmation) {
+            Button("了解风险并开启", role: .destructive) { allowLive = true; applyLive() }
+            Button("暂不开启", role: .cancel) { allowLive = false }
+        } message: { Text("照片和视频虽已保存，但尚未确认能完整保存回 iPhone。清理后可能需要手动重新配对，部分动态效果可能无法恢复。") }
         .alert("降低核验强度", isPresented: $confirmation) {
             TextField("输入：我已了解风险", text: $acknowledgment)
             Button("确认降低", role: .destructive) { if acknowledgment == "我已了解风险" { apply() } else { model.notice = "确认文字不匹配，策略未改变。" } }
             Button("取消", role: .cancel) { state = model.settings.cloudState; access = model.settings.originalAccess }
         } message: { Text("将跳过\(!state ? "最新云端状态" : "")\(!state && !access ? "及" : "")\(!access ? "云端原件访问" : "")检查。请输入“我已了解风险”。") }
     }
+    private func applyLive() { model.settings.allowUnverifiedLiveCleanup = allowLive; Task { await model.saveSettings() } }
     private func apply() { model.settings.cloudState = state; model.settings.originalAccess = access; Task { await model.saveSettings() } }
 }
 

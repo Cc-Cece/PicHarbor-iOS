@@ -12,9 +12,9 @@ enum LiveStrategy: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .motion: return "Motion Photo"
-        case .applePair: return "原始配对 · 联合提交（测试）"
-        case .appleReconcile: return "原始配对 · 先照片后视频（测试）"
+        case .motion: return "动态照片封装"
+        case .applePair: return "原始照片配对"
+        case .appleReconcile: return "原始照片配对（分步上传）"
         }
     }
 }
@@ -36,8 +36,10 @@ struct BackupSettings: Codable, Equatable {
     var originalAccess = true
     var appearance = "system"
     var strictLiveConfirmation: Bool?
+    var allowUnverifiedLiveCleanup: Bool?
+    var allowsUnverifiedLiveCleanup: Bool { allowUnverifiedLiveCleanup ?? false }
     var requiresStrictConfirmation: Bool { strictLiveConfirmation ?? false }
-    var cleanupPolicy: String { "\(cloudState ? 1 : 0)\(originalAccess ? 1 : 0)" }
+    var cleanupPolicy: String { "\(cloudState ? 1 : 0)\(originalAccess ? 1 : 0):live\(allowsUnverifiedLiveCleanup ? 1 : 0)" }
     // Scheduling/network/cleanup preferences do not change the encoded media identity.
     var mediaPolicy: String { "\(quality.rawValue):\(live.rawValue):\(edits.rawValue):mux1" }
 }
@@ -46,10 +48,10 @@ enum JobState: String, Codable {
     var title: String {
         switch self {
         case .queued: return "等待备份"
-        case .preparing: return "准备原件"
-        case .transferring: return "传输中"
-        case .committing: return "提交中"
-        case .confirming: return "待云端确认"
+        case .preparing: return "准备照片"
+        case .transferring: return "上传中"
+        case .committing: return "确认保存"
+        case .confirming: return "确认保存"
         case .paired: return "即将完成 · 配对已确认"
         case .completed: return "已备份"
         case .paused: return "已暂停"
@@ -104,6 +106,7 @@ struct BackupJob: Codable, Identifiable {
     // Exported source manifests are retained even when Motion Photo replaces upload resources.
     var sources: [MediaResource] = []
     var isLive = false
+    var mediaKind: String?
     var forceUpload = false
     var error = ""
     var failureStage: String?

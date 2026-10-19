@@ -183,7 +183,7 @@ private final class PhotoCell: UICollectionViewCell {
     }
 }
 
-private struct AssetDetailView: View {
+struct AssetDetailView: View {
     @EnvironmentObject private var model: HarborModel
     @Environment(\.dismiss) private var dismiss
     let asset: PHAsset
@@ -207,7 +207,7 @@ private struct AssetDetailView: View {
                 Text(asset.creationDate?.formatted(date: .long, time: .shortened) ?? "照片详情").font(.headline)
                 Text("\(asset.pixelWidth) × \(asset.pixelHeight)\(asset.mediaSubtypes.contains(.photoLive) ? " · Live Photo" : "")").font(.subheadline).foregroundStyle(.secondary)
                 Button { Task { await model.enqueue([asset]) } } label: { Label("备份此项目", systemImage: "icloud.and.arrow.up").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).disabled(model.account.isEmpty)
-                if let job = model.visibleJobs.first(where: { $0.assetID == asset.localIdentifier }) { NavigationLink { JobDetailView(id: job.id) } label: { Label(job.state.title, systemImage: "clock") } }
+                if let job = model.visibleJobs.first(where: { $0.assetID == asset.localIdentifier }) { NavigationLink { JobDetailView(id: job.id) } label: { Label(job.displayStatus, systemImage: "clock") } }
             }.padding()
         }
         .navigationTitle("照片详情").navigationBarTitleDisplayMode(.inline)

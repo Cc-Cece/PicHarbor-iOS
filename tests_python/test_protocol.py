@@ -17,6 +17,18 @@ from blackboxprotobuf import encode_message
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_paired_movie_cleanup_uses_movie_hash_and_never_still_access_proof(self):
+        from harbor_live import LiveProtocol
+        with patch.object(LiveProtocol, "motion_key", return_value="same") as lookup, patch.object(self.service.protocol, "original_access") as access:
+            result = self.service.dispatch("check_cleanup", {**self.value, "paired_video": True})
+            self.assertEqual(result["reason"], "LIVE_COMPONENT_UNVERIFIED")
+            access.assert_not_called()
+            self.assertTrue(self.service.dispatch("check_cleanup", {**self.value, "paired_video": True, "cloud_state": False, "original_access": False})["eligible"])
+            self.assertEqual(lookup.call_count, 2)
+        with patch.object(LiveProtocol, "motion_key", return_value=""):
+            self.assertEqual(self.service.dispatch("check_cleanup", {**self.value, "paired_video": True, "cloud_state": False, "original_access": False})["reason"], "REMOTE_MISSING")
+        with self.assertRaises(Failure):
+            self.service.dispatch("check_cleanup", {**self.value, "paired_video": "false"})
     def test_cleanup_refreshes_expired_evidence_only_when_requested(self):
         p = self.service.protocol
         self.service.api.lookups = ["saved", "saved"]

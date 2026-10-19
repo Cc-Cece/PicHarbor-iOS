@@ -21,11 +21,14 @@ struct ActivityView: View {
             if batches.isEmpty { ContentUnavailableView("暂无符合条件的任务", systemImage: "clock", description: Text("调整来源或状态筛选，查看其他备份活动。")) }
             ForEach(batches) { batch in
                 if batch.isBatch {
-                    NavigationLink { ActivityBatchView(id: batch.id, source: source, status: status) } label: { ActivityBatchCard(batch: batch) }.accessibilityIdentifier("activity.batch")
+                    HStack {
+                        if let job = batch.matching.first { AssetThumbnail(assetID: job.assetID) }
+                        NavigationLink { ActivityBatchView(id: batch.id, source: source, status: status) } label: { ActivityBatchCard(batch: batch) }.accessibilityIdentifier("activity.batch")
+                    }
                 } else if let job = batch.matching.first { ActivityTaskRow(job: job) }
             }
             if source == .all && status == .all && !model.engine.records.isEmpty {
-                Section { NavigationLink("早期验证记录") { LegacyBackupRecordsView() } }
+                Section { NavigationLink("历史备份记录") { LegacyBackupRecordsView() } }
             }
         }.navigationTitle("活动")
         .toolbar { ToolbarItem(placement: .topBarTrailing) { ActivityActionsMenu(jobs: filtered) } }
@@ -56,7 +59,7 @@ struct ActivityBatchView: View {
     var body: some View {
         List {
             if let batch {
-                Section { ActivityBatchCard(batch: batch) }
+                Section { HStack { if let job = batch.matching.first { AssetThumbnail(assetID: job.assetID) }; ActivityBatchCard(batch: batch) } }
                 Section("\(status.title) · \(batch.matching.count) 项") { ForEach(batch.matching) { ActivityTaskRow(job: $0) } }
             } else { ContentUnavailableView("本批暂无符合筛选的任务", systemImage: "checkmark.circle", description: Text("返回活动页可查看其他状态。")) }
         }.navigationTitle("备份批次").navigationBarTitleDisplayMode(.inline)
@@ -69,8 +72,11 @@ struct ActivityTaskRow: View {
     let job: BackupJob
     @State private var removing = false
     var body: some View {
-        NavigationLink { JobDetailView(id: job.id) } label: { JobRow(job: job) }
-            .accessibilityIdentifier("activity.task.\(job.id)")
+        HStack {
+            AssetThumbnail(assetID: job.assetID)
+            NavigationLink { JobDetailView(id: job.id) } label: { JobRow(job: job) }
+                .accessibilityIdentifier("activity.task.\(job.id)")
+        }
             .swipeActions { if job.unfinished { Button("移除", role: .destructive) { removing = true } } }
             .confirmationDialog("移除此任务？", isPresented: $removing, titleVisibility: .visible) {
                 Button("停止并移除任务", role: .destructive) { Task { await model.removeUnfinished([job.id]) } }
@@ -102,8 +108,8 @@ private struct LegacyBackupRecordsView: View {
     var body: some View {
         List {
             Section { ForEach(model.engine.records) { record in
-                VStack(alignment: .leading, spacing: 5) { Text(record.name).lineLimit(1); Text(record.stateLabel).font(.caption).foregroundStyle(.secondary) }
-            } } footer: { Text("早期内容观察记录不具有清理资格。") }
-        }.navigationTitle("早期验证记录")
+                HStack { AssetThumbnail(assetID: ""); VStack(alignment: .leading, spacing: 5) { Text(record.name).lineLimit(1); Text(record.stateLabel).font(.caption).foregroundStyle(.secondary) } }
+            } } footer: { Text("历史记录未关联本机照片，不用于空间清理。") }
+        }.navigationTitle("历史备份记录")
     }
 }

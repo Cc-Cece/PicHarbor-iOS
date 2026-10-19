@@ -13,6 +13,8 @@ final class HarborModel: ObservableObject {
     @Published var settings = BackupSettings()
     @Published private(set) var accounts: [String] = []
     @Published var notice = ""
+    @Published private(set) var queueNoticeID = UUID()
+    @Published private(set) var queueNoticeCount = 0
     @Published var cleanupRunning = false
     @Published var cleanupReady: [String] = []
     @Published var cleanupResults: [String: String] = [:]
@@ -89,6 +91,9 @@ final class HarborModel: ObservableObject {
         var done = BackupJob(account: "", assetID: "ui-only-second", assetRevision: "ui-only", settings: BackupSettings())
         done.id = "ui-done"; done.origin = .manual; done.batchID = live.batchID; done.state = .completed; done.verificationLevel = "standard"
         jobs = [live, done]; updateAssetStates(jobs)
+        if ProcessInfo.processInfo.arguments.contains("--queue-notice-fixture") {
+            queueNoticeCount = 2; queueNoticeID = UUID(); notice = "已加入备份队列。"
+        }
         return true
     }
     #endif
@@ -309,6 +314,7 @@ final class HarborModel: ObservableObject {
             for asset in assets {
                 var job = BackupJob(account: targetAccount, assetID: asset.localIdentifier, assetRevision: PhotoLibrary.stamp(asset), settings: snapshot)
                 job.isLive = asset.mediaSubtypes.contains(.photoLive)
+                job.mediaKind = asset.mediaType == .video ? "video" : "photo"
                 job.albumIDs = membership[asset.localIdentifier] ?? []
                 job.forceUpload = force
                 job.assetCreated = asset.creationDate; job.assetModified = asset.modificationDate
@@ -328,7 +334,7 @@ final class HarborModel: ObservableObject {
                 updateAssetStates(additions)
                 do { try await store.saveBatch(additions.map { ($0.id, $0) }, kind: "job") }
                 catch { fatalStorage(error); throw error }
-                if feedback { notice = "已加入备份队列。" }
+                if feedback { queueNoticeCount = additions.count; queueNoticeID = UUID(); notice = "已加入备份队列。" }
             } else if feedback { notice = "这些项目已有备份任务或已经完成，请到活动中查看或重试。" }
             await pump()
         } catch { notice = error.localizedDescription }
@@ -522,6 +528,7 @@ final class HarborModel: ObservableObject {
                         job.resources[index].confirmed = true; try await persist(job)
                     } else {
                         stage = "prepare_upload"
+                        job.state = .confirming; job.failureStage = stage; try await persist(job)
                         request["force"] = job.forceUpload
                         let plan = try await engine.invoke("prepare_upload", request)
                         try checkpoint(job)
@@ -930,7 +937,8 @@ final class HarborModel: ObservableObject {
     }
     private func checkCleanup(_ job: BackupJob, policy: BackupSettings) async throws -> CleanupEvidence {
         try cleanupCheckpoint(policy, target: job.account)
-        guard job.state == .completed, !job.isLive else { throw HarborError(job.isLive ? "LIVE_CLEANUP_UNVERIFIED" : "CLEANUP_UNVERIFIED") }
+        guard job.state == .completed else { throw HarborError("CLEANUP_UNVERIFIED") }
+        guard LiveCleanupPolicy.permits(job, settings: policy) else { throw HarborError("LIVE_CLEANUP_UNVERIFIED") }
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
               PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("SOURCE_CHANGED") }
         let directory = engine.home.appendingPathComponent("Staging/check-\(UUID().uuidString)")
@@ -950,9 +958,24 @@ final class HarborModel: ObservableObject {
         try cleanupCheckpoint(policy, target: job.account)
         guard let after = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
               PhotoLibrary.stamp(after) == job.assetRevision,
+              current.allSatisfy({ !$0.sha256.isEmpty && !$0.sha1.isEmpty && $0.size > 0 }),
               Set(current.map(\.sha256)).isSubset(of: Set(job.sources.map(\.sha256))), !current.isEmpty else { throw HarborError("CLEANUP_UNVERIFIED") }
-        for source in current {
+        // Motion packages cover the exported photo/video together. Check the
+        // saved package, never pretend its embedded source hashes are uploads.
+        if job.isLive && job.settings.live != .motion {
+            for pair in try LivePairRecord.make(current) {
+                guard let photo = current.first(where: { $0.id == pair.photoID }),
+                      let video = current.first(where: { $0.id == pair.videoID }) else { throw HarborError("LIVE_PAIR_MISSING") }
+                let proof = try await engine.invoke("confirm_pair", ["account": job.account,
+                    "photo": payload(photo, account: job.account), "video": payload(video, account: job.account)])
+                try cleanupCheckpoint(policy, target: job.account)
+                guard proof["confirmed"] as? Bool == true else { throw HarborError("CLEANUP_UNVERIFIED") }
+            }
+        }
+        let remoteResources = job.isLive && job.settings.live == .motion ? job.resources : current
+        for source in remoteResources {
             var request = payload(source, account: job.account)
+            request["paired_video"] = source.role.hasSuffix(".pairedVideo")
             request["cloud_state"] = policy.cloudState; request["original_access"] = policy.originalAccess
             request["refresh_if_stale"] = true
             let result = try await engine.invoke("check_cleanup", request)
@@ -976,7 +999,7 @@ final class HarborModel: ObservableObject {
             var passed: [BackupJob] = []
             for var job in requested {
                 do {
-                    guard !job.isLive, !busy.contains(job.assetID), let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { throw HarborError("CLEANUP_UNVERIFIED") }
+                    guard LiveCleanupPolicy.permits(job, settings: policy), !busy.contains(job.assetID), let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { throw HarborError("CLEANUP_UNVERIFIED") }
                     if job.evidence?.valid(job: job, settings: policy) != true || PhotoLibrary.stamp(asset) != job.assetRevision {
                         job.evidence = try await checkCleanup(job, policy: policy); try await persist(job)
                     }
@@ -990,7 +1013,7 @@ final class HarborModel: ObservableObject {
             // other selected items. Check fresh evidence again before the system call.
             var final: [BackupJob] = []
             for job in passed {
-                if job.evidence?.valid(job: job, settings: policy) == true,
+                if LiveCleanupPolicy.permits(job, settings: policy), job.evidence?.valid(job: job, settings: policy) == true,
                    let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
                    PhotoLibrary.stamp(asset) == job.assetRevision { final.append(job) }
                 else { cleanupResults[job.id] = "检查结果已过期或照片已变化，请重新检查。"; cleanupOutcomes[job.id] = .deferred; cleanupReady.removeAll { $0 == job.id } }
@@ -1021,7 +1044,7 @@ final class HarborModel: ObservableObject {
             "error_codes": jobs.map(\.error).filter { !$0.isEmpty }, "runtime": engine.runtime,
             "failure_stages": Dictionary(grouping: jobs.filter { !$0.error.isEmpty }, by: { $0.failureStage ?? "legacy_unknown" }).mapValues(\.count),
             "file_error_codes": jobs.compactMap(\.failureSystemCode),
-            "apple_pair": applePairAvailable, "live_cleanup": false, "staged_bytes": stagedBytes,
+            "apple_pair": applePairAvailable, "live_cleanup": settings.allowsUnverifiedLiveCleanup, "staged_bytes": stagedBytes,
             "pair_routes": Dictionary(grouping: jobs.flatMap { $0.livePairs ?? [] }, by: { $0.route ?? "unselected" }).mapValues(\.count),
             "pair_pending_submissions": jobs.flatMap { $0.livePairs ?? [] }.filter { $0.submitted && !$0.confirmed }.count,
             "confirmation_checks": jobs.reduce(0) { $0 + ($1.confirmationChecks ?? 0) },

@@ -13,7 +13,8 @@ struct CleanupView: View {
             Section {
                 Label("确认保存，再释放空间", systemImage: "checkmark.shield").font(.headline)
                 Text("当前账号有 \(model.cleanupCandidates.count) 张照片或视频可检查。同一照片只列一次，其他照片的备份可以继续。").font(.subheadline).foregroundStyle(.secondary)
-                Text("Live Photo 在完整资源取回验证开放前会保留。").font(.footnote).foregroundStyle(.secondary)
+                Text(model.settings.allowsUnverifiedLiveCleanup ? "已允许清理尚未完整验证的 Live Photo，照片和视频仍需通过保存检查。" : "尚未完整验证的 Live Photo 会保留。").font(.footnote).foregroundStyle(.secondary)
+                NavigationLink("空间清理核验") { CleanupPolicyView() }
                 if !model.settings.cloudState || !model.settings.originalAccess {
                     Label("已降低清理核验强度", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                     if !model.settings.cloudState { Text("跳过最新云端状态检查").font(.caption).foregroundStyle(.secondary) }
@@ -34,17 +35,21 @@ struct CleanupView: View {
                 Section("检查结果") {
                     ForEach(results) { job in
                         HStack {
+                            AssetThumbnail(assetID: job.assetID)
                             if model.cleanupReady.contains(job.id) {
                                 Button { if selected.contains(job.id) { selected.remove(job.id) } else { selected.insert(job.id) } } label: {
                                     Image(systemName: selected.contains(job.id) ? "checkmark.circle.fill" : "circle")
-                                }.accessibilityLabel(selected.contains(job.id) ? "取消选择此项目" : "选择此项目").disabled(model.cleanupRunning)
+                                }.buttonStyle(.borderless).accessibilityLabel(selected.contains(job.id) ? "取消选择此项目" : "选择此项目").disabled(model.cleanupRunning)
                             }
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(job.sources.first?.name ?? "备份照片").lineLimit(1)
                                 Text(model.cleanupResults[job.id] ?? "").font(.caption).foregroundStyle(model.cleanupReady.contains(job.id) ? .green : .secondary)
+                                if job.isLive && !model.settings.allowsUnverifiedLiveCleanup && model.cleanupOutcomes[job.id] == .deferred {
+                                    NavigationLink("前往设置") { CleanupPolicyView() }.font(.caption)
+                                }
                             }
                             Spacer()
-                            if !model.cleanupRunning, let outcome = model.cleanupOutcomes[job.id], [.failed, .deferred].contains(outcome) { Button("重试") { Task { await model.verifyCleanup(ids: [job.id]) } }.font(.caption) }
+                            if !model.cleanupRunning, let outcome = model.cleanupOutcomes[job.id], [.failed, .deferred].contains(outcome) { Button("重新检查") { Task { await model.verifyCleanup(ids: [job.id]) } }.buttonStyle(.borderless).font(.caption) }
                         }
                     }
                 }

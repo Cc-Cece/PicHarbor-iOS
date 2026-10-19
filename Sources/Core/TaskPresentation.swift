@@ -34,24 +34,34 @@ struct ActivityBatch: Identifiable {
 
 extension BackupJob {
     var flowSteps: [String] {
-        ["准备照片", "上传资源", "确认保存"] + (isLive && settings.requiresStrictConfirmation ? ["严格核验"] : []) + ["完成"]
+        [isVideo ? "准备视频" : "准备照片", "检查是否已备份", isVideo ? "上传视频" : "上传照片", "确认保存"] + (isLive && settings.requiresStrictConfirmation ? ["等待云端处理"] : []) + ["完成"]
     }
+    var isVideo: Bool { !isLive && (mediaKind == "video" || (sources.isEmpty ? resources : sources).contains { $0.role.hasSuffix(".video") }) }
     var flowIndex: Int {
         if state == .completed { return flowSteps.count - 1 }
         if resources.isEmpty { return 0 }
-        if standardConfirmationPassed { return isLive && settings.requiresStrictConfirmation ? 3 : 2 }
-        if resources.contains(where: { !$0.confirmed && $0.responsePath == nil && $0.remoteKey.isEmpty }) { return 1 }
-        return 2
+        if standardConfirmationPassed { return isLive && settings.requiresStrictConfirmation ? 4 : 3 }
+        if state == .committing { return 3 }
+        if state == .transferring || resources.contains(where: { $0.transportID != nil }) { return 2 }
+        if failureStage == "pair_lookup" { return livePairs?.contains(where: { $0.queryOnly }) == true ? 3 : 1 }
+        if failureStage == "prepare_upload" { return 1 }
+        if failureStage == "pair_transfer" { return 2 }
+        if resources.contains(where: { !$0.confirmed && !$0.submitted && $0.responsePath == nil && $0.remoteKey.isEmpty }) { return 1 }
+        return 3
+    }
+    var displayStatus: String {
+        if [.paused, .waiting, .failed, .attention, .cancelled, .completed, .queued].contains(state) { return state.title }
+        return flowSteps[flowIndex]
     }
     var friendlyMessage: String {
         if error.isEmpty {
             if state == .cancelled { return "任务已取消，本机及云端照片保留。" }
-            if state == .paired { return "照片与视频已配对，正在等待严格核验。" }
+            if state == .paired { return "照片和视频已保存，正在等待云端完成动态处理。" }
             if state == .paused { return "任务已暂停，继续后会从已有进度推进。" }
             return state == .completed ? "已按本任务的检查策略完成备份。" : "可以离开此页面，进度会持续保存。"
         }
         if error == "REMOTE_MOTION_TRASHED" { return "云端项目已在回收站，请先到谷歌相册恢复。" }
-        if error.hasPrefix("REMOTE_MOTION_") { return "云端动态照片尚未通过严格核验，稍后会自动检查。" }
+        if error.hasPrefix("REMOTE_MOTION_") { return "照片和视频已保存，正在等待云端完成动态处理。" }
         if error == "PAIR_CONFIRMATION_PENDING" || error == "REMOTE_NOT_VISIBLE" { return "资源已发送，正在确认云端保存结果。" }
         return HarborError(error).localizedDescription.replacingOccurrences(of: "（\(error)）", with: "")
     }
@@ -63,6 +73,13 @@ extension BackupJob {
             "verification_level": verificationLevel ?? "legacy", "checks": confirmationChecks ?? 0,
             "last_query_seconds": lastConfirmationSeconds ?? 0]
         return String(decoding: (try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])) ?? Data(), as: UTF8.self)
+    }
+}
+
+enum LiveCleanupPolicy {
+    static let waitingMessage = "Google 相册的动态照片处理与验证可能需要一些时间，可在约 20 分钟后重新检查。若长时间仍未通过，可前往设置，开启“允许清理尚未完整验证的 Live Photo”。"
+    static func permits(_ job: BackupJob, settings: BackupSettings) -> Bool {
+        !job.isLive || (settings.allowsUnverifiedLiveCleanup && job.standardConfirmationPassed)
     }
 }
 
@@ -88,6 +105,6 @@ enum CleanupOutcome: String, CaseIterable, Identifiable {
     }
     static func failure(_ error: Error) -> CleanupOutcome {
         guard let code = (error as? HarborError)?.code else { return .failed }
-        return ["LIVE_CLEANUP_UNVERIFIED", "CLEANUP_UNVERIFIED", "SOURCE_CHANGED", "REMOTE_MISSING", "CLOUD_ORIGINAL_UNCONFIRMED", "ORIGINAL_UNAVAILABLE"].contains(code) ? .deferred : .failed
+        return ["LIVE_CLEANUP_UNVERIFIED", "LIVE_COMPONENT_UNVERIFIED", "CLEANUP_UNVERIFIED", "SOURCE_CHANGED", "REMOTE_MISSING", "CLOUD_ORIGINAL_UNCONFIRMED", "ORIGINAL_UNAVAILABLE"].contains(code) ? .deferred : .failed
     }
 }
