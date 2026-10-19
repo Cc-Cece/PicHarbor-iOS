@@ -63,7 +63,9 @@ extension BackupJob {
         if error == "REMOTE_MOTION_TRASHED" { return L10n.text("云端项目已在回收站，请先到谷歌相册恢复。") }
         if error.hasPrefix("REMOTE_MOTION_") { return L10n.text("照片和视频已保存，正在等待云端完成动态处理。") }
         if error == "PAIR_CONFIRMATION_PENDING" || error == "REMOTE_NOT_VISIBLE" { return L10n.text("资源已发送，正在确认云端保存结果。") }
-        return HarborError(error).localizedDescription.replacingOccurrences(of: "（\(error)）", with: "")
+        return HarborError(error).localizedDescription
+            .replacingOccurrences(of: "（\(error)）", with: "")
+            .replacingOccurrences(of: "(\(error))", with: "")
     }
     var diagnosticText: String {
         let value: [String: Any] = ["task_reference": id, "state": state.rawValue,

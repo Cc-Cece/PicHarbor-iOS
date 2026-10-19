@@ -32,6 +32,8 @@ def build():
         translated = converter.convert(key)
         for old, new in [('照片', '相片'), ('視頻', '影片'), ('文件', '檔案'), ('原件', '原檔'), ('設置', '設定'), ('賬號', '帳戶'), ('帳號', '帳戶'), ('上傳', '上載'), ('默認', '預設'), ('蜂窩', '流動數據'), ('後台', '背景'), ('谷歌相冊', 'Google 相簿'), ('Google 相冊', 'Google 相簿'), ('任務', '工作'), ('核驗', '驗證')]:
             translated = translated.replace(old, new)
+        for old, new in [('登錄', '登入'), ('粘貼', '貼上'), ('響應', '回應'), ('服務端', '伺服器'), ('服務器', '伺服器')]:
+            translated = translated.replace(old, new)
         hong_kong[key] = overrides.get(key, translated)
     tables = {'zh-Hans': {key: key for key in english}, 'en': english, 'zh-Hant-HK': hong_kong, 'yue-Hant-HK': hong_kong}
     (ROOT / 'Resources/MessageKeys.json').write_text(json.dumps([decode(key) for key in english], ensure_ascii=False), encoding='utf-8')

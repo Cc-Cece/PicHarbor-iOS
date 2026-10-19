@@ -98,6 +98,9 @@ final class BackupCoreTests: XCTestCase {
     func testMainTaskMessageKeepsCodesInAdvancedInformation() throws {
         var job = try pairedJob(); job.error = "ENGINE_ERROR"
         XCTAssertFalse(job.friendlyMessage.contains("ENGINE_ERROR")); XCTAssertTrue(job.diagnosticText.contains("ENGINE_ERROR"))
+        UserDefaults.standard.set("en", forKey: "picharbor.language")
+        XCTAssertFalse(job.friendlyMessage.contains("ENGINE_ERROR"))
+        UserDefaults.standard.set("zh-Hans", forKey: "picharbor.language")
         job.error = "REMOTE_MOTION_TRASHED"
         XCTAssertTrue(job.friendlyMessage.contains("回收站"))
     }
