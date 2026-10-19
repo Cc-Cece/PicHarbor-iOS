@@ -106,6 +106,7 @@ struct BackupJob: Codable, Identifiable {
     var failureStage: String?
     var failureSystemCode: String?
     var attempts = 0
+    var sourceWaits: Int?
     var retryAt: Date?
     var created = Date()
     var updated = Date()
@@ -118,6 +119,15 @@ struct BackupJob: Codable, Identifiable {
         origin == .automatic ? "\(account)|\(assetID)|\(assetRevision)" : dedupKey
     }
     var unfinished: Bool { state != .completed && activityHidden != true }
+    // Rebinding is allowed only before any exported or remotely submitted resource exists.
+    var canRefreshSource: Bool {
+        resources.isEmpty && sources.isEmpty && (livePairs ?? []).isEmpty && evidence == nil &&
+        state != .completed && state != .cancelled
+    }
+    mutating func refreshSource(revision: String, live: Bool, created: Date?, modified: Date?) throws {
+        guard canRefreshSource else { throw HarborError("SOURCE_SNAPSHOT_LOCKED") }
+        assetRevision = revision; isLive = live; assetCreated = created; assetModified = modified
+    }
     @discardableResult
     mutating func updateNetwork(wifiOnly: Bool) -> Set<Int> {
         guard state != .completed, state != .cancelled else { return [] }
@@ -134,7 +144,7 @@ struct BackupJob: Codable, Identifiable {
     }
     var failureStageTitle: String? {
         guard let failureStage else { return nil }
-        return ["preparation": "准备暂存目录", "export": "从相册导出资源", "motion_package": "封装动态照片",
+        return ["preparation": "准备暂存目录", "source_stability": "等待相册资源稳定", "export": "从相册导出资源", "motion_package": "封装动态照片",
                 "source_read": "读取暂存原件", "prepare_upload": "查重与申请上传", "transfer_creation": "创建后台传输",
                 "upload_response": "保存上传响应", "commit_response": "读取响应并提交云端", "confirmation": "确认云端内容",
                 "pair_export": "准备原始配对资源", "pair_lookup": "检查照片与视频关联", "pair_photo_commit": "提交配对用原图",
@@ -151,6 +161,28 @@ struct BackupJob: Codable, Identifiable {
         if state == .cancelled || state == .completed { return .cancel }
         if activeAccount.isEmpty || account != activeAccount || state != .transferring { return .pause }
         return .run
+    }
+}
+
+/// Three matching observations are a bounded debounce, not a guarantee that a
+/// camera asset will never change again. Export must independently check it.
+struct SourceStabilityProbe {
+    private var previous: String?
+    private var matches = 0
+    mutating func observe(_ signature: String) -> Bool {
+        matches = signature == previous ? matches + 1 : 1
+        previous = signature
+        return matches >= 3
+    }
+    @MainActor
+    static func wait<Value>(read: () throws -> (Value, String), pause: () async throws -> Void) async throws -> Value {
+        var probe = SourceStabilityProbe()
+        for _ in 0..<6 {
+            let (value, signature) = try read()
+            if probe.observe(signature) { return value }
+            try await pause()
+        }
+        throw HarborError("SOURCE_SETTLING")
     }
 }
 

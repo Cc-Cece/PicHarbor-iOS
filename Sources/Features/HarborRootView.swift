@@ -195,7 +195,7 @@ struct JobDetailView: View {
                 }
                 if !job.error.isEmpty { Section("需要处理") {
                     Text(HarborError(job.error).localizedDescription).foregroundStyle(.secondary)
-                    if let stage = job.failureStageTitle { LabeledContent("失败步骤", value: stage) }
+                    if let stage = job.failureStageTitle { LabeledContent([.preparing, .waiting, .confirming].contains(job.state) ? "当前步骤" : "失败步骤", value: stage) }
                     if let code = job.failureSystemCode { Text(code).font(.caption).foregroundStyle(.secondary) }
                 } }
                 if let pairs = job.livePairs, !pairs.isEmpty { Section("原始配对测试") {

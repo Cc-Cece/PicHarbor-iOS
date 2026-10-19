@@ -8,6 +8,73 @@ import Photos
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    @MainActor
+    func testPreparationReturnsFreshSnapshotAndStopsAfterBoundedChanges() async throws {
+        var reads = 0
+        let latest = try await SourceStabilityProbe.wait(read: {
+            reads += 1
+            return (reads, reads == 1 ? "old" : "new")
+        }, pause: {})
+        XCTAssertEqual(latest, 4)
+        reads = 0
+        do {
+            _ = try await SourceStabilityProbe.wait(read: { reads += 1; return (reads, String(reads)) }, pause: {})
+            XCTFail("Continuously changing assets must leave the preparation worker")
+        } catch { XCTAssertEqual((error as? HarborError)?.code, "SOURCE_SETTLING") }
+        XCTAssertEqual(reads, 6)
+    }
+
+    @MainActor
+    func testPreparationHonorsPauseAndPermissionLoss() async {
+        for code in ["JOB_PAUSED", "PHOTO_PERMISSION", "WAITING_NETWORK"] {
+            do {
+                _ = try await SourceStabilityProbe.wait(read: { () throws -> (Int, String) in throw HarborError(code) }, pause: {})
+                XCTFail("Must preserve the actionable failure")
+            } catch { XCTAssertEqual((error as? HarborError)?.code, code) }
+        }
+        do {
+            _ = try await SourceStabilityProbe.wait(read: { (1, "same") }, pause: { throw CancellationError() })
+            XCTFail("Cancellation must stop preparation")
+        } catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    func testFreshSourceDebounceRestartsWhenManifestChanges() {
+        var probe = SourceStabilityProbe()
+        XCTAssertFalse(probe.observe("revision1|photo"))
+        XCTAssertFalse(probe.observe("revision1|photo"))
+        XCTAssertFalse(probe.observe("revision1|photo|pairedVideo"))
+        XCTAssertFalse(probe.observe("revision2|photo|pairedVideo"))
+        XCTAssertFalse(probe.observe("revision2|photo|pairedVideo"))
+        XCTAssertTrue(probe.observe("revision2|photo|pairedVideo"))
+    }
+
+    func testUnpreparedTaskCanRefreshWithoutChangingUserPolicyOrBatch() throws {
+        var policy = BackupSettings(); policy.live = .applePair; policy.quality = .quota
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "old", settings: policy)
+        job.batchID = "batch"; job.origin = .manual; job.error = "SOURCE_CHANGED"; job.state = .attention
+        let identity = job.id
+        let oldKey = job.dedupKey
+        try job.refreshSource(revision: "new", live: true, created: Date(timeIntervalSince1970: 1), modified: Date(timeIntervalSince1970: 2))
+        let saved = try JSONDecoder().decode(BackupJob.self, from: JSONEncoder().encode(job))
+        XCTAssertEqual(saved.id, identity); XCTAssertEqual(saved.account, "a")
+        XCTAssertEqual(saved.batchID, "batch"); XCTAssertEqual(saved.settings, policy)
+        XCTAssertNotEqual(saved.dedupKey, oldKey); XCTAssertTrue(saved.isLive)
+        XCTAssertEqual(saved.assetRevision, "new")
+    }
+
+    func testSourceRefreshRejectsExportedOrSubmittedSnapshots() throws {
+        let original = BackupJob(account: "a", assetID: "asset", assetRevision: "old", settings: BackupSettings())
+        let resource = MediaResource(role: "original.photo", path: "still", name: "image.heic")
+        var exported = original; exported.sources = [resource]
+        var transferred = original; transferred.resources = [resource]; transferred.resources[0].submitted = true
+        var paired = original; paired.livePairs = [LivePairRecord(id: "original", photoID: "p", videoID: "v", submitted: true)]
+        var complete = original; complete.state = .completed
+        for var locked in [exported, transferred, paired, complete] {
+            XCTAssertThrowsError(try locked.refreshSource(revision: "new", live: true, created: nil, modified: nil))
+            XCTAssertEqual(locked.assetRevision, "old")
+        }
+    }
+
     func testOriginalPairResourcesRetainVersionAndRejectIncompleteSets() throws {
         let originals = [MediaResource(role: "original.photo", path: "still", name: "original.heic", sha256: "photo-original"),
                          MediaResource(role: "original.pairedVideo", path: "video", name: "original.mov", sha256: "video-original")]

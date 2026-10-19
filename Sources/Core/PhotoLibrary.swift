@@ -91,6 +91,12 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     static func stamp(_ asset: PHAsset) -> String {
         "\(asset.modificationDate?.timeIntervalSince1970 ?? 0):\(asset.pixelWidth):\(asset.pixelHeight):\(asset.duration):\(asset.mediaSubtypes.rawValue)"
     }
+    static func preparationStamp(_ asset: PHAsset) -> String {
+        let manifest = PHAssetResource.assetResources(for: asset).map {
+            "\($0.type.rawValue):\($0.uniformTypeIdentifier):\($0.originalFilename)"
+        }.sorted().joined(separator: "|")
+        return stamp(asset) + "|" + manifest
+    }
     func manageLimited() {
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               var controller = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return }

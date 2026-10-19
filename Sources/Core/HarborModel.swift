@@ -264,6 +264,11 @@ final class HarborModel: ObservableObject {
                 job.forceUpload = force
                 job.assetCreated = asset.creationDate; job.assetModified = asset.modificationDate
                 job.origin = origin; job.batchID = batch
+                // PhotoKit may publish several revisions while a fresh capture
+                // settles. Keep one pending preparation instead of queueing each.
+                if jobs.contains(where: { $0.account == targetAccount && $0.assetID == job.assetID &&
+                    $0.settings.mediaPolicy == job.settings.mediaPolicy && $0.canRefreshSource &&
+                    [.queued, .preparing, .waiting, .paused].contains($0.state) }) { continue }
                 if !force && known.contains(job.discoveryKey(origin: origin)) { continue }
                 if active.contains(job.dedupKey) || planned.contains(job.dedupKey) { continue }
                 known.insert(job.discoveryKey(origin: origin))
@@ -369,13 +374,21 @@ final class HarborModel: ObservableObject {
             let directory = engine.home.appendingPathComponent("Staging/\(job.id)", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if job.resources.isEmpty {
-                job.state = .preparing; job.error = ""; try await persist(job)
+                job.state = .preparing; job.error = ""; job.failureStage = nil; try await persist(job)
                 await PreparationGate.shared.acquire()
                 do {
                 try checkpoint(job)
+                stage = "source_stability"
+                guard job.canRefreshSource else { throw HarborError("SOURCE_SNAPSHOT_LOCKED") }
+                job.error = "SOURCE_SETTLING"; job.failureStage = stage; try await persist(job)
+                let asset = try await stableSource(for: job)
+                try checkpoint(job)
+                try job.refreshSource(revision: PhotoLibrary.stamp(asset), live: asset.mediaSubtypes.contains(.photoLive),
+                                      created: asset.creationDate, modified: asset.modificationDate)
+                job.error = ""; job.failureStage = nil; try await persist(job)
+                try checkpoint(job)
                 if job.isLive && job.settings.live != .motion && !applePairAvailable { throw HarborError("PAIR_PROTOCOL_UNVERIFIED") }
-                guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
-                      PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("SOURCE_CHANGED") }
+                let exportSignature = PhotoLibrary.preparationStamp(asset)
                 // Only an unreferenced preparation directory is discarded, never a transfer file.
                 try? FileManager.default.removeItem(at: directory)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -386,6 +399,14 @@ final class HarborModel: ObservableObject {
                 job.sources = try await ResourceExporter.export(assetID: job.assetID, settings: job.settings, directory: directory, control: control)
                 if let code = control.failure { throw HarborError(code) }
                 try checkpoint(job)
+                guard let latest = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { throw HarborError("PHOTO_PERMISSION") }
+                guard PhotoLibrary.preparationStamp(latest) == exportSignature else {
+                    // Nothing has been uploaded: discard only this preparation
+                    // and retry from a fresh snapshot, never mix Live versions.
+                    try? FileManager.default.removeItem(at: directory)
+                    throw HarborError("SOURCE_SETTLING")
+                }
+                job.sourceWaits = 0
                 if job.isLive {
                     if job.settings.live == .motion {
                         stage = "motion_package"
@@ -498,7 +519,7 @@ final class HarborModel: ObservableObject {
             try? FileManager.default.removeItem(at: directory)
         } catch {
             guard let current = jobs.first(where: { $0.id == job.id }), current.state != .paused, current.state != .cancelled else { return }
-            if job.isLive && job.settings.live != .motion { stage = current.failureStage ?? stage }
+            if stage == "pair_commit" && job.isLive && job.settings.live != .motion && !current.resources.isEmpty { stage = current.failureStage ?? stage }
             job = current
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
@@ -508,7 +529,13 @@ final class HarborModel: ObservableObject {
             job.attempts += 1
             let system = error as NSError
             job.failureSystemCode = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain, "PHPhotosErrorDomain"].contains(system.domain) ? "\(system.domain):\(system.code)" : nil
-            if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
+            if code == "SOURCE_SETTLING" {
+                job.sourceWaits = (job.sourceWaits ?? 0) + 1
+                if job.sourceWaits! <= 6 {
+                    job.state = .waiting; job.retryAt = Date(timeIntervalSinceNow: min(60, Double(job.sourceWaits!) * 5))
+                } else { job.state = .attention; job.error = "SOURCE_SETTLING_LIMIT"; job.retryAt = nil }
+            }
+            else if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
             else if (code.hasPrefix("REMOTE_MOTION_") && code != "REMOTE_MOTION_TRASHED") || code == "PAIR_CONFIRMATION_PENDING" {
                 job.state = .confirming
                 job.retryAt = Date(timeIntervalSinceNow: min(300, pow(2, Double(min(job.attempts, 6))) * 5))
@@ -516,9 +543,16 @@ final class HarborModel: ObservableObject {
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE"].contains(code) && job.attempts <= 3 {
                 job.state = code == "REMOTE_NOT_VISIBLE" ? .confirming : .waiting
                 job.retryAt = Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5)
-            } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
+            } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "SOURCE_SNAPSHOT_LOCKED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
             try? await persist(job)
         }
+    }
+    private func stableSource(for job: BackupJob) async throws -> PHAsset {
+        try await SourceStabilityProbe.wait(read: {
+            try checkpoint(job)
+            guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { throw HarborError("PHOTO_PERMISSION") }
+            return (asset, PhotoLibrary.preparationStamp(asset))
+        }, pause: { try await Task.sleep(for: .seconds(1)) })
     }
     /// Returns nil when a native file transfer has been scheduled. Both routes
     /// keep opaque response files and a durable commit fence across relaunches.
@@ -730,7 +764,7 @@ final class HarborModel: ObservableObject {
         }
         guard !updatingNetwork, !switching else { return }
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed, job.state != .cancelled else { return }
-        job.error = ""; job.retryAt = nil; job.attempts = 0
+        job.error = ""; job.retryAt = nil; job.attempts = 0; job.sourceWaits = 0
         let liveTasks = await transfer.tasks()
         for index in job.resources.indices {
             if let transportID = job.resources[index].transportID, !liveTasks.contains(where: { $0.taskIdentifier == transportID }) { job.resources[index].transportID = nil }
