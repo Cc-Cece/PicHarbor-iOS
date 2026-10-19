@@ -8,6 +8,24 @@ import Photos
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    func testSourceWaitingIsBoundedAndDoesNotConsumeNetworkRetries() {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "old", settings: BackupSettings())
+        let now = Date(timeIntervalSince1970: 100)
+        for round in 1...7 {
+            job.attempts += 1; job.error = "SOURCE_SETTLING"
+            job.waitForSource(now: now)
+            XCTAssertEqual(job.attempts, 0)
+            XCTAssertEqual(job.sourceWaits, round)
+            if round <= 6 {
+                XCTAssertEqual(job.state, .waiting)
+                XCTAssertEqual(job.retryAt, now.addingTimeInterval(Double(round) * 5))
+            } else {
+                XCTAssertEqual(job.state, .attention); XCTAssertNil(job.retryAt)
+                XCTAssertEqual(job.error, "SOURCE_SETTLING_LIMIT")
+            }
+        }
+    }
+
     @MainActor
     func testPreparationReturnsFreshSnapshotAndStopsAfterBoundedChanges() async throws {
         var reads = 0

@@ -530,10 +530,7 @@ final class HarborModel: ObservableObject {
             let system = error as NSError
             job.failureSystemCode = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain, "PHPhotosErrorDomain"].contains(system.domain) ? "\(system.domain):\(system.code)" : nil
             if code == "SOURCE_SETTLING" {
-                job.sourceWaits = (job.sourceWaits ?? 0) + 1
-                if job.sourceWaits! <= 6 {
-                    job.state = .waiting; job.retryAt = Date(timeIntervalSinceNow: min(60, Double(job.sourceWaits!) * 5))
-                } else { job.state = .attention; job.error = "SOURCE_SETTLING_LIMIT"; job.retryAt = nil }
+                job.waitForSource()
             }
             else if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
             else if (code.hasPrefix("REMOTE_MOTION_") && code != "REMOTE_MOTION_TRASHED") || code == "PAIR_CONFIRMATION_PENDING" {

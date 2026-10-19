@@ -128,6 +128,14 @@ struct BackupJob: Codable, Identifiable {
         guard canRefreshSource else { throw HarborError("SOURCE_SNAPSHOT_LOCKED") }
         assetRevision = revision; isLive = live; assetCreated = created; assetModified = modified
     }
+    mutating func waitForSource(now: Date = Date()) {
+        // PhotoKit settling must not consume the unrelated network retry budget.
+        attempts = max(0, attempts - 1)
+        sourceWaits = (sourceWaits ?? 0) + 1
+        if sourceWaits! <= 6 {
+            state = .waiting; retryAt = now.addingTimeInterval(min(60, Double(sourceWaits!) * 5))
+        } else { state = .attention; error = "SOURCE_SETTLING_LIMIT"; retryAt = nil }
+    }
     @discardableResult
     mutating func updateNetwork(wifiOnly: Bool) -> Set<Int> {
         guard state != .completed, state != .cancelled else { return [] }
