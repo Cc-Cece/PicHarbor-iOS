@@ -18,8 +18,8 @@ def inspect(path):
             raise RuntimeError("Missing background processing mode")
         if "com.cccece.picharbor.processing" not in info.get("BGTaskSchedulerPermittedIdentifiers", []):
             raise RuntimeError("Missing permitted processing task identifier")
-        for required in ("Frameworks/Python.framework/Python", "app/harbor_ios.py", "app/harbor_protocol.py", "app/certifi/cacert.pem",
-                         "python/lib/python3.13/encodings/__init__.py", "Notices/NOTICE.md"):
+        for required in ("Frameworks/Python.framework/Python", "app/harbor_ios.py", "app/harbor_protocol.py", "app/harbor_live.py", "app/certifi/cacert.pem",
+                         "python/lib/python3.13/encodings/__init__.py", "Notices/NOTICE.md", "Notices/Vendor/LIVE-PAIR-REFERENCE-LICENSE-MIT.txt"):
             if app + required not in names:
                 raise RuntimeError(f"Missing {required}")
         for module in ("_ssl", "_sqlite3", "_hashlib", "_socket"):

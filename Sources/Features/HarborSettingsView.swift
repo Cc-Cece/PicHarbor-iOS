@@ -41,7 +41,10 @@ struct BackupPreferencesView: View {
             Section {
                 Picker("备份方式", selection: $model.settings.live) { ForEach(LiveStrategy.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden()
             } header: { Text("Live Photo 备份方式") } footer: {
-                Text(model.settings.live == .motion ? "将对应照片与视频封装为单个 Motion Photo。云端播放与官方客户端取回需完成真机验收。" : model.applePairAvailable ? "保留苹果原始照片、视频与关联信息。" : "开发验证中：云端关联协议尚未验证。选择此方式的 Live Photo 任务会明确等待处理，不会退化为两个独立上传文件。")
+                Text(model.settings.live == .motion ? "将照片与视频封装为单个 Motion Photo。封装件与本机原件在谷歌相册中可能分别显示。" : model.settings.live == .applePair ? "测试方式：分别传输原始照片和配对视频，再联合提交为一个项目。原图已在云端时自动走补视频路径。请先用新的专用样本测试。" : "测试方式：先确认原始照片已在云端，再上传视频并关联到该照片。用于对比联合提交及补动态路径，不会独立提交普通视频。")
+                if model.settings.live != .motion {
+                    Text("动态播放、同机识别、官方客户端取回及实际配额均需真机验证；当前 Live Photo 不参与本地清理。切换方式不会自动重新备份历史图库。").foregroundStyle(.secondary)
+                }
             }
             Section {
                 Picker("版本保留", selection: $model.settings.edits) { ForEach(EditPolicy.allCases) { Text($0.title).tag($0) } }

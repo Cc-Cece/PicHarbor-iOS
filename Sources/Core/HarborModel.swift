@@ -253,7 +253,7 @@ final class HarborModel: ObservableObject {
         let targetAccount = account
         let membership = snapshot.syncAlbums ? library.memberships(for: Set(assets.map(\.localIdentifier))) : [:]
         do {
-            var known = Set(jobs.filter { $0.state != .cancelled || (origin == .automatic && $0.activityHidden == true) }.map(\.dedupKey))
+            var known = Set(jobs.filter { $0.state != .cancelled || (origin == .automatic && $0.activityHidden == true) }.map { $0.discoveryKey(origin: origin) })
             let active = Set(jobs.filter { $0.state.active || $0.state == .queued || $0.state == .paused }.map(\.dedupKey))
             var additions: [BackupJob] = []
             var planned = Set<String>()
@@ -262,10 +262,11 @@ final class HarborModel: ObservableObject {
                 job.isLive = asset.mediaSubtypes.contains(.photoLive)
                 job.albumIDs = membership[asset.localIdentifier] ?? []
                 job.forceUpload = force
+                job.assetCreated = asset.creationDate; job.assetModified = asset.modificationDate
                 job.origin = origin; job.batchID = batch
-                if !force && known.contains(job.dedupKey) { continue }
+                if !force && known.contains(job.discoveryKey(origin: origin)) { continue }
                 if active.contains(job.dedupKey) || planned.contains(job.dedupKey) { continue }
-                known.insert(job.dedupKey)
+                known.insert(job.discoveryKey(origin: origin))
                 planned.insert(job.dedupKey); job.generation = 1; additions.append(job)
             }
             if !additions.isEmpty {
@@ -372,7 +373,7 @@ final class HarborModel: ObservableObject {
                 await PreparationGate.shared.acquire()
                 do {
                 try checkpoint(job)
-                if job.isLive && job.settings.live == .applePair && !applePairAvailable { throw HarborError("PAIR_PROTOCOL_UNVERIFIED") }
+                if job.isLive && job.settings.live != .motion && !applePairAvailable { throw HarborError("PAIR_PROTOCOL_UNVERIFIED") }
                 guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
                       PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("SOURCE_CHANGED") }
                 // Only an unreferenced preparation directory is discarded, never a transfer file.
@@ -386,71 +387,83 @@ final class HarborModel: ObservableObject {
                 if let code = control.failure { throw HarborError(code) }
                 try checkpoint(job)
                 if job.isLive {
-                    stage = "motion_package"
-                    guard job.settings.live == .motion else { throw HarborError("PAIR_PROTOCOL_UNVERIFIED") }
-                    job.resources = try await MotionPhoto.package(job.sources, directory: directory)
+                    if job.settings.live == .motion {
+                        stage = "motion_package"
+                        job.resources = try await MotionPhoto.package(job.sources, directory: directory)
+                    } else {
+                        stage = "pair_export"
+                        job.resources = job.sources
+                        job.livePairs = try LivePairRecord.make(job.resources)
+                        job.assetCreated = asset.creationDate; job.assetModified = asset.modificationDate
+                    }
                 } else { job.resources = job.sources }
                 try checkpoint(job)
                 try await persist(job)
                 } catch { await PreparationGate.shared.release(); throw error }
                 await PreparationGate.shared.release()
             }
-            for index in job.resources.indices where !job.resources[index].confirmed {
-                try checkpoint(job)
-                let resource = job.resources[index]
-                var request = payload(resource, account: job.account)
-                // After an uncertain commit, query first; never label a submitted key confirmed.
-                if resource.submitted {
-                    stage = "confirmation"
-                    job.state = .confirming; try await persist(job)
-                    let result = try await engine.invoke("confirm_resource", request)
+            if job.isLive && job.settings.live != .motion {
+                stage = "pair_commit"
+                guard let finished = try await processApplePairs(job, directory: directory) else { return }
+                job = finished
+            } else {
+                for index in job.resources.indices where !job.resources[index].confirmed {
                     try checkpoint(job)
-                    guard result["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
-                    job.resources[index].confirmed = true
-                    job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
-                    try await persist(job); continue
-                }
-                stage = "source_read"
-                guard FileManager.default.fileExists(atPath: resource.path) else { throw HarborError("SOURCE_FILE_MISSING") }
-                let digest = try await Task.detached { try ResourceExporter.hash(URL(fileURLWithPath: resource.path)) }.value
-                guard digest.1 == resource.sha256, digest.2 == resource.size else { throw HarborError("SOURCE_CHANGED") }
-                try checkpoint(job)
-                if let response = resource.responsePath {
-                    stage = "commit_response"
-                    committingResourceID = resource.id
-                    job.state = .committing; job.resources[index].submitted = true
-                    try await persist(job)
-                    request["response_path"] = response; request["name"] = resource.name; request["quality"] = job.settings.quality.rawValue
-                    let result = try await engine.invoke("commit_resource", request)
+                    let resource = job.resources[index]
+                    var request = payload(resource, account: job.account)
+                    // After an uncertain commit, query first; never label a submitted key confirmed.
+                    if resource.submitted {
+                        stage = "confirmation"
+                        job.state = .confirming; try await persist(job)
+                        let result = try await engine.invoke("confirm_resource", request)
+                        try checkpoint(job)
+                        guard result["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
+                        job.resources[index].confirmed = true
+                        job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
+                        try await persist(job); continue
+                    }
+                    stage = "source_read"
+                    guard FileManager.default.fileExists(atPath: resource.path) else { throw HarborError("SOURCE_FILE_MISSING") }
+                    let digest = try await Task.detached { try ResourceExporter.hash(URL(fileURLWithPath: resource.path)) }.value
+                    guard digest.1 == resource.sha256, digest.2 == resource.size else { throw HarborError("SOURCE_CHANGED") }
                     try checkpoint(job)
-                    job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
-                    stage = "confirmation"
-                    let confirmation = try await engine.invoke("confirm_resource", request)
-                    try checkpoint(job)
-                    guard confirmation["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
-                    job.resources[index].remoteKey = confirmation["remote_key"] as? String ?? ""
-                    job.resources[index].confirmed = true; try await persist(job)
-                } else {
-                    stage = "prepare_upload"
-                    request["force"] = job.forceUpload
-                    let plan = try await engine.invoke("prepare_upload", request)
-                    try checkpoint(job)
-                    if plan["exists"] as? Bool == true {
-                        job.resources[index].remoteKey = plan["remote_key"] as? String ?? ""
+                    if let response = resource.responsePath {
+                        stage = "commit_response"
+                        committingResourceID = resource.id
+                        job.state = .committing; job.resources[index].submitted = true
+                        try await persist(job)
+                        request["response_path"] = response; request["name"] = resource.name; request["quality"] = job.settings.quality.rawValue
+                        let result = try await engine.invoke("commit_resource", request)
+                        try checkpoint(job)
+                        job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
+                        stage = "confirmation"
+                        let confirmation = try await engine.invoke("confirm_resource", request)
+                        try checkpoint(job)
+                        guard confirmation["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
+                        job.resources[index].remoteKey = confirmation["remote_key"] as? String ?? ""
                         job.resources[index].confirmed = true; try await persist(job)
                     } else {
-                        let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
-                        let reserved = jobs.flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
-                        // Background URLSession may make its own file copy.
-                        guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
-                        stage = "transfer_creation"
-                        let task = try transfer.create(job: job, resource: resource, plan: plan)
-                        job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
-                        do { try await persist(job) } catch { task.cancel(); throw error }
-                        let current = jobs.first(where: { $0.id == job.id })?.state
-                        if current == .cancelled { task.cancel() }
-                        else if current != .paused { task.resume() }
-                        return
+                        stage = "prepare_upload"
+                        request["force"] = job.forceUpload
+                        let plan = try await engine.invoke("prepare_upload", request)
+                        try checkpoint(job)
+                        if plan["exists"] as? Bool == true {
+                            job.resources[index].remoteKey = plan["remote_key"] as? String ?? ""
+                            job.resources[index].confirmed = true; try await persist(job)
+                        } else {
+                            let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+                            let reserved = jobs.flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
+                            // Background URLSession may make its own file copy.
+                            guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
+                            stage = "transfer_creation"
+                            let task = try transfer.create(job: job, resource: resource, plan: plan)
+                            job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
+                            do { try await persist(job) } catch { task.cancel(); throw error }
+                            let current = jobs.first(where: { $0.id == job.id })?.state
+                            if current == .cancelled { task.cancel() }
+                            else if current != .paused { task.resume() }
+                            return
+                        }
                     }
                 }
             }
@@ -461,12 +474,14 @@ final class HarborModel: ObservableObject {
                 // Older jobs may retain the commit RPC's key rather than the
                 // hash lookup's canonical key. Refresh every version without
                 // retransmitting, including resources already marked confirmed.
-                for index in job.resources.indices {
-                    let result = try await engine.invoke("confirm_resource", payload(job.resources[index], account: job.account))
-                    try checkpoint(job)
-                    guard result["confirmed"] as? Bool == true,
-                          let key = result["remote_key"] as? String, !key.isEmpty else { throw HarborError("REMOTE_NOT_VISIBLE") }
-                    job.resources[index].remoteKey = key
+                if job.settings.live == .motion {
+                    for index in job.resources.indices {
+                        let result = try await engine.invoke("confirm_resource", payload(job.resources[index], account: job.account))
+                        try checkpoint(job)
+                        guard result["confirmed"] as? Bool == true,
+                              let key = result["remote_key"] as? String, !key.isEmpty else { throw HarborError("REMOTE_NOT_VISIBLE") }
+                        job.resources[index].remoteKey = key
+                    }
                 }
                 try await persist(job)
                 let dynamic = try await engine.invoke("motion_status", ["account": job.account, "keys": job.resources.map(\.remoteKey)])
@@ -483,6 +498,8 @@ final class HarborModel: ObservableObject {
             try? FileManager.default.removeItem(at: directory)
         } catch {
             guard let current = jobs.first(where: { $0.id == job.id }), current.state != .paused, current.state != .cancelled else { return }
+            if job.isLive && job.settings.live != .motion { stage = current.failureStage ?? stage }
+            job = current
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
             // These response errors are guaranteed to occur before gpmc's
@@ -492,22 +509,166 @@ final class HarborModel: ObservableObject {
             let system = error as NSError
             job.failureSystemCode = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain, "PHPhotosErrorDomain"].contains(system.domain) ? "\(system.domain):\(system.code)" : nil
             if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
-            else if code.hasPrefix("REMOTE_MOTION_") && code != "REMOTE_MOTION_TRASHED" {
+            else if (code.hasPrefix("REMOTE_MOTION_") && code != "REMOTE_MOTION_TRASHED") || code == "PAIR_CONFIRMATION_PENDING" {
                 job.state = .confirming
                 job.retryAt = Date(timeIntervalSinceNow: min(300, pow(2, Double(min(job.attempts, 6))) * 5))
             }
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE"].contains(code) && job.attempts <= 3 {
                 job.state = code == "REMOTE_NOT_VISIBLE" ? .confirming : .waiting
                 job.retryAt = Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5)
-            } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "SOURCE_CHANGED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
+            } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
             try? await persist(job)
         }
+    }
+    /// Returns nil when a native file transfer has been scheduled. Both routes
+    /// keep opaque response files and a durable commit fence across relaunches.
+    private func processApplePairs(_ initial: BackupJob, directory: URL) async throws -> BackupJob? {
+        var job = initial
+        if job.livePairs == nil { job.livePairs = try LivePairRecord.make(job.resources); try await persist(job) }
+        for pairIndex in (job.livePairs ?? []).indices {
+            try checkpoint(job)
+            guard let pair = job.livePairs?[pairIndex],
+                  let photoIndex = job.resources.firstIndex(where: { $0.id == pair.photoID }),
+                  let videoIndex = job.resources.firstIndex(where: { $0.id == pair.videoID }) else { throw HarborError("LIVE_PAIR_MISSING") }
+            func pairPayload(_ job: BackupJob) -> [String: Any] {
+                var photo = payload(job.resources[photoIndex], account: job.account)
+                var video = payload(job.resources[videoIndex], account: job.account)
+                photo["name"] = job.resources[photoIndex].name; photo["response_path"] = job.resources[photoIndex].responsePath
+                video["name"] = job.resources[videoIndex].name; video["response_path"] = job.resources[videoIndex].responsePath
+                return ["account": job.account, "photo": photo, "video": video,
+                        "quality": job.settings.quality.rawValue, "route": job.livePairs?[pairIndex].route ?? "",
+                        "created_at": Int64((job.assetCreated ?? job.created).timeIntervalSince1970),
+                        "modified_at": Int64((job.assetModified ?? job.assetCreated ?? job.created).timeIntervalSince1970)]
+            }
+            job.failureStage = "pair_lookup"; job.state = .confirming; try await persist(job)
+            let presence = try await engine.invoke("confirm_pair", pairPayload(job))
+            try checkpoint(job)
+            if presence["confirmed"] as? Bool == true, let key = presence["remote_key"] as? String, !key.isEmpty {
+                job.livePairs?[pairIndex].confirmed = true; job.livePairs?[pairIndex].remoteKey = key
+                for index in [photoIndex, videoIndex] { job.resources[index].confirmed = true; job.resources[index].remoteKey = key }
+                try await persist(job); continue
+            }
+            // A timeout/termination after submission cannot authorize another
+            // commit. Retry here means query-only until association is visible.
+            if pair.queryOnly { throw HarborError("PAIR_CONFIRMATION_PENDING") }
+            if job.livePairs?[pairIndex].route == nil {
+                let photoExists = !(presence["photo_key"] as? String ?? "").isEmpty
+                job.livePairs?[pairIndex].route = photoExists || job.settings.live == .appleReconcile ? "reconcile" : "joint"
+                try await persist(job)
+            }
+            if job.livePairs?[pairIndex].route == "reconcile" {
+                let existing = presence["photo_key"] as? String ?? ""
+                if !existing.isEmpty {
+                    job.resources[photoIndex].remoteKey = existing
+                    try await persist(job)
+                } else {
+                    if job.resources[photoIndex].submitted { throw HarborError("REMOTE_NOT_VISIBLE") }
+                    if job.resources[photoIndex].responsePath == nil {
+                        try await launchPairTransfer(job, index: photoIndex, directory: directory); return nil
+                    }
+                    var request = payload(job.resources[photoIndex], account: job.account)
+                    request["name"] = job.resources[photoIndex].name
+                    request["response_path"] = job.resources[photoIndex].responsePath
+                    request["quality"] = job.settings.quality.rawValue
+                    try await verifyPairSource(job.resources[photoIndex])
+                    try checkpoint(job)
+                    job.failureStage = "pair_photo_commit"; job.state = .committing
+                    job.resources[photoIndex].submitted = true; try await persist(job)
+                    do { try checkpoint(job) }
+                    catch {
+                        if var latest = jobs.first(where: { $0.id == job.id }) { latest.resources[photoIndex].submitted = false; try await persist(latest) }
+                        throw error
+                    }
+                    do { _ = try await engine.invoke("commit_pair_photo", request) }
+                    catch {
+                        if (error as? HarborError)?.code.hasPrefix("UPLOAD_RESPONSE_") == true,
+                           var latest = jobs.first(where: { $0.id == job.id }) {
+                            latest.resources[photoIndex].submitted = false; latest.resources[photoIndex].responsePath = nil
+                            try await persist(latest)
+                        }
+                        throw error
+                    }
+                    try checkpoint(job)
+                    let visible = try await engine.invoke("confirm_resource", payload(job.resources[photoIndex], account: job.account))
+                    try checkpoint(job)
+                    guard visible["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
+                    job.resources[photoIndex].remoteKey = visible["remote_key"] as? String ?? ""
+                    try await persist(job)
+                }
+            }
+            let required = job.livePairs?[pairIndex].route == "joint" ? [photoIndex, videoIndex] : [videoIndex]
+            for index in required where job.resources[index].responsePath == nil {
+                try await launchPairTransfer(job, index: index, directory: directory); return nil
+            }
+            for index in [photoIndex, videoIndex] { try await verifyPairSource(job.resources[index]); try checkpoint(job) }
+            try checkpoint(job)
+            job.failureStage = "pair_commit"; job.state = .committing
+            job.livePairs?[pairIndex].submitted = true
+            try await persist(job)
+            do { try checkpoint(job) }
+            catch {
+                if var latest = jobs.first(where: { $0.id == job.id }) { latest.livePairs?[pairIndex].submitted = false; try await persist(latest) }
+                throw error
+            }
+            do {
+                let result = try await engine.invoke("pair_apple", pairPayload(job))
+                try checkpoint(job)
+                job.livePairs?[pairIndex].remoteKey = result["remote_key"] as? String ?? ""
+                job.failureStage = "pair_confirmation"; job.state = .confirming; try await persist(job)
+            } catch {
+                let code = (error as? HarborError)?.code ?? "ENGINE_ERROR"
+                if code.hasPrefix("UPLOAD_RESPONSE_") || code == "PAIR_COMMIT_REJECTED" || code.hasPrefix("INVALID_PAIR_") {
+                    job.livePairs?[pairIndex].submitted = false
+                    if code.hasPrefix("UPLOAD_RESPONSE_") {
+                        for index in required { job.resources[index].responsePath = nil }
+                    }
+                    // Only a guaranteed pre-acceptance rejection clears the fence.
+                    // Never overwrite a pause/cancel that arrived during the RPC.
+                    if var latest = jobs.first(where: { $0.id == job.id }) {
+                        latest.livePairs?[pairIndex].submitted = false
+                        if code.hasPrefix("UPLOAD_RESPONSE_") { for index in required { latest.resources[index].responsePath = nil } }
+                        try await persist(latest)
+                    }
+                }
+                throw error
+            }
+            let linked = try await engine.invoke("confirm_pair", pairPayload(job))
+            try checkpoint(job)
+            guard linked["confirmed"] as? Bool == true, let key = linked["remote_key"] as? String, !key.isEmpty else { throw HarborError("PAIR_CONFIRMATION_PENDING") }
+            job.livePairs?[pairIndex].confirmed = true; job.livePairs?[pairIndex].remoteKey = key
+            for index in [photoIndex, videoIndex] { job.resources[index].confirmed = true; job.resources[index].remoteKey = key }
+            try await persist(job)
+        }
+        return job
+    }
+    private func verifyPairSource(_ resource: MediaResource) async throws {
+        guard FileManager.default.fileExists(atPath: resource.path) else { throw HarborError("SOURCE_FILE_MISSING") }
+        let digest = try await Task.detached { try ResourceExporter.hash(URL(fileURLWithPath: resource.path)) }.value
+        guard digest.0 == resource.sha1, digest.1 == resource.sha256, digest.2 == resource.size else { throw HarborError("SOURCE_CHANGED") }
+    }
+    private func launchPairTransfer(_ initial: BackupJob, index: Int, directory: URL) async throws {
+        var job = initial
+        try checkpoint(job)
+        let resource = job.resources[index]
+        try await verifyPairSource(resource)
+        try checkpoint(job)
+        job.failureStage = "pair_transfer"; try await persist(job)
+        let plan = try await engine.invoke("prepare_pair_component", payload(resource, account: job.account))
+        try checkpoint(job)
+        let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+        let reserved = jobs.flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
+        guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
+        let task = try transfer.create(job: job, resource: resource, plan: plan)
+        job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
+        do { try await persist(job) } catch { task.cancel(); throw error }
+        let state = jobs.first(where: { $0.id == job.id })?.state
+        if state == .cancelled { task.cancel() } else if state != .paused { task.resume() }
     }
     private func synchronizeAlbums(_ job: BackupJob) async throws {
         guard let store else { throw HarborError("DATABASE_ERROR") }
         await albumGate.acquire()
         do {
-        let keys = job.resources.map(\.remoteKey)
+        let keys = Array(Set(job.resources.map(\.remoteKey))).sorted()
         for local in job.albumIDs {
             try checkpoint(job)
             if let map = mappings.first(where: { $0.account == job.account && $0.localID == local }) {
@@ -685,6 +846,8 @@ final class HarborModel: ObservableObject {
             "failure_stages": Dictionary(grouping: jobs.filter { !$0.error.isEmpty }, by: { $0.failureStage ?? "legacy_unknown" }).mapValues(\.count),
             "file_error_codes": jobs.compactMap(\.failureSystemCode),
             "apple_pair": applePairAvailable, "live_cleanup": false, "staged_bytes": stagedBytes,
+            "pair_routes": Dictionary(grouping: jobs.flatMap { $0.livePairs ?? [] }, by: { $0.route ?? "unselected" }).mapValues(\.count),
+            "pair_pending_submissions": jobs.flatMap { $0.livePairs ?? [] }.filter { $0.submitted && !$0.confirmed }.count,
             "storage_failed": storageFailed, "credential_storage_available": credentialStorageAvailable,
             "initialized": initialized, "engine_ready": engine.ready, "engine_busy": engine.busy,
             "account_switching": switching,

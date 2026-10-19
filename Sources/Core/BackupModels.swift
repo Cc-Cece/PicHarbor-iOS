@@ -8,9 +8,15 @@ enum UploadQuality: String, Codable, CaseIterable, Identifiable {
     }
 }
 enum LiveStrategy: String, Codable, CaseIterable, Identifiable {
-    case motion, applePair
+    case motion, applePair, appleReconcile
     var id: String { rawValue }
-    var title: String { self == .motion ? "Motion Photo" : "苹果原始资源配对方式" }
+    var title: String {
+        switch self {
+        case .motion: return "Motion Photo"
+        case .applePair: return "原始配对 · 联合提交（测试）"
+        case .appleReconcile: return "原始配对 · 先照片后视频（测试）"
+        }
+    }
 }
 enum EditPolicy: String, Codable, CaseIterable, Identifiable {
     case both, original, current
@@ -87,6 +93,9 @@ struct BackupJob: Codable, Identifiable {
     var assetID: String
     var assetRevision: String
     var settings: BackupSettings
+    var assetCreated: Date?
+    var assetModified: Date?
+    var livePairs: [LivePairRecord]?
     var state: JobState = .queued
     var resources: [MediaResource] = []
     // Exported source manifests are retained even when Motion Photo replaces upload resources.
@@ -105,6 +114,9 @@ struct BackupJob: Codable, Identifiable {
     var progress: Double = 0
     var evidence: CleanupEvidence?
     var dedupKey: String { "\(account)|\(assetID)|\(assetRevision)|\(settings.mediaPolicy)" }
+    func discoveryKey(origin: BackupOrigin) -> String {
+        origin == .automatic ? "\(account)|\(assetID)|\(assetRevision)" : dedupKey
+    }
     var unfinished: Bool { state != .completed && activityHidden != true }
     @discardableResult
     mutating func updateNetwork(wifiOnly: Bool) -> Set<Int> {
@@ -124,7 +136,9 @@ struct BackupJob: Codable, Identifiable {
         guard let failureStage else { return nil }
         return ["preparation": "准备暂存目录", "export": "从相册导出资源", "motion_package": "封装动态照片",
                 "source_read": "读取暂存原件", "prepare_upload": "查重与申请上传", "transfer_creation": "创建后台传输",
-                "upload_response": "保存上传响应", "commit_response": "读取响应并提交云端", "confirmation": "确认云端内容"][failureStage] ?? "其他处理步骤"
+                "upload_response": "保存上传响应", "commit_response": "读取响应并提交云端", "confirmation": "确认云端内容",
+                "pair_export": "准备原始配对资源", "pair_lookup": "检查照片与视频关联", "pair_photo_commit": "提交配对用原图",
+                "pair_transfer": "传输原始配对资源", "pair_commit": "关联照片与视频", "pair_confirmation": "确认同一云端动态项目"][failureStage] ?? "其他处理步骤"
     }
     mutating func recordFailure(_ code: String, stage: String, committingResourceID: String?) {
         error = code; failureStage = stage
@@ -137,6 +151,30 @@ struct BackupJob: Codable, Identifiable {
         if state == .cancelled || state == .completed { return .cancel }
         if activeAccount.isEmpty || account != activeAccount || state != .transferring { return .pause }
         return .run
+    }
+}
+
+struct LivePairRecord: Codable, Identifiable {
+    var id: String
+    var photoID: String
+    var videoID: String
+    var route: String?
+    var submitted = false
+    var confirmed = false
+    var remoteKey = ""
+    var queryOnly: Bool { submitted || confirmed }
+    static func make(_ resources: [MediaResource]) throws -> [LivePairRecord] {
+        var pairs: [LivePairRecord] = []
+        for version in ["original", "current"] {
+            let photos = resources.filter { $0.role == version + ".photo" }
+            let videos = resources.filter { $0.role == version + ".pairedVideo" }
+            if photos.isEmpty && videos.isEmpty { continue }
+            guard photos.count == 1, videos.count == 1 else { throw HarborError("LIVE_PAIR_MISSING") }
+            pairs.append(LivePairRecord(id: version, photoID: photos[0].id, videoID: videos[0].id))
+        }
+        guard !pairs.isEmpty, pairs.count * 2 == resources.count,
+              Set(resources.map(\.id)).count == resources.count else { throw HarborError("LIVE_PAIR_MISSING") }
+        return pairs
     }
 }
 

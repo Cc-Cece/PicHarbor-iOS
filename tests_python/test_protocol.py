@@ -94,9 +94,12 @@ class ProtocolTests(unittest.TestCase):
         self.assertFalse(self.service.dispatch("confirm_resource", self.value)["confirmed"])
         self.assertTrue(self.service.dispatch("confirm_resource", self.value)["confirmed"])
 
-    def test_apple_pair_is_never_faked(self):
-        self.assertFalse(self.service.dispatch("capabilities", {})["apple_pair"])
-        with self.assertRaisesRegex(Failure, "PAIR_PROTOCOL_UNVERIFIED"):
+    def test_apple_pair_is_explicitly_experimental_and_rejects_incomplete_input(self):
+        capability = self.service.dispatch("capabilities", {})
+        self.assertTrue(capability["apple_pair"])
+        self.assertTrue(capability["apple_pair_experimental"])
+        self.assertEqual(capability["apple_pair_routes"], ["joint", "reconcile"])
+        with self.assertRaisesRegex(Failure, "INVALID_PAIR_RESOURCES"):
             self.service.dispatch("pair_apple", self.value)
         self.assertEqual(self.service.api.uploads, 0)
 

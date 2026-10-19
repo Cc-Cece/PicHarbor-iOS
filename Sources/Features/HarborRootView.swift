@@ -198,7 +198,17 @@ struct JobDetailView: View {
                     if let stage = job.failureStageTitle { LabeledContent("失败步骤", value: stage) }
                     if let code = job.failureSystemCode { Text(code).font(.caption).foregroundStyle(.secondary) }
                 } }
-                if job.isLive { Section("动态照片确认") {
+                if let pairs = job.livePairs, !pairs.isEmpty { Section("原始配对测试") {
+                    ForEach(pairs) { pair in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(pair.id == "original" ? "原始版本" : "编辑后版本")
+                            Text(pair.route == "joint" ? "实际路径：照片与视频联合提交" : pair.route == "reconcile" ? "实际路径：原图确认后关联视频" : "正在查询并选择关联路径")
+                            Text(pair.confirmed ? "照片与视频哈希已指向同一云端项目" : pair.submitted ? "关联请求已提交；等待同一项目核验" : "尚未提交配对关联")
+                        }.font(.footnote)
+                    }
+                    Text("已关联不代表配额或官方客户端取回已验收，请核对谷歌相册详情。Live Photo 本地清理保持关闭。").font(.footnote).foregroundStyle(.secondary)
+                } }
+                if job.isLive && job.settings.live == .motion { Section("动态照片确认") {
                     Text(job.state == .completed ? "文件与云端动态标记均已确认。当前 Live Photo 本地清理仍未开放。" : job.resources.allSatisfy(\.confirmed) && !job.resources.isEmpty ? "封装文件已在云端找到，正在确认动态标记和处理状态；确认阶段不会重新上传文件。" : "将本机照片与配对视频封装为动态文件，再分别确认文件存在与云端动态识别。")
                     Text("任务标题使用本机原名；下方资源名为实际上传文件。Motion Photo 封装会改变文件内容，谷歌相册可能同时显示本机原件与云端封装文件，仅改文件名不能保证合并。")
                 }.font(.footnote).foregroundStyle(.secondary) }

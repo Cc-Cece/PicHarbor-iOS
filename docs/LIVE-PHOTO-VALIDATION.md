@@ -11,13 +11,15 @@
 - 云端哈希存在仅说明文件存在；还需完整图库快照中的动态标记、处理完成和非回收站状态，才将 Motion Photo 任务标为已备份。
 - 自动测试已覆盖 JPEG、HEIC 容器和真实 QuickTime timed metadata。它们不是 Google Photos 接受该资源的证据。
 
-## 苹果原始资源配对：尚无已验证的上传协议
+## 苹果原始资源配对：0.2.4 实验实现，待本应用真机验收
+
+后续研究已找到 gotohp 和 PhotosBackup 的实现。本应用新增联合提交（field 24）及先原图后关联视频（field 9）两种可选方式；有原图时联合模式自动使用补视频路径。两个原始资源哈希须查询到同一远端标识，之后仍需动态状态确认。实验能力不等于真机验收通过，Live Photo 清理仍关闭。源码快照见 LIVE-PHOTO-PROTOCOL-RESEARCH.md，测试步骤见 LIVE-PAIR-TESTING.md。
 
 检查范围：固定 `Vendor/gpmc/api.py`、`message_types.py`、媒体解析模型，MotionPhoto2 本地参考及上游公开文档。
 
-当前 gpmc 的上传流程为 get_upload_token → upload_file → commit_upload。已有 commit_upload 的已知参数描述一个上传结果、文件名、内容哈希、时间和画质/设备信息，未提供可直接使用的苹果照片与视频关联操作。媒体解析模型的 is_micro_video 能识别动态标记，但不能据此推出上传配对协议。
+固定 gpmc 的普通 commit_upload 未提供苹果配对参数，0.2.4 在独立的 Python/harbor_live.py 增加适配，不直接修改 Vendor 快照。
 
-MotionPhoto2 实现的是文件容器封装，也不能作为“苹果原始资源云端关联”的协议证据。因此当前能力声明 `apple_pair=false`，设置允许选择该开发目标，但相关任务报 `PAIR_PROTOCOL_UNVERIFIED`。不会分别上传两个普通文件并宣称完整，也不会暗中改用 Motion Photo。
+MotionPhoto2 仍只作为容器封装参考。0.2.3 及之前的 apple_pair=false 和 PAIR_PROTOCOL_UNVERIFIED 为历史行为；0.2.4 声明 apple_pair=true、apple_pair_experimental=true，表示可执行实验路径，不表示官方往返验收已通过。
 
 要继续实现这一目标，需要可验证的官方 iOS 上传关联请求/响应结构或能够复现同等关联的协议实现，并证明原始资源在云端确为同一个 Live Photo。仅凭字段猜测发送 RPC 不作为实现方案。协议证据必须脱敏，不收集登录令牌、签名下载地址或用户私人照片。
 

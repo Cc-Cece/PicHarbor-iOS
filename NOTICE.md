@@ -7,5 +7,6 @@
 - blackboxprotobuf 保留 NCC Group 的 MIT 声明；Python 依赖的发行元数据与许可证随包保留。
 - Python iOS 运行环境来自 BeeWare Python-Apple-support 的固定发布，下载地址及校验值见 `tools/runtime-lock.json`。运行环境附带的许可文本随运行环境保留。
 - iOS 适配为 `Python/harbor_ios.py` 和 `Sources/`；`Vendor/gpmc/mobile.py` 是安卓扩展，未用作 iOS 业务入口。Vendor 文件保持复制时内容不变。
+- 原始 Live Photo 配对适配 `Python/harbor_live.py` 参考 xob0t/gotohp（`97a5dc0`）与 g8row/PhotosBackup（`3c88269`）的 MIT 实现和协议研究，包含前者的 result-item mask。来源与完整许可证见 `Vendor/LIVE-PAIR-REFERENCE-LICENSE-MIT.txt`；研究快照记录见 `docs/LIVE-PHOTO-PROTOCOL-RESEARCH.md`。未引入 gunshot 的 GPL 集成代码或替换固定 gpmc 快照。
 
 本应用并非 Google 官方客户端，不承诺服务端配额或免费原画质结果。哈希匹配不等于安全清理资格；A/B 版本没有本地或云端删除入口。

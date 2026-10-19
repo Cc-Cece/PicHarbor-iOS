@@ -1,7 +1,7 @@
 """Version 2 stateless media protocol; native SQLite owns all new backup jobs.
 
-No guessed Live Photo RPC is sent. Apple-pair support stays an explicit missing
-capability until an observed protocol and official-client round trip prove it.
+Original pairing is experimental, based on published protocol implementations.
+Capability means executable test support, not completed device acceptance.
 """
 import base64
 import re
@@ -14,7 +14,7 @@ from gpmc.db_update_parser import parse_db_update, _parse_media_item, _get_neste
 
 class Protocol:
     actions = {"prepare_upload", "commit_resource", "confirm_resource", "sync_cloud",
-               "check_cleanup", "create_album", "add_to_album", "pair_apple", "motion_status"}
+               "check_cleanup", "create_album", "add_to_album", "pair_apple", "confirm_pair", "prepare_pair_component", "commit_pair_photo", "motion_status"}
 
     def __init__(self, service):
         self.service = service
@@ -28,7 +28,7 @@ class Protocol:
     @staticmethod
     def capabilities():
         return {"protocol_version": 2, "native_file_transport": True,
-                "apple_pair": False, "apple_pair_reason": "PAIR_PROTOCOL_UNVERIFIED",
+                "apple_pair": True, "apple_pair_experimental": True, "apple_pair_routes": ["joint", "reconcile"],
                 "motion_mux_version": 1, "cloud_delete": False}
 
     def digest(self, value):
@@ -41,11 +41,15 @@ class Protocol:
 
     def dispatch(self, action, value):
         from harbor_ios import Failure
-        if action == "pair_apple":
-            raise Failure("PAIR_PROTOCOL_UNVERIFIED")
-        if action == "prepare_upload":
+        if action in ("pair_apple", "confirm_pair"):
+            if not isinstance(value.get("photo"), dict) or not isinstance(value.get("video"), dict):
+                raise Failure("INVALID_PAIR_RESOURCES")
+            from harbor_live import LiveProtocol
+            adapter = LiveProtocol(self)
+            return adapter.commit(value) if action == "pair_apple" else adapter.status(value)
+        if action in ("prepare_upload", "prepare_pair_component"):
             digest = self.digest(value)
-            remote = self.api.find_remote_media_by_hash(digest)
+            remote = self.api.find_remote_media_by_hash(digest) if action == "prepare_upload" else None
             if remote and not value.get("force", False):
                 return {"exists": True, "remote_key": remote}
             token = self.api.get_upload_token(base64.b64encode(digest).decode(), value["size"])
@@ -53,11 +57,15 @@ class Protocol:
                     "headers": {"Authorization": "Bearer " + self.api.bearer_token,
                                 "User-Agent": self.api.user_agent, "Accept-Language": self.api.language,
                                 "Accept-Encoding": "gzip"}}
-        if action == "commit_resource":
+        pair_photo = action == "commit_pair_photo"
+        if action == "commit_resource" or pair_photo:
             self.digest(value)
             quality = value.get("quality", "original")
             if quality not in ("original", "quota", "saver"):
                 raise Failure("INVALID_QUALITY")
+            if pair_photo:
+                from harbor_live import LiveProtocol
+                LiveProtocol(self).receipt(value)
             from pathlib import Path
             try:
                 path = Path(value["response_path"]).resolve()
@@ -74,7 +82,7 @@ class Protocol:
             except OSError:
                 raise Failure("UPLOAD_RESPONSE_READ") from None
             try:
-                decoded, _ = decode_message(data)
+                decoded, _ = decode_message(data, {"1": {"type": "int"}, "2": {"type": "bytes"}}) if pair_photo else decode_message(data)
             except Exception:
                 raise Failure("UPLOAD_RESPONSE_INVALID") from None
             key = self.api.commit_upload(decoded, value["name"], bytes.fromhex(value["sha1"]),

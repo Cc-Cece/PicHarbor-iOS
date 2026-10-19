@@ -8,6 +8,58 @@ import Photos
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    func testOriginalPairResourcesRetainVersionAndRejectIncompleteSets() throws {
+        let originals = [MediaResource(role: "original.photo", path: "still", name: "original.heic", sha256: "photo-original"),
+                         MediaResource(role: "original.pairedVideo", path: "video", name: "original.mov", sha256: "video-original")]
+        let edited = [MediaResource(role: "current.photo", path: "edit", name: "edit.heic", sha256: "photo-edited"),
+                      MediaResource(role: "current.pairedVideo", path: "edit-video", name: "edit.mov", sha256: "video-edited")]
+        let pairs = try LivePairRecord.make(originals + edited)
+        XCTAssertEqual(pairs.count, 2)
+        XCTAssertEqual(pairs[0].photoID, originals[0].id)
+        XCTAssertEqual(pairs[0].videoID, originals[1].id)
+        XCTAssertEqual(pairs[1].photoID, edited[0].id)
+        XCTAssertEqual(pairs[1].videoID, edited[1].id)
+        XCTAssertThrowsError(try LivePairRecord.make([originals[0], edited[1]]))
+        XCTAssertThrowsError(try LivePairRecord.make(originals + [originals[0]]))
+        XCTAssertThrowsError(try LivePairRecord.make([]))
+    }
+
+    func testUncertainPairSubmissionSurvivesStoreAndNetworkChangeAsQueryOnly() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var settings = BackupSettings(); settings.live = .applePair
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: settings)
+        job.resources = [MediaResource(role: "original.photo", path: "photo", name: "original.heic"),
+                         MediaResource(role: "original.pairedVideo", path: "video", name: "original.mov")]
+        job.resources[0].responsePath = "photo-response"; job.resources[1].responsePath = "video-response"
+        job.livePairs = try LivePairRecord.make(job.resources)
+        job.livePairs?[0].route = "joint"; job.livePairs?[0].submitted = true
+        job.state = .paused; job.updateNetwork(wifiOnly: false)
+        let store = try BackupStore(url: root.appendingPathComponent("pair.sqlite"))
+        try await store.save(job, kind: "job", id: job.id)
+        let reopened = try BackupStore(url: root.appendingPathComponent("pair.sqlite"))
+        let restored = try await reopened.load(BackupJob.self, kind: "job")
+        let pair = try XCTUnwrap(restored.first?.livePairs?.first)
+        XCTAssertTrue(pair.queryOnly)
+        XCTAssertEqual(pair.route, "joint")
+        XCTAssertEqual(restored.first?.state, .paused)
+        XCTAssertEqual(restored.first?.resources[1].responsePath, "video-response")
+        XCTAssertFalse(restored.first?.settings.wifiOnly ?? true)
+    }
+
+    func testStrategyChangesRequireExplicitRebackupRatherThanAutomaticRediscovery() {
+        let first = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: BackupSettings())
+        var other = first; other.settings.live = .applePair; other.settings.quality = .quota
+        XCTAssertNotEqual(first.discoveryKey(origin: .manual), other.discoveryKey(origin: .manual))
+        XCTAssertEqual(first.discoveryKey(origin: .automatic), other.discoveryKey(origin: .automatic))
+        other.assetRevision = "2"
+        XCTAssertNotEqual(first.discoveryKey(origin: .automatic), other.discoveryKey(origin: .automatic))
+        other = first; other.account = "b"
+        XCTAssertNotEqual(first.discoveryKey(origin: .automatic), other.discoveryKey(origin: .automatic))
+        XCTAssertEqual(try? JSONDecoder().decode(LiveStrategy.self, from: Data("\"applePair\"".utf8)), .applePair)
+        XCTAssertEqual(Set(LiveStrategy.allCases.map(\.rawValue)), ["motion", "applePair", "appleReconcile"])
+    }
     func testNetworkPolicyRebuildsTransportWithoutChangingMediaOrCommitEvidence() {
         var job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: BackupSettings())
         job.state = .transferring; job.error = "WAITING_NETWORK"; job.attempts = 2; job.retryAt = .distantFuture

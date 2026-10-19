@@ -38,11 +38,11 @@ gpmc Vendor 文件保持固定快照。本轮适配在 Python/harbor_protocol.py
 
 Live Photo 的具体协议线索和逐项验收表见 `LIVE-PHOTO-VALIDATION.md`。
 
-- 苹果原始资源在 Google Photos 的真实云端关联协议。当前 capability apple_pair=false，任务明确报 PAIR_PROTOCOL_UNVERIFIED；不会发送猜测 RPC 或分别上传两个独立文件冒充支持。
+- 0.2.4 已按公开实现接入联合提交与先原图后关联视频，声明 apple_pair=true、apple_pair_experimental=true；仍需本应用真机验证动态关联、同机显示、官方取回和配额，Live 清理继续关闭。
 - Motion Photo 已获得一个 HEIC 样本的官方客户端动态往返反馈，任务最终确认仍待复测；声音、关键帧、HDR、编辑版本及苹果原始资源配对未完成整体验收。
 - Live Photo 清理资格：没有完整配对/取回证据前，一律保留原件。
 - 真机后台、权限变化、iCloud、安装升级及规模测试，需安装新 IPA 后逐项记录。
-- 自动发现目前使用含 mediaPolicy 的任务去重键；开启自动备份后改变画质等内容策略，存在将同一资产版本按新策略再次加入的路径。需另行将自动发现与显式“按当前设置重新备份”的身份规则分开并补专项回归；本轮网络偏好不在 mediaPolicy 中，不触发这个路径。
+- 0.2.4 将自动发现改为账号＋资产＋版本身份，画质和测试方式变化不会自动重建历史图库；手动备份及显式重新备份仍使用含 mediaPolicy 的身份，新增专项原生回归。
 - 旧云端网页撤销仍未证实完成，与本轮原生构建无关。
 
 ## 真机样本与步骤

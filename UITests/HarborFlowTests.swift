@@ -1,6 +1,28 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testOriginalPairStrategiesCanBeSelectedAndPersisted() {
+        let app = XCUIApplication()
+        app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap(); app.buttons["备份偏好"].tap()
+        let joint = app.buttons["原始配对 · 联合提交（测试）"]
+        if !joint.isHittable { app.swipeUp() }
+        XCTAssertTrue(joint.waitForExistence(timeout: 5)); joint.tap()
+        capture("live-pair-joint-preference")
+        let repair = app.buttons["原始配对 · 先照片后视频（测试）"]
+        if !repair.isHittable { app.swipeUp() }
+        repair.tap()
+        app.terminate(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap(); app.buttons["备份偏好"].tap()
+        if !app.buttons["原始配对 · 先照片后视频（测试）"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["原始配对 · 先照片后视频（测试）"].isSelected)
+        capture("live-pair-reconcile-preference")
+        let motion = app.buttons["Motion Photo"]
+        if !motion.isHittable { app.swipeDown() }
+        motion.tap()
+    }
     func testActivityGroupingOptions() {
         let app = XCUIApplication()
         app.launch()
