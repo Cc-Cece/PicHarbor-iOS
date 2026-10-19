@@ -445,7 +445,9 @@ final class BackupCoreTests: XCTestCase {
         var job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: BackupSettings())
         job.state = .completed
         job.sources = [MediaResource(role: "original.photo", path: "", name: "", sha256: "abc")]
-        let evidence = CleanupEvidence(account: "a", revision: "1", policy: "11", manifest: ["original.photo:abc"])
+        let legacy = CleanupEvidence(account: "a", revision: "1", policy: "11", manifest: ["original.photo:abc"])
+        XCTAssertFalse(legacy.valid(job: job, settings: BackupSettings()), "Old evidence cannot authorize deletion under the new consent policy")
+        let evidence = CleanupEvidence(account: "a", revision: "1", policy: BackupSettings().cleanupPolicy, manifest: ["original.photo:abc"])
         XCTAssertTrue(evidence.valid(job: job, settings: BackupSettings()))
         XCTAssertFalse(evidence.valid(job: job, settings: BackupSettings(), now: evidence.checked.addingTimeInterval(300)))
         XCTAssertFalse(evidence.valid(job: job, settings: BackupSettings(), now: evidence.checked.addingTimeInterval(-1)))
