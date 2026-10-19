@@ -2,6 +2,16 @@
 
 日期：2026-10-19。此版本供阶段验收，**不是完整计划已完成的声明**。
 
+## 0.2.3 网络策略、活动与动态确认修复版
+
+- 生产代码 `392365f`；版本 0.2.3，构建号 5，最低 iOS 17.0。包含对旧 Live 任务已确认资源重新查询规范云端标识的升级处理。
+- [设备编译与包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39192754173)通过；本机再次包检查通过。包标识保持 `com.cccece.picharbor`。
+- 最终本机包 `dist/PicHarbor-0.2.3-dev-verified.ipa`，12,200,594 字节；解压 41,930,811 字节。SHA-256：`fefe1f4684e5a259c12495b47486777c45c82b6daef44e2646f2da32558b8d73`。中途构建的 `dist/PicHarbor-0.2.3-dev.ipa` 保留原文件，以最终包为准。
+- [修改说明及真机复测](TASK-FEEDBACK-FIXES.md)：网络偏好应用于已有未完成任务；活动分组与移除；动态确认缓存、规范资源标识、可选字段解析及明确原因。HEIC 往返已获用户反馈，最终确认修复效果仍待新包真机复测。
+- [最终模拟器回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39192786447)通过：36 项 Python、21 项原生单元、5 项界面测试，零失败、零跳过，生产代码与最终 IPA 同为 `392365f`。覆盖网络策略切换时保留媒体/提交信息、旧记录解码、批次/来源/移除标记、活动分组菜单与真实 PhotoKit 导出。上一轮被替代的整轮报告不计作通过。
+- 测试日志与截图存于本机 `build/task-feedback-final-tests/`；本轮不改变 Motion Photo 上传格式，用户反馈的 Google Photos 本机/云端双项显示、原件仍在时保存回 iPhone 新增一项仍待单独研究，不能视为已修复。
+- 用相同 Sideloadly Apple 账号与应用标识覆盖安装，保留原任务。不要为本次 Live 确认复测重新上传，先在详情使用“立即重新确认云端”。
+
 ## 0.2.2 上传响应与重试修复版
 
 - 生产代码：`56048cc`（上传修复核心为 `f0c3502`）；0.2.2，构建号 4。[设备编译与包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39188507063)通过，本机再次包检查通过。
