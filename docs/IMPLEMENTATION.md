@@ -1,18 +1,23 @@
+> 0.2.12: [Google Photos direct handoff](GOOGLE-PHOTOS-DIRECT-0212.md) supersedes the temporary link-review UI. Verified Universal Link; alternative instructions collapsed by default. Build and regression status is recorded in that document.
+
 # 完整应用实施与验收台账
 
 基线：2026-10-19 用户批准完整实施计划。旧 A/B 验收记录继续有效，但不扩展为新功能已通过真机测试。
 
 0.2 开发版的 IPA、自动检查链接和剩余验收清单见 `DEVELOPMENT-ACCEPTANCE.md`。当前是阶段交付，不代表六阶段全部完成。
 
+**最新范围修订（2026-10-19，0.2.11）：** 用户授权取消自建本机清理并交由 Google 相册官方客户端。以下历史清理实现、五分钟证据及删除验收要求退出当前交付范围；保留备份确认，新增官方指引与临时链接测试。详细边界及真机步骤见 [0.2.11 说明](GOOGLE-PHOTOS-HANDOFF-0211.md)。
+
 ## 已确认规则
 
 - 独立原生 iPhone 应用，iOS 17+；SwiftUI、原生任务与媒体处理、内嵌 Python/gpmc 协议适配。
 - 只做备份与本地清理，不开发恢复界面；官方 Google Photos 客户端负责取回。
-- 默认 original（不计配额原画质）、Motion Photo、原始与编辑后均保留、仅 Wi-Fi；首次确认范围后启用自动备份。
+- 默认 original（不计配额原画质）、原始照片配对（联合提交）、原始与编辑后均保留、仅 Wi-Fi；首次确认范围后启用自动备份。已有账号设置和历史任务保留原样；原 Motion Photo 默认值仅属于历史版本。
 - 两个版本内容不同分别显示，完全相同去重；Live Photo 不能混用版本。切换策略只影响新任务，旧内容手动重新备份，不删除旧云端项目。
 - 可选单向相簿同步默认关闭。媒体与相簿步骤分别持久化，不因相簿失败重新传媒体。
 - 默认完整清理采用安卓标准：内容匹配、最新云端状态、原件访问及大小；不默认完整下载云端原件。高级用户可分别关闭后两项，需确认且持续显示降低的强度。
 - 核验证据绑定账号、资源、版本、策略，五分钟失效；删除前重新读取检查；用户确认和系统确认均保留。
+- 0.2.10 起清理通过项默认勾选，取消勾选在本页面会话保留；重查不自动选回。Live Photo 提醒集中显示，风险确认使用可滚动说明页，见 [本轮说明](CLEANUP-REVIEW-0210.md)。
 - 最新交互补充允许用户明确确认风险后放宽 Live Photo 完整验证门槛，默认关闭；不得绕过基本完整资源证明及其他已开启检查。0.2.8 的缩略图、文案、入口与清理许可实现边界见 [说明](PHOTO-EXPERIENCE-028.md)，设备结果以交付台账为准。
 - 原型只在本机维护。GitHub Actions 原生构建继续使用 Cc-Cece/PicHarbor-iOS，Sideloadly 自签。
 

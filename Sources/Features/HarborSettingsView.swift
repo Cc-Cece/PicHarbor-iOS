@@ -32,7 +32,6 @@ struct HarborSettingsView: View {
             }
             Section {
                 NavigationLink { DiagnosticsView() } label: { Label(L10n.text("诊断"), systemImage: "stethoscope") }
-                NavigationLink { GooglePhotosLinkTestView() } label: { Label(L10n.text("链接测试（临时）"), systemImage: "link") }.accessibilityIdentifier("settings.linkTests")
                 NavigationLink { AboutView() } label: { Label(L10n.text("关于 PicHarbor"), systemImage: "info.circle") }
             }
         }.navigationTitle(L10n.text("设置"))

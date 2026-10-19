@@ -1,6 +1,28 @@
+> 0.2.12: [Google Photos direct handoff](GOOGLE-PHOTOS-DIRECT-0212.md) supersedes the temporary link-review UI. Verified Universal Link; alternative instructions collapsed by default. Build and regression status is recorded in that document.
+
 # 原生开发版交付与验收
 
 日期：2026-10-19。此版本供阶段验收，**不是完整计划已完成的声明**。
+
+## 0.2.11 官方清理与链接测试
+
+- 用户授权将本机清理交由 Google 相册；移除原生检查扫描、PhotoKit 资产删除执行、清理设置及风险对话框。备份确认保持；账号、任务及旧设置兼容读取。新增指引页和临时链接测试页，含启动 scheme 与 6 个未经验证的页面路径，测试结果分开记录系统打开结果与人工页面结论，存于本机。见 [操作及测试说明](GOOGLE-PHOTOS-HANDOFF-0211.md)。
+- 生产提交 `77a1421`，SwiftUI 指引分区写法修正 `2bd2d06`。0.2.11 / 构建 13。[设备构建与包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39239345070)通过；[最终回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39239763618)待结束。首轮构建分区初始化器编译失败已修正，旧测试运行取消以释放队列，不记为通过。
+- 本机 `dist/PicHarbor-0.2.11-google-photos-links.ipa`，12,474,704 字节，解压 42,877,763 字节，SHA-256 `efe153aafb1dbf5ed6c66545d9358f5127ffa8573f30ca2caba1f30f09ba0c86`。包标识 `com.cccece.picharbor`、iOS 17+ 不变；四个语言目录各含 546 条已编译资源。实际包声明 Google Photos scheme 查询，主可执行文件不含旧 PhotoKit 删除 selector 或 DEBUG 样本入口。
+- 本机 58 项离线检查通过。候选能否直达必须由用户真机验证，不将系统接受链接、源码测试或模拟器导航作为已直达证据。官方清理验收由用户实际操作记录，不由 PicHarbor 自动读取或宣告。
+
+## 0.2.10 清理列表与提醒
+
+- 生产逻辑提交 `6d94bdb`，打包版本文件修正 `ab4d3a3`；测试查询修正 `f26faa8`，不改变生产应用。版本 0.2.10 / 构建 12。承接 0.2.9 全部语言与默认值改动；集中显示 Live Photo 等待说明、风险说明页使用精简文案、活动名称与日期纵排、长名称中间省略、检查通过项默认勾选并保留本轮忽略选择。见 [本轮说明](CLEANUP-REVIEW-0210.md)。
+- [设备构建及包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39232995336)通过；[模拟器回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39233183506)通过，56 项 Python、47 项原生及 13 项界面，共 116 项。首轮新增界面计数查询编译失败，已修正并重跑，不将首轮记为通过。
+- 本机 `dist/PicHarbor-0.2.10-cleanup-review.ipa`，12,531,842 字节，解压 43,089,292 字节，SHA-256 `a2bf0c848cd2b93f7181ea7653c3c8874b8008d7ca4fdc714fb30c242b49e1e9`。四个原生语言目录各有 491 条已编译文案；iOS 17+、包标识保持不变，正式包不含界面测试样本入口。
+
+## 0.2.9 语言、日期与默认配置
+
+- 生产提交 `4ad6b85`，0.2.9 / 构建 11。简体中文、English、粵語（香港）可即时切换并保存，默认跟随系统；480 条原生资源覆盖、香港用词与粤语提示、正式语言及权限说明声明已打包。日期显式使用应用语言，保留设备时区与时间制式。任务详情顶部去除日期，文件名两行、保留扩展名并支持展开/复制。
+- 新安装及恢复默认时 Live Photo 采用原始照片配对，保留旧账号设置和任务内容，不重传。恢复业务默认值需要确认，关闭自动备份、范围重新确认、清理结果失效；账号、记录、照片、语言与外观保留。见 [0.2.9 说明](LANGUAGE-DEFAULTS-029.md)。
+- [最终设备构建与包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39229538020)和本机包检查通过；[最终回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39229543683)通过，56 项 Python、46 项原生及 12 项界面测试，共 114 项，零失败。已更新旧默认值及固定中文断言，并验证英文普通错误提示不泄漏错误码；中途运行由最终版本取代，取消旧运行以释放队列，不计作最终通过。
+- 最终本机包 `dist/PicHarbor-0.2.9-language-defaults-final.ipa`，12,512,311 字节，解压 43,010,762 字节，SHA-256 `cb5cb851ae1952662370834b68a79ce3419c310f0e060d3d709d1123422f95ed`。包标识及 iOS 17.0 下限不变；正式包不含 DEBUG 样本入口，本机核对四套实际编译的 480 条译文与语言声明存在。中途生成的无 final 后缀包保留，以 final 包为交付版本。
 
 ## 0.2.8 照片入口与清理偏好
 

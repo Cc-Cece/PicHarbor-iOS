@@ -9,29 +9,19 @@ final class HarborFlowTests: XCTestCase {
         for _ in 0..<4 { if guide.isHittable { break }; app.swipeUp() }
         guide.tap()
         XCTAssertTrue(app.buttons["googlePhotos.open"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["点击首页右上角头像"].exists)
+        XCTAssertFalse(app.buttons["googlePhotos.openApp"].exists)
+        app.buttons["googlePhotos.alternatives"].tap()
+        XCTAssertTrue(app.buttons["googlePhotos.openApp"].waitForExistence(timeout: 5))
+        app.buttons["googlePhotos.alternatives"].tap()
+        XCTAssertFalse(app.buttons["googlePhotos.openApp"].exists)
+        XCTAssertFalse(app.buttons["googlePhotos.linkTests"].exists)
         XCTAssertFalse(app.buttons["开始检查"].exists)
         XCTAssertFalse(app.switches["cleanup.allowLive"].exists)
         capture("google-photos-cleanup-guide")
         app.buttons["googlePhotos.open"].tap()
-        XCTAssertTrue(app.alerts["暂时无法打开 Google 相册"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts["暂时无法直达释放空间"].waitForExistence(timeout: 5))
         app.alerts.buttons["好"].tap()
-    }
-    func testTemporaryLinkReviewPageIsAccessibleWithoutLaunchingCandidates() {
-        let app = localizedApp(); app.launch()
-        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
-        app.tabBars.buttons["设置"].tap()
-        XCTAssertFalse(app.buttons["空间清理核验"].exists)
-        let page = app.buttons["settings.linkTests"]
-        for _ in 0..<4 { if page.isHittable { break }; app.swipeUp() }
-        page.tap()
-        XCTAssertTrue(app.buttons["linkTest.open.launch"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["linkTest.result.launch"].isEnabled)
-        capture("google-photos-link-review-top")
-        let last = app.buttons["linkTest.open.settings-free-up-space"]
-        for _ in 0..<10 { if last.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(last.isHittable)
-        capture("google-photos-link-review-bottom")
+        XCTAssertTrue(app.buttons["googlePhotos.openApp"].waitForExistence(timeout: 5))
     }
     private func localizedApp() -> XCUIApplication {
         let app = XCUIApplication()
@@ -255,19 +245,18 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["活动"].waitForExistence(timeout: 5)); capture("activity-empty")
         app.tabBars.buttons["设置"].tap()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5)); capture("settings")
-        app.buttons["空间清理核验"].tap()
-        XCTAssertTrue(app.staticTexts["完整核验"].waitForExistence(timeout: 5))
-        capture("cleanup-policy")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertFalse(app.buttons["空间清理核验"].exists)
+        XCTAssertFalse(app.buttons["settings.linkTests"].exists)
         app.buttons["外观"].tap()
         app.buttons["深色"].tap()
         capture("appearance-dark")
         app.tabBars.buttons["备份"].tap()
-        app.buttons["释放 iPhone 空间"].tap()
-        app.buttons["开始检查"].tap()
-        XCTAssertTrue(app.alerts.staticTexts["请先在设置中连接 Google 账号。"].waitForExistence(timeout: 5))
-        capture("cleanup-account-required")
-        app.alerts.buttons["好"].tap()
+        let guide = app.buttons["释放 iPhone 空间"]
+        for _ in 0..<4 { if guide.isHittable { break }; app.swipeUp() }
+        guide.tap()
+        XCTAssertTrue(app.buttons["googlePhotos.open"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["开始检查"].exists)
+        capture("cleanup-official-handoff")
     }
     private func setSwitch(_ element: XCUIElement, on: Bool) {
         // SwiftUI exposes the label and control as one wide Switch element.
