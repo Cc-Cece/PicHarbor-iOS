@@ -105,6 +105,7 @@ struct BackupJob: Codable, Identifiable {
     var activityHidden: Bool?
     var proxyFallback: ProxyFallback?
     var proxyPolicy: ProxyPolicy?
+    var proxyScope: String?
     var proxyPort: Int?
     var proxyLastNode: String?
     var proxyFailures: [String]?

@@ -49,6 +49,8 @@ final class ProxySelectionTests: XCTestCase {
         XCTAssertLessThanOrEqual(maximum, 3); XCTAssertEqual(calls, 6)
         XCTAssertEqual(manager.testedCount, 6)
         let before = manager.health["n5"]
+        manager.recordOutcome(node: "n5", errorCode: "NETWORK_ERROR", scope: "previous-configuration")
+        XCTAssertEqual(manager.health["n5"], before)
         manager.recordOutcome(node: "n5", errorCode: "LOGIN_REQUIRED")
         XCTAssertEqual(manager.health["n5"], before)
         manager.recordOutcome(node: "n5", errorCode: "NETWORK_ERROR")
@@ -62,6 +64,11 @@ final class ProxySelectionTests: XCTestCase {
         XCTAssertEqual(manager.preferences.selection, .automatic)
         let automatic = try await manager.route(policy: ProxyPolicy(selection: .automatic))
         XCTAssertEqual(automatic.1, "n4")
+        let sweep = Task { try await manager.testAllNodes() }
+        while !manager.testing { await Task.yield() }
+        manager.stopTesting()
+        do { try await sweep.value; XCTFail("A stopped sweep must be cancelled") } catch is CancellationError {} catch { XCTFail("Unexpected error") }
+        XCTAssertFalse(manager.testing)
     }
     @MainActor func testAllFailuresRequireExplicitDirectPermission() async throws {
         let suite = "ProxySelection." + UUID().uuidString, defaults = UserDefaults(suiteName: suite)!

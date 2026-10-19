@@ -438,10 +438,12 @@ final class HarborModel: ObservableObject {
     }
     private func process(_ initial: BackupJob) async {
         do {
-            let route = try await ProxyManager.shared.route(override: initial.proxyFallback, failures: initial.proxyFailures ?? [], policy: initial.proxyPolicy, preferred: initial.proxyLastNode)
+            let sameScope = initial.proxyScope == ProxyManager.shared.routingScope
+            let route = try await ProxyManager.shared.route(override: initial.proxyFallback, failures: sameScope ? (initial.proxyFailures ?? []) : [], policy: initial.proxyPolicy, preferred: sameScope ? initial.proxyLastNode : nil)
             try checkpoint(initial)
             var job = jobs.first(where: { $0.id == initial.id }) ?? initial
-            job.proxyPort = route.0; job.proxyLastNode = route.1
+            job.proxyPort = route.0; job.proxyLastNode = route.1; job.proxyScope = ProxyManager.shared.routingScope
+            if !sameScope { job.proxyFailures = [] }
             try await persist(job)
             await ProxyContext.$port.withValue(route.0) { await processRouted(job) }
         } catch {
@@ -641,7 +643,7 @@ final class HarborModel: ObservableObject {
                 try checkpoint(job); job.albumsPending = false
             }
             job.state = .completed; job.completedAt = Date(); job.progress = 1; job.error = ""; job.retryAt = nil
-            if (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: nil) }
+            if (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: nil, scope: job.proxyScope ?? "legacy") }
             try await persist(job)
             try? FileManager.default.removeItem(at: directory)
         } catch {
@@ -652,7 +654,7 @@ final class HarborModel: ObservableObject {
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "NETWORK_ERROR", ProxyManager.shared.preferences.enabled {
                 job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
-                if network.connected && (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: code) }
+                if network.connected && (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: code, scope: job.proxyScope ?? "legacy") }
             }
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
             // These response errors are guaranteed to occur before gpmc's
@@ -884,14 +886,14 @@ final class HarborModel: ObservableObject {
             }
             job.resources[index].transportID = nil
             if receipt.error.isEmpty {
-                if (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: nil) }
+                if (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: nil, scope: job.proxyScope ?? "legacy") }
                 job.resources[index].responsePath = receipt.responsePath
                 job.state = paused ? .paused : .queued; job.error = ""; job.retryAt = nil
             } else {
                 job.state = paused ? .paused : .waiting; job.error = receipt.error
                 if receipt.error == "NETWORK_ERROR", receipt.status == 0, !paused, ProxyManager.shared.preferences.enabled {
                     job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
-                    if network.connected && (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: receipt.error) }
+                    if network.connected && (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: receipt.error, scope: job.proxyScope ?? "legacy") }
                 }
                 job.failureStage = "upload_response"
                 job.resources[index].responsePath = nil

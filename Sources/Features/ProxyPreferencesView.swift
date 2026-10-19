@@ -11,7 +11,7 @@ struct ProxyPreferencesView: View {
         Binding(get: { ProxyPolicy.resolve(proxy.preferences) }, set: { value in
             var next = proxy.preferences
             next.selection = value.selection; next.exhaustion = value.exhaustion
-            next.primary = value.primary; next.backups = value.backups
+            next.primary = value.primary; next.backups = value.backups.filter { $0 != value.primary }
             next.fallback = value.exhaustion == .direct ? .direct : (value.backups.isEmpty ? .wait : .nodes)
             proxy.preferences = next
         })

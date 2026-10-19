@@ -105,6 +105,8 @@ final class ProxyManager: ObservableObject {
     private var automaticNode = ""
     private var sweep: Task<Void, Error>?
     private var probes: [String: Task<Int?, Never>] = [:]
+    private let probeLimiter = ProxyProbeLimiter()
+    var routingScope: String { generation.uuidString }
     private var ports: [String: Int] = [:]
     private let queue = DispatchQueue(label: "io.picharbor.proxy-core", qos: .utility)
     private var starting: Task<Void, Error>?
@@ -323,6 +325,9 @@ final class ProxyManager: ObservableObject {
         let sticky = preferred ?? (custom == nil && legacy == nil ? automaticNode : nil)
         var candidates: [String]
         if policy.selection == .automatic {
+            if let sticky, names.contains(sticky), !failures.contains(sticky),
+               health[sticky]?.healthy(at: Date()) != true, !(health[sticky]?.cooling(at: Date()) ?? false),
+               let port = ports[sticky] { _ = await measureNode(sticky, port: port) }
             var ranked = ProxyNodeRanking.ordered(names: names, health: health, preferred: sticky, failures: failures, now: Date())
             if !ranked.contains(where: { health[$0]?.healthy(at: Date()) == true }) {
                 try await testAllNodes(force: false)
@@ -351,7 +356,8 @@ final class ProxyManager: ObservableObject {
         if policy.exhaustion == .direct && !failures.contains("") { currentNode = ""; currentDirect = true; return (-1, "") }
         throw HarborError("PROXY_UNAVAILABLE")
     }
-    func recordOutcome(node: String?, errorCode: String?) {
+    func recordOutcome(node: String?, errorCode: String?, scope: String? = nil) {
+        if let scope, scope != routingScope { return }
         guard let node, names.contains(node) else { return }
         var value = health[node] ?? ProxyNodeHealth()
         if errorCode == nil { value.succeed(at: Date()) }
@@ -363,8 +369,12 @@ final class ProxyManager: ObservableObject {
         if let existing = probes[name] { return await existing.value }
         let token = generation, began = Date(), injected = testLatency
         let operation = Task<Int?, Never> {
-            if let injected { return await injected(port) }
-            return await Self.latency(port: port)
+            await probeLimiter.acquire()
+            let result: Int?
+            if let injected { result = await injected(port) }
+            else { result = await Self.latency(port: port) }
+            await probeLimiter.release()
+            return result
         }
         probes[name] = operation
         let milliseconds = await operation.value
