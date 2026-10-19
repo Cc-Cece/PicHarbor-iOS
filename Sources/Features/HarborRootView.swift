@@ -202,7 +202,7 @@ struct JobDetailView: View {
                     ForEach(pairs) { pair in
                         VStack(alignment: .leading, spacing: 5) {
                             Text(pair.id == "original" ? "原始版本" : "编辑后版本")
-                            Text(pair.route == "joint" ? "实际路径：照片与视频联合提交" : pair.route == "reconcile" ? "实际路径：原图确认后关联视频" : "正在查询并选择关联路径")
+                            Text(pair.route == "joint" ? "实际路径：照片与视频联合提交" : pair.route == "reconcile" ? "实际路径：原图确认后关联视频" : pair.confirmed ? "云端已有完整配对，无需再次提交" : "正在查询并选择关联路径")
                             Text(pair.confirmed ? "照片与视频哈希已指向同一云端项目" : pair.submitted ? "关联请求已提交；等待同一项目核验" : "尚未提交配对关联")
                         }.font(.footnote)
                     }
