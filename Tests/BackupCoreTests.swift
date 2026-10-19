@@ -5,9 +5,81 @@ import Darwin
 import AVFoundation
 import UniformTypeIdentifiers
 import Photos
+import SwiftUI
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    private func pairedJob() throws -> BackupJob {
+        var settings = BackupSettings(); settings.live = .applePair
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: settings)
+        job.isLive = true
+        job.resources = [MediaResource(role: "original.photo", path: "p", name: "photo.heic", remoteKey: "same", confirmed: true),
+                         MediaResource(role: "original.pairedVideo", path: "v", name: "video.mov", remoteKey: "same", confirmed: true)]
+        job.livePairs = try LivePairRecord.make(job.resources)
+        job.livePairs?[0].confirmed = true; job.livePairs?[0].remoteKey = "same"
+        return job
+    }
+
+    func testBluePairStateRequiresCompleteSameKeyEvidenceAndIsNotCleanupEligible() throws {
+        var job = try pairedJob()
+        XCTAssertTrue(job.hasConfirmedPairs)
+        job.beginConfirmation()
+        XCTAssertEqual(job.state, .paired); XCTAssertEqual(job.statusSymbol, "checkmark.circle.fill")
+        XCTAssertTrue(job.unfinished); XCTAssertTrue(job.state.active)
+        let evidence = CleanupEvidence(account: job.account, revision: job.assetRevision, policy: job.settings.cleanupPolicy, manifest: [])
+        XCTAssertFalse(evidence.valid(job: job, settings: job.settings))
+        job.resources[1].remoteKey = "other"
+        XCTAssertFalse(job.hasConfirmedPairs)
+        job.beginConfirmation(); XCTAssertEqual(job.state, .confirming)
+        job = try pairedJob(); job.resources.removeLast()
+        XCTAssertFalse(job.hasConfirmedPairs)
+        job = try pairedJob(); job.livePairs?[0].confirmed = false
+        XCTAssertFalse(job.hasConfirmedPairs)
+    }
+
+    func testConfirmationHasSeparateSchedulingSlotAndShortIndependentRetries() throws {
+        var paired = try pairedJob(); paired.state = .paired
+        let upload1 = BackupJob(account: "a", assetID: "one", assetRevision: "1", settings: BackupSettings())
+        let upload2 = BackupJob(account: "a", assetID: "two", assetRevision: "1", settings: BackupSettings())
+        XCTAssertTrue(paired.canSchedule(alongside: [upload1, upload2]))
+        XCTAssertFalse(paired.canSchedule(alongside: [paired]))
+        XCTAssertTrue(upload1.canSchedule(alongside: [paired, upload2]))
+        XCTAssertFalse(upload1.canSchedule(alongside: [paired, upload1, upload2]))
+        let now = Date(timeIntervalSince1970: 100)
+        for delay in [5.0, 10, 20, 30, 30] {
+            paired.attempts += 1; paired.waitForConfirmation(now: now)
+            XCTAssertEqual(paired.state, .paired)
+            XCTAssertEqual(paired.retryAt, now.addingTimeInterval(delay))
+            XCTAssertEqual(paired.attempts, 0)
+        }
+    }
+
+    func testPairedProgressSurvivesPersistenceWithoutClaimingCompletion() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = try BackupStore(url: root.appendingPathComponent("jobs.sqlite"))
+        var job = try pairedJob(); job.beginConfirmation(now: Date(timeIntervalSince1970: 100))
+        job.lastConfirmationSeconds = 2.5; job.waitForConfirmation(now: Date(timeIntervalSince1970: 101))
+        try await store.save(job, kind: "job", id: job.id)
+        let saved = try await store.load(BackupJob.self, kind: "job")
+        XCTAssertEqual(saved.count, 1); XCTAssertEqual(saved[0].state, .paired)
+        XCTAssertTrue(saved[0].hasConfirmedPairs)
+        XCTAssertEqual(saved[0].confirmationChecks, 1)
+        XCTAssertEqual(saved[0].lastConfirmationSeconds, 2.5)
+        XCTAssertNil(saved[0].completedAt); XCTAssertNil(saved[0].evidence)
+    }
+
+    @MainActor
+    func testBluePairStatusNativeAppearance() throws {
+        var job = try pairedJob(); job.beginConfirmation()
+        let renderer = ImageRenderer(content: JobRow(job: job).padding().frame(width: 390).background(Color(uiColor: .systemBackground)))
+        guard let image = renderer.uiImage else { return XCTFail("Missing native status render") }
+        let attachment = XCTAttachment(image: image); attachment.name = "blue-pair-status"; attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertEqual(job.state.title, "即将完成 · 配对已确认")
+    }
+
     func testSourceWaitingIsBoundedAndDoesNotConsumeNetworkRetries() {
         var job = BackupJob(account: "a", assetID: "asset", assetRevision: "old", settings: BackupSettings())
         let now = Date(timeIntervalSince1970: 100)

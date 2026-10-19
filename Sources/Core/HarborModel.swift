@@ -100,7 +100,7 @@ final class HarborModel: ObservableObject {
             for var job in jobs where job.state.active {
                 let systemTask = existing.contains { $0.taskDescription?.hasPrefix(job.id + ":") == true }
                 let hasReceipt = receipts.contains { $0.jobID == job.id }
-                if !systemTask && !hasReceipt { job.state = .queued; job.retryAt = Date(timeIntervalSinceNow: 10); try await persist(job) }
+                if !systemTask && !hasReceipt { job.state = job.hasConfirmedPairs ? .paired : .queued; job.retryAt = Date(timeIntervalSinceNow: 10); try await persist(job) }
             }
             for var job in jobs where job.state == .paused {
                 for index in job.resources.indices {
@@ -311,7 +311,7 @@ final class HarborModel: ObservableObject {
         }
     }
     private func runnable(_ job: BackupJob) -> Bool {
-        job.account == account && [.queued, .waiting, .confirming].contains(job.state) &&
+        job.account == account && [.queued, .waiting, .confirming, .paired].contains(job.state) &&
         (job.retryAt == nil || job.retryAt! <= Date()) && !workers.contains(job.id)
     }
     func pump() async {
@@ -325,7 +325,9 @@ final class HarborModel: ObservableObject {
             // persist() can yield to another pump; recheck occupancy and identity each iteration.
             guard !switching, !updatingNetwork, !cleanupRunning, !storageFailed, runnable(job) else { continue }
             let occupying = Set(jobs.filter { $0.account == account && $0.state == .transferring }.map(\.id)).union(workers)
-            if occupying.count >= 2 { break }
+            // One confirmation worker has its own lane; waiting for cloud
+            // processing cannot occupy either of the two upload slots.
+            if !job.canSchedule(alongside: jobs.filter { occupying.contains($0.id) }) { continue }
             guard network.connected && (!job.settings.wifiOnly || network.wifi) else {
                 if job.state != .waiting { job.state = .waiting; job.error = "WAITING_NETWORK"; try? await persist(job) }
                 continue
@@ -368,6 +370,7 @@ final class HarborModel: ObservableObject {
         var job = initial
         var stage = "preparation"
         var committingResourceID: String?
+        var confirmationBegan: Date?
         defer { exports.removeValue(forKey: job.id) }
         do {
             try checkpoint(job)
@@ -425,8 +428,15 @@ final class HarborModel: ObservableObject {
             }
             if job.isLive && job.settings.live != .motion {
                 stage = "pair_commit"
-                guard let finished = try await processApplePairs(job, directory: directory) else { return }
-                job = finished
+                if !job.hasConfirmedPairs {
+                    guard let finished = try await processApplePairs(job, directory: directory) else { return }
+                    job = finished
+                }
+                if !initial.confirmationOnly {
+                    job.state = .paired; job.pairedAt = job.pairedAt ?? Date(); job.error = ""; job.retryAt = nil
+                    job.failureStage = "confirmation"; try await persist(job)
+                    return // Release the upload lane before querying library state.
+                }
             } else {
                 for index in job.resources.indices where !job.resources[index].confirmed {
                     try checkpoint(job)
@@ -491,7 +501,7 @@ final class HarborModel: ObservableObject {
             try checkpoint(job)
             if job.isLive {
                 stage = "confirmation"
-                job.state = .confirming; try await persist(job)
+                job.beginConfirmation(); confirmationBegan = Date(); try await persist(job)
                 // Older jobs may retain the commit RPC's key rather than the
                 // hash lookup's canonical key. Refresh every version without
                 // retransmitting, including resources already marked confirmed.
@@ -507,6 +517,8 @@ final class HarborModel: ObservableObject {
                 try await persist(job)
                 let dynamic = try await engine.invoke("motion_status", ["account": job.account, "keys": job.resources.map(\.remoteKey)])
                 try checkpoint(job)
+                job.lastConfirmationSeconds = Date().timeIntervalSince(confirmationBegan!)
+                try await persist(job)
                 guard dynamic["recognized"] as? Bool == true else { throw HarborError(dynamic["reason"] as? String ?? "REMOTE_MOTION_PENDING") }
             }
             if job.settings.syncAlbums && !job.albumIDs.isEmpty {
@@ -514,13 +526,14 @@ final class HarborModel: ObservableObject {
                 try await synchronizeAlbums(job)
                 try checkpoint(job); job.albumsPending = false
             }
-            job.state = .completed; job.progress = 1; job.error = ""; job.retryAt = nil
+            job.state = .completed; job.completedAt = Date(); job.progress = 1; job.error = ""; job.retryAt = nil
             try await persist(job)
             try? FileManager.default.removeItem(at: directory)
         } catch {
             guard let current = jobs.first(where: { $0.id == job.id }), current.state != .paused, current.state != .cancelled else { return }
             if stage == "pair_commit" && job.isLive && job.settings.live != .motion && !current.resources.isEmpty { stage = current.failureStage ?? stage }
             job = current
+            if let confirmationBegan { job.lastConfirmationSeconds = Date().timeIntervalSince(confirmationBegan) }
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
             // These response errors are guaranteed to occur before gpmc's
@@ -534,11 +547,10 @@ final class HarborModel: ObservableObject {
             }
             else if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
             else if (code.hasPrefix("REMOTE_MOTION_") && code != "REMOTE_MOTION_TRASHED") || code == "PAIR_CONFIRMATION_PENDING" {
-                job.state = .confirming
-                job.retryAt = Date(timeIntervalSinceNow: min(300, pow(2, Double(min(job.attempts, 6))) * 5))
+                job.waitForConfirmation()
             }
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE"].contains(code) && job.attempts <= 3 {
-                job.state = code == "REMOTE_NOT_VISIBLE" ? .confirming : .waiting
+                job.state = code == "REMOTE_NOT_VISIBLE" ? (job.hasConfirmedPairs ? .paired : .confirming) : .waiting
                 job.retryAt = Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5)
             } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "SOURCE_SNAPSHOT_LOCKED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
             try? await persist(job)
@@ -761,7 +773,7 @@ final class HarborModel: ObservableObject {
         }
         guard !updatingNetwork, !switching else { return }
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed, job.state != .cancelled else { return }
-        job.error = ""; job.retryAt = nil; job.attempts = 0; job.sourceWaits = 0
+        job.error = ""; job.retryAt = nil; job.attempts = 0; job.sourceWaits = 0; job.confirmationRetries = 0
         let liveTasks = await transfer.tasks()
         for index in job.resources.indices {
             if let transportID = job.resources[index].transportID, !liveTasks.contains(where: { $0.taskIdentifier == transportID }) { job.resources[index].transportID = nil }
@@ -879,6 +891,8 @@ final class HarborModel: ObservableObject {
             "apple_pair": applePairAvailable, "live_cleanup": false, "staged_bytes": stagedBytes,
             "pair_routes": Dictionary(grouping: jobs.flatMap { $0.livePairs ?? [] }, by: { $0.route ?? "unselected" }).mapValues(\.count),
             "pair_pending_submissions": jobs.flatMap { $0.livePairs ?? [] }.filter { $0.submitted && !$0.confirmed }.count,
+            "confirmation_checks": jobs.reduce(0) { $0 + ($1.confirmationChecks ?? 0) },
+            "confirmation_last_seconds_max": jobs.compactMap(\.lastConfirmationSeconds).max() ?? 0,
             "storage_failed": storageFailed, "credential_storage_available": credentialStorageAvailable,
             "initialized": initialized, "engine_ready": engine.ready, "engine_busy": engine.busy,
             "account_switching": switching,

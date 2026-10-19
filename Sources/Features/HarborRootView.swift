@@ -160,7 +160,7 @@ struct JobRow: View {
     let job: BackupJob
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: job.state == .completed ? "checkmark.circle.fill" : job.state == .failed || job.state == .attention ? "exclamationmark.circle" : "icloud.and.arrow.up")
+            Image(systemName: job.statusSymbol)
                 .font(.title2).foregroundStyle(job.state == .completed ? .green : .blue).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 Text(job.sources.first?.name ?? (job.isLive ? "Live Photo" : "照片或视频")).lineLimit(1)
@@ -195,8 +195,21 @@ struct JobDetailView: View {
                 }
                 if !job.error.isEmpty { Section("需要处理") {
                     Text(HarborError(job.error).localizedDescription).foregroundStyle(.secondary)
-                    if let stage = job.failureStageTitle { LabeledContent([.preparing, .waiting, .confirming].contains(job.state) ? "当前步骤" : "失败步骤", value: stage) }
+                    if let stage = job.failureStageTitle { LabeledContent([.preparing, .waiting, .confirming, .paired].contains(job.state) ? "当前步骤" : "失败步骤", value: stage) }
                     if let code = job.failureSystemCode { Text(code).font(.caption).foregroundStyle(.secondary) }
+                } }
+                if job.state == .paired { Section {
+                    Label("配对已确认，等待最终云端核验", systemImage: "checkmark.circle.fill").foregroundStyle(.blue)
+                    Text("照片与动态视频已指向同一个云端项目。蓝色对勾表示即将完成，尚不计入已备份数量，也不进入清理列表。").font(.footnote).foregroundStyle(.secondary)
+                } }
+                if let started = job.confirmationStartedAt { Section("确认进度") {
+                    LabeledContent("开始核验") { Text(started, style: .time) }
+                    if let paired = job.pairedAt { LabeledContent("配对确认") { Text(paired, style: .time) } }
+                    LabeledContent("核验次数", value: String(job.confirmationChecks ?? 0))
+                    if let seconds = job.lastConfirmationSeconds { LabeledContent("最近一次查询", value: String(format: "%.1f 秒", seconds)) }
+                    if let retry = job.retryAt { LabeledContent("下次尝试") { Text(retry, style: .time) } }
+                    if let completed = job.completedAt { LabeledContent("完成时间") { Text(completed, style: .time) } }
+                    Text("查询耗时包含协议队列等待与网络响应。蓝色配对确认不代表最终核验完成。").font(.footnote).foregroundStyle(.secondary)
                 } }
                 if let pairs = job.livePairs, !pairs.isEmpty { Section("原始配对测试") {
                     ForEach(pairs) { pair in
@@ -228,7 +241,7 @@ struct JobDetailView: View {
                             else { model.notice = "无法读取这项照片，请检查相册权限或确认照片仍在本机图库中。" }
                         } }
                     } else if job.state != .cancelled {
-                        if job.state == .confirming { Button("立即重新确认云端", systemImage: "arrow.clockwise") { Task { await model.resume(id) } }.disabled(model.engine.busy) }
+                        if job.state == .confirming || job.state == .paired { Button("立即重新确认云端", systemImage: "arrow.clockwise") { Task { await model.resume(id) } }.disabled(model.engine.busy) }
                         if job.state.active || job.state == .queued || job.state == .waiting { Button("暂停", systemImage: "pause") { Task { await model.pause(id) } } }
                         else { Button("继续 / 重试", systemImage: "play") { Task { await model.resume(id) } } }
                         Button("取消任务", role: .destructive) { Task { await model.cancel(id) } }

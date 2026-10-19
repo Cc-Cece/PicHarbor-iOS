@@ -17,6 +17,63 @@ from blackboxprotobuf import encode_message
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_confirmation_refresh_uses_delta_and_keeps_unchanged_items(self):
+        calls = []
+        def state(token):
+            calls.append(token)
+            if not token:
+                return {"1": {"6": "first", "2": [{"1": "plain", "2": {"11": 100}},
+                                                     {"1": "live", "2": {"11": 100}}]}}
+            return {"1": {"6": "second", "2": {"1": "live", "2": {"11": 100},
+                        "5": {"5": {"2": {"4": {"1": 3}}}}}}}
+        self.service.api.get_library_state = state
+        p = self.service.protocol
+        p.synchronize()
+        self.assertFalse(p.snapshot["live"]["motion"])
+        p.synchronize()
+        self.assertEqual(calls, ["", "first"])
+        self.assertIn("plain", p.snapshot)
+        self.assertTrue(p.snapshot["live"]["motion"])
+        self.assertEqual(p.sync_token, "second")
+
+    def test_failed_delta_discards_partial_evidence_and_next_refresh_is_full(self):
+        p = self.service.protocol
+        p.snapshot = {"old": {"motion": True}}
+        p.sync_token = "old-token"
+        self.service.api.get_library_state = lambda _: {"1": {"1": "page", "6": "partial"}}
+        self.service.api.get_library_page = MagicMock(side_effect=RuntimeError("invalid token"))
+        with self.assertRaises(RuntimeError):
+            p.synchronize()
+        self.assertEqual(p.snapshot, {})
+        self.assertEqual(p.sync_token, "")
+        self.assertEqual(p.snapshot_at, 0)
+        self.service.api.get_library_state = MagicMock(return_value={"1": {"6": "fresh"}})
+        p.synchronize()
+        self.service.api.get_library_state.assert_called_once_with("")
+
+    def test_delta_pagination_applies_deletions_without_publishing_stale_items(self):
+        p = self.service.protocol
+        p.snapshot = {"keep": {}, "removed": {}}
+        p.sync_token = "before"
+        self.service.api.get_library_state = MagicMock(return_value={"1": {"6": "next", "1": "resume", "9": {"1": {"1": 1, "2": {"1": "removed"}}}}})
+        self.service.api.get_library_page = MagicMock(return_value={"1": {"6": "final", "2": {"1": "added", "2": {"11": 100}}}})
+        p.synchronize()
+        self.service.api.get_library_state.assert_called_once_with("before")
+        self.service.api.get_library_page.assert_called_once_with("resume", "next")
+        self.assertEqual(set(p.snapshot), {"keep", "added"})
+        self.assertEqual(p.sync_token, "final")
+
+    def test_confirmation_cache_is_shared_and_expires_after_fifteen_seconds(self):
+        p = self.service.protocol
+        p.snapshot = {"live": {"motion": True, "status": 100, "trash": 0}}
+        p.snapshot_at = 100
+        with patch("harbor_protocol.time.monotonic", return_value=114), patch.object(p, "synchronize") as sync:
+            self.assertTrue(self.service.dispatch("motion_status", {"account": self.service.account, "keys": ["live", "live"]})["recognized"])
+            sync.assert_not_called()
+        with patch("harbor_protocol.time.monotonic", return_value=115), patch.object(p, "synchronize") as sync:
+            self.service.dispatch("motion_status", {"account": self.service.account, "keys": ["live"]})
+            sync.assert_called_once()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.service = Service(self.temp.name, api_factory=FakeApi)

@@ -40,7 +40,7 @@ struct BackupSettings: Codable, Equatable {
     var mediaPolicy: String { "\(quality.rawValue):\(live.rawValue):\(edits.rawValue):mux1" }
 }
 enum JobState: String, Codable {
-    case queued, preparing, transferring, committing, confirming, completed, paused, waiting, failed, attention, cancelled
+    case queued, preparing, transferring, committing, confirming, paired, completed, paused, waiting, failed, attention, cancelled
     var title: String {
         switch self {
         case .queued: return "等待备份"
@@ -48,6 +48,7 @@ enum JobState: String, Codable {
         case .transferring: return "传输中"
         case .committing: return "提交中"
         case .confirming: return "待云端确认"
+        case .paired: return "即将完成 · 配对已确认"
         case .completed: return "已备份"
         case .paused: return "已暂停"
         case .waiting: return "等待条件"
@@ -56,7 +57,7 @@ enum JobState: String, Codable {
         case .cancelled: return "已取消"
         }
     }
-    var active: Bool { [.preparing, .transferring, .committing, .confirming].contains(self) }
+    var active: Bool { [.preparing, .transferring, .committing, .confirming, .paired].contains(self) }
 }
 enum TransferDisposition: Equatable { case run, pause, cancel }
 enum BackupOrigin: String, Codable, CaseIterable {
@@ -107,6 +108,13 @@ struct BackupJob: Codable, Identifiable {
     var failureSystemCode: String?
     var attempts = 0
     var sourceWaits: Int?
+    var pairedAt: Date?
+    var confirmationStartedAt: Date?
+    var completedAt: Date?
+    var confirmationChecks: Int?
+    var confirmationRetries: Int?
+    var lastConfirmationAt: Date?
+    var lastConfirmationSeconds: Double?
     var retryAt: Date?
     var created = Date()
     var updated = Date()
@@ -119,6 +127,41 @@ struct BackupJob: Codable, Identifiable {
         origin == .automatic ? "\(account)|\(assetID)|\(assetRevision)" : dedupKey
     }
     var unfinished: Bool { state != .completed && activityHidden != true }
+    var hasConfirmedPairs: Bool {
+        guard isLive, settings.live != .motion, let pairs = livePairs, !pairs.isEmpty,
+              let expected = try? LivePairRecord.make(resources), expected.count == pairs.count else { return false }
+        return expected.allSatisfy { expectedPair in
+            guard let pair = pairs.first(where: { $0.id == expectedPair.id }), pair.confirmed, !pair.remoteKey.isEmpty,
+                  pair.photoID == expectedPair.photoID, pair.videoID == expectedPair.videoID else { return false }
+            return resources.filter { $0.id == pair.photoID || $0.id == pair.videoID }.allSatisfy {
+                $0.confirmed && $0.remoteKey == pair.remoteKey
+            }
+        }
+    }
+    var confirmationOnly: Bool {
+        isLive && !resources.isEmpty && resources.allSatisfy(\.confirmed) &&
+        (settings.live == .motion || hasConfirmedPairs)
+    }
+    func canSchedule(alongside running: [BackupJob]) -> Bool {
+        running.filter { $0.confirmationOnly == confirmationOnly }.count < (confirmationOnly ? 1 : 2)
+    }
+    var statusSymbol: String {
+        state == .completed || state == .paired ? "checkmark.circle.fill" :
+        state == .failed || state == .attention ? "exclamationmark.circle" : "icloud.and.arrow.up"
+    }
+    mutating func beginConfirmation(now: Date = Date()) {
+        state = hasConfirmedPairs ? .paired : .confirming
+        if hasConfirmedPairs && pairedAt == nil { pairedAt = now }
+        if confirmationStartedAt == nil { confirmationStartedAt = now }
+        confirmationChecks = (confirmationChecks ?? 0) + 1
+        lastConfirmationAt = now; error = ""; failureStage = "confirmation"
+    }
+    mutating func waitForConfirmation(now: Date = Date()) {
+        attempts = max(0, attempts - 1)
+        confirmationRetries = (confirmationRetries ?? 0) + 1
+        state = hasConfirmedPairs ? .paired : .confirming
+        retryAt = now.addingTimeInterval(min(30, pow(2, Double(min(confirmationRetries!, 4) - 1)) * 5))
+    }
     // Rebinding is allowed only before any exported or remotely submitted resource exists.
     var canRefreshSource: Bool {
         resources.isEmpty && sources.isEmpty && (livePairs ?? []).isEmpty && evidence == nil &&

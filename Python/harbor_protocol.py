@@ -20,6 +20,7 @@ class Protocol:
         self.service = service
         self.snapshot = {}
         self.snapshot_at = 0
+        self.sync_token = ""
 
     @property
     def api(self):
@@ -110,7 +111,7 @@ class Protocol:
             keys = value.get("keys", [])
             if not isinstance(keys, list) or not keys or not all(isinstance(key, str) and key for key in keys):
                 raise Failure("INVALID_REMOTE_KEYS")
-            if not 0 <= time.monotonic() - self.snapshot_at < 30:
+            if not 0 <= time.monotonic() - self.snapshot_at < 15:
                 self.synchronize()
             checks = []
             for key in keys:
@@ -143,8 +144,11 @@ class Protocol:
     def synchronize(self):
         from harbor_ios import Failure
         # Publish the snapshot only after every page/cycle has completed successfully.
-        self.snapshot, self.snapshot_at = {}, 0
-        values, token, ready = {}, "", False
+        values = dict(self.snapshot) if self.sync_token else {}
+        token, ready = self.sync_token, bool(self.sync_token)
+        # A failed refresh invalidates evidence and the token. The next attempt
+        # starts a full sync; never publish a partially applied delta.
+        self.snapshot, self.snapshot_at, self.sync_token = {}, 0, ""
         for _ in range(10):
             response = self.api.get_library_state(token if ready else "")
             more = _get_nested(response, "1", "7") == 2
@@ -183,6 +187,7 @@ class Protocol:
                 raise Failure("SYNC_TOKEN_MISSING")
             if not more:
                 self.snapshot, self.snapshot_at = values, time.monotonic()
+                self.sync_token = token
                 return
             ready = True
         raise Failure("SYNC_INCOMPLETE")

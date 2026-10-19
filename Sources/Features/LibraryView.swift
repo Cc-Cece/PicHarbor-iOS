@@ -161,7 +161,9 @@ private final class PhotoCell: UICollectionViewCell {
         cloud.isHidden = selecting || state == nil || state == .cancelled
         accessibilityValue = state?.title
         guard let state else { return }
-        let symbol = state == .completed ? "checkmark.icloud.fill" : state == .failed || state == .attention ? "exclamationmark.icloud" : state == .paused ? "pause.circle.fill" : "icloud.and.arrow.up"
+        let symbol = state == .paired ? "checkmark.circle.fill" : state == .completed ? "checkmark.icloud.fill" : state == .failed || state == .attention ? "exclamationmark.icloud" : state == .paused ? "pause.circle.fill" : "icloud.and.arrow.up"
+        cloud.tintColor = state == .paired ? .systemBlue : state == .completed ? .systemGreen : .white
+        cloud.backgroundColor = (state == .paired || state == .completed ? UIColor.black : UIColor.systemBlue).withAlphaComponent(0.8)
         cloud.image = UIImage(systemName: symbol)
     }
     override func prepareForReuse() {
