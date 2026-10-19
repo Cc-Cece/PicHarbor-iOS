@@ -205,8 +205,8 @@ struct AssetDetailView: View {
     @State private var sharing = false
     @State private var shareReady = false
     @State private var shareError = false
-    @State private var shareProvider: NSItemProvider?
-    @State private var shareFailure = ""
+    @AppStorage("picharbor.liveShareNotice.accepted.v1") private var liveShareNoticeAccepted = false
+    @State private var shareNotice = false
     @State private var shareFiles: [URL] = []
     @State private var shareDirectory: URL?
     @State private var shareTask: Task<Void, Never>?
@@ -244,13 +244,20 @@ struct AssetDetailView: View {
             ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { dismiss() } }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { information = true } label: { Image(systemName: "info.circle") }.accessibilityLabel(L10n.text("详情")).accessibilityIdentifier("photo.info")
-                Button { prepareShare() } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel(L10n.text("分享")).disabled(sharing).accessibilityIdentifier("photo.share")
+                Button {
+                    if asset.mediaSubtypes.contains(.photoLive) && !liveShareNoticeAccepted { shareNotice = true }
+                    else { prepareShare() }
+                } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel(L10n.text("分享")).disabled(sharing).accessibilityIdentifier("photo.share")
             }
         }
         .sheet(isPresented: $information) { NavigationStack { AssetInformationView(asset: asset, resources: resources, sizes: sizes) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible) }
         .sheet(isPresented: $filename) { NavigationStack { ScrollView { Text(name).textSelection(.enabled).padding() }.navigationTitle(L10n.text("完整文件名")).toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("完成")) { filename = false } } } }.presentationDetents([.medium]) }
-        .sheet(isPresented: $shareReady, onDismiss: cleanShare) { if let shareProvider { AssetShareSheet(provider: shareProvider) } }
-        .alert(L10n.text("暂时无法分享"), isPresented: $shareError) { Button(L10n.text("好"), role: .cancel) {} } message: { Text(shareFailure) }
+        .sheet(isPresented: $shareReady, onDismiss: cleanShare) { AssetShareSheet(files: shareFiles) }
+        .alert(L10n.text("分享 Live Photo"), isPresented: $shareNotice) {
+            Button(L10n.text("继续分享")) { liveShareNoticeAccepted = true; prepareShare() }
+            Button(L10n.text("取消"), role: .cancel) {}
+        } message: { Text(L10n.text("此处会将照片和配对视频作为两个文件分享。如需分享为一张动态照片，请前往 iPhone 自带的“照片”应用。")) }
+        .alert(L10n.text("暂时无法分享"), isPresented: $shareError) { Button(L10n.text("好"), role: .cancel) {} } message: { Text(L10n.text("请检查照片权限、网络和可用空间后重试。")) }
         .task(id: sizeReadID) {
             sizes = [:]; sizeFailed = false
             do {
@@ -269,7 +276,7 @@ struct AssetDetailView: View {
     }
     private func cleanShare() {
         if let shareDirectory { try? FileManager.default.removeItem(at: shareDirectory) }
-        shareDirectory = nil; shareFiles = []; shareProvider = nil
+        shareDirectory = nil; shareFiles = []
     }
     private func prepareShare() {
         guard !sharing else { return }
@@ -288,16 +295,10 @@ struct AssetDetailView: View {
                     try await PhotoResourceWriter.write(resource: resource, url: url, control: control); files.append(url)
                 }
                 try Task.checkCancellation()
-                let photo = asset.mediaSubtypes.contains(.photoLive) ? try await AssetShareItems.livePhoto(files: files) : nil
-                let provider = try AssetShareItems.provider(files: files, live: photo)
-                try Task.checkCancellation()
-                shareDirectory = directory; shareFiles = files; shareProvider = provider; shareReady = true
+                shareDirectory = directory; shareFiles = files; shareReady = true
             } catch {
                 try? FileManager.default.removeItem(at: directory)
-                if !Task.isCancelled {
-                    shareFailure = (error as? HarborError)?.code == "LIVE_SHARE_UNAVAILABLE" ? L10n.text("系统暂时无法提供动态照片分享，请从苹果相册分享此项目。") : L10n.text("请检查照片权限、网络和可用空间后重试。")
-                    shareError = true
-                }
+                if !Task.isCancelled { shareError = true }
             }
             sharing = false; shareControl = nil
         }

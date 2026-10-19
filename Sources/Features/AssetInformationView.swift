@@ -47,9 +47,9 @@ struct AssetInformationView: View {
 }
 
 struct AssetShareSheet: UIViewControllerRepresentable {
-    let provider: NSItemProvider
+    let files: [URL]
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItemsConfiguration: UIActivityItemsConfiguration(itemProviders: [provider]))
+        UIActivityViewController(activityItems: files, applicationActivities: nil)
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

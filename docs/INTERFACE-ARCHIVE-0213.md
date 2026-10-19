@@ -18,4 +18,4 @@
 ## 构建验证
 
 - 首轮源码 `ee4ce10` 因新增分支后的 getter 缺少 `return` 编译失败，已在 `4de1272` 修复。
-- `4de1272` 的[设备构建](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39248854314)及 IPA 检查通过；[模拟器回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39248860121)正在运行。
+- `4de1272` 的[设备构建](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39248854314)及 IPA 检查通过；首轮模拟器因测试查询属性错误未执行界面检查。修正脚本后的[回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39249870468)：54 项原生测试通过，13 项界面测试中 12 项通过，1 项因归档输入行未获得焦点失败。0.2.14 已修正脚本点击位置，继续回归，不将上一轮写成全部通过。

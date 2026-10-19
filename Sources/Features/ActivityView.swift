@@ -6,21 +6,22 @@ struct ActivityView: View {
     @EnvironmentObject private var model: HarborModel
     @AppStorage("activity.source.v2") private var sourceRaw = "all"
     @AppStorage("activity.status.v2") private var statusRaw = "all"
-    var source: ActivitySource { ActivitySource(rawValue: sourceRaw) ?? .all }
-    var status: ActivityStatus { ActivityStatus(rawValue: statusRaw) ?? .all }
+    @AppStorage("activity.archive.source.v1") private var archivedSourceRaw = "all"
+    var source: ActivitySource { ActivitySource(rawValue: archived ? archivedSourceRaw : sourceRaw) ?? .all }
+    var status: ActivityStatus { archived ? .completed : ActivityStatus(rawValue: statusRaw) ?? .all }
     var batches: [ActivityBatch] { ActivityBatch.make(model.activityJobs(archived: archived), source: source, status: status) }
     var filtered: [BackupJob] { batches.flatMap(\.matching) }
     var body: some View {
         List {
             Section {
-                Picker(L10n.text("备份来源"), selection: $sourceRaw) {
+                Picker(L10n.text("备份来源"), selection: Binding(get: { archived ? archivedSourceRaw : sourceRaw }, set: { if archived { archivedSourceRaw = $0 } else { sourceRaw = $0 } })) {
                     ForEach(ActivitySource.allCases) { Text($0.title).tag($0.rawValue) }
                 }.pickerStyle(.segmented).accessibilityIdentifier("activity.source")
-                Picker(L10n.text("任务状态"), selection: $statusRaw) {
+                if !archived { Picker(L10n.text("任务状态"), selection: $statusRaw) {
                     ForEach(ActivityStatus.allCases) { Text($0.title).tag($0.rawValue) }
-                }.pickerStyle(.segmented).accessibilityIdentifier("activity.status")
+                }.pickerStyle(.segmented).accessibilityIdentifier("activity.status") }
             }
-            if batches.isEmpty { ContentUnavailableView(L10n.text("暂无符合条件的任务"), systemImage: "clock", description: Text(L10n.text("调整来源或状态筛选，查看其他备份活动。"))) }
+            if batches.isEmpty && (!archived || model.engine.records.isEmpty) { ContentUnavailableView(L10n.text("暂无符合条件的任务"), systemImage: "clock", description: Text(L10n.text("调整来源或状态筛选，查看其他备份活动。"))) }
             ForEach(batches) { batch in
                 if batch.isBatch {
                     HStack {

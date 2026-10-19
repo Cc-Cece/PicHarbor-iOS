@@ -401,6 +401,7 @@
 "正在连接或切换账号，请等待当前操作完成。" = "An account is connecting or switching. Please wait.";
 "此任务已有固定的资源版本。请重新准备任务，已有云端结果会先查重。" = "This task already has a fixed version. Prepare it again; existing cloud content will be checked first.";
 "此任务正在处理，请等待本次检查结束。" = "This task is being processed. Wait for this check to finish.";
+"此处会将照片和配对视频作为两个文件分享。如需分享为一张动态照片，请前往 iPhone 自带的“照片”应用。" = "The photo and paired video will be shared as two files. To share a single Live Photo, use the Photos app on your iPhone.";
 "没有可显示的项目" = "Nothing to show";
 "活动" = "Activity";
 "活动记录" = "Activity records";
@@ -484,13 +485,13 @@
 "系统保留了这项照片" = "iPhone kept this photo";
 "系统已完成删除请求" = "iPhone completed the deletion";
 "系统已接受链接，请记录实际页面" = "System accepted the link; record the actual page";
-"系统暂时无法提供动态照片分享，请从苹果相册分享此项目。" = "Live Photo sharing is unavailable. Share this item from Apple Photos instead.";
 "系统未能打开此链接" = "System could not open this link";
 "系统错误" = "System error";
 "结果仅保存在本机，不自动发送。反馈时请补充 Google 相册版本；不需要提供账号或登录凭据。" = "Results stay on this device and are not sent automatically. Include your Google Photos version when reporting. No account or login credentials are needed.";
 "继续" = "Continue";
 "继续 / 重试" = "Resume / Retry";
 "继续任务" = "Resume tasks";
+"继续分享" = "Continue sharing";
 "继续当前结果" = "Resume filtered tasks";
 "继续等待完整验证" = "Keep waiting for full verification";
 "编辑后版本" = "Edited version";
