@@ -26,6 +26,29 @@
 @implementation ProxyCoreBridge
 static ClashBoxService *service;
 static BOOL configured;
+static NSString *lastFailure = @"";
++ (NSString *)failureMessage { @synchronized(self) { return lastFailure ?: @""; } }
++ (void)collectStrings:(id)value into:(NSMutableArray<NSString *> *)strings {
+    if ([value isKindOfClass:[NSDictionary class]]) {
+        for (NSString *key in value) { if (![key isEqualToString:@"type"]) [self collectStrings:value[key] into:strings]; }
+    } else if ([value isKindOfClass:[NSArray class]]) {
+        for (id child in value) [self collectStrings:child into:strings];
+    } else if ([value isKindOfClass:[NSString class]] && [value length] > 0) { [strings addObject:value]; }
+}
++ (void)capture:(NSError *)error configuration:(NSString *)configuration {
+    NSString *message = error.localizedDescription ?: @"Core returned no error detail";
+    NSMutableArray<NSString *> *strings = [NSMutableArray new];
+    id document = [NSJSONSerialization JSONObjectWithData:[configuration dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    if (!document) { lastFailure = @"Core configuration error"; return; }
+    [self collectStrings:document into:strings];
+    [strings sortUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+        return a.length > b.length ? NSOrderedAscending : (a.length < b.length ? NSOrderedDescending : NSOrderedSame);
+    }];
+    for (NSString *value in strings) { message = [message stringByReplacingOccurrencesOfString:value withString:@"[hidden]"]; }
+    NSRegularExpression *urls = [NSRegularExpression regularExpressionWithPattern:@"https?://[^\\s\\\"<>]+" options:NSRegularExpressionCaseInsensitive error:nil];
+    message = [urls stringByReplacingMatchesInString:message options:0 range:NSMakeRange(0, message.length) withTemplate:@"[url]"];
+    lastFailure = message.length > 500 ? [message substringToIndex:500] : message;
+}
 + (BOOL)prepare:(NSString *)home {
     if (configured) return YES;
     for (NSString *name in @[@"", @"working", @"temp"]) {
@@ -49,12 +72,13 @@ static BOOL configured;
 }
 + (BOOL)start:(NSString *)configuration home:(NSString *)home {
     @synchronized(self) {
+        lastFailure = @"";
         if (![self prepare:home]) return NO;
         [self stop]; NSError *error = nil;
         service = ClashNewService([PHProxyPlatform new], &error);
-        if (error || !service) { service = nil; return NO; }
+        if (error || !service) { [self capture:error configuration:configuration]; service = nil; return NO; }
         BOOL success = [service start:configuration error:&error] && !error;
-        if (!success) [self stop];
+        if (!success) { [self capture:error configuration:configuration]; [self stop]; }
         return success;
     }
 }
