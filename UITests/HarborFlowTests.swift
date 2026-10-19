@@ -58,7 +58,7 @@ final class HarborFlowTests: XCTestCase {
         for _ in 0..<4 { if cleanup.isHittable { break }; app.swipeUp() }
         cleanup.tap()
         XCTAssertTrue(app.staticTexts["Live Photo 完整性验证提醒"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["Live Photo 完整性验证提醒"].count, 1)
+        XCTAssertEqual(app.staticTexts.matching(identifier: "Live Photo 完整性验证提醒").count, 1)
         capture("cleanup-review-shared-notice")
         let all = app.buttons["取消全选"]
         for _ in 0..<4 { if all.isHittable { break }; app.swipeUp() }
