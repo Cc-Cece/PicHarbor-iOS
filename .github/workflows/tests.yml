@@ -80,6 +80,7 @@ jobs:
           xcrun simctl bootstatus '${{ steps.sim.outputs.id }}' -b
           python tools/generate_ui_fixture.py build/fixtures/picharbor.png
           xcrun simctl addmedia '${{ steps.sim.outputs.id }}' build/fixtures/picharbor.png
+          xcrun simctl privacy '${{ steps.sim.outputs.id }}' grant photos com.cccece.picharbor
 
       - name: Run tests
         env:
