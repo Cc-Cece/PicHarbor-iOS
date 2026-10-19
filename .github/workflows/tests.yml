@@ -80,18 +80,28 @@ jobs:
           xcrun simctl bootstatus '${{ steps.sim.outputs.id }}' -b
           python tools/generate_ui_fixture.py build/fixtures/picharbor.png
           xcrun simctl addmedia '${{ steps.sim.outputs.id }}' build/fixtures/picharbor.png
-          xcrun simctl privacy '${{ steps.sim.outputs.id }}' grant photos com.cccece.picharbor
 
       - name: Run tests
         env:
           SCHEME: ${{ steps.app.outputs.name }}
         run: |
           set -euo pipefail
-          xcodebuild test \
+          xcodebuild build-for-testing \
+            -project "${SCHEME}.xcodeproj" \
+            -scheme "$SCHEME" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO
+          APP_PATH="build/DerivedData/Build/Products/Debug-iphonesimulator/${SCHEME}.app"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")
+          xcrun simctl install '${{ steps.sim.outputs.id }}' "$APP_PATH"
+          xcrun simctl privacy '${{ steps.sim.outputs.id }}' grant photos "$BUNDLE_ID"
+          xcodebuild test-without-building \
             -project "${SCHEME}.xcodeproj" \
             -scheme "$SCHEME" \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
             -parallel-testing-enabled NO \
+            -derivedDataPath build/DerivedData \
             -resultBundlePath build/TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO
 

@@ -231,7 +231,7 @@ final class BackupCoreTests: XCTestCase {
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        let asset = try XCTUnwrap(PHAsset.fetchAssets(with: options).firstObject, "CI must seed and authorize its synthetic photo")
+        let asset = try XCTUnwrap(PHAsset.fetchAssets(with: options).firstObject, "CI photo authorization: \(PHPhotoLibrary.authorizationStatus(for: .readWrite).rawValue)")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
