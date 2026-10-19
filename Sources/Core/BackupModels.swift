@@ -87,6 +87,8 @@ struct BackupJob: Codable, Identifiable {
     var isLive = false
     var forceUpload = false
     var error = ""
+    var failureStage: String?
+    var failureSystemCode: String?
     var attempts = 0
     var retryAt: Date?
     var created = Date()
@@ -96,6 +98,19 @@ struct BackupJob: Codable, Identifiable {
     var progress: Double = 0
     var evidence: CleanupEvidence?
     var dedupKey: String { "\(account)|\(assetID)|\(assetRevision)|\(settings.mediaPolicy)" }
+    var failureStageTitle: String? {
+        guard let failureStage else { return nil }
+        return ["preparation": "准备暂存目录", "export": "从相册导出资源", "motion_package": "封装动态照片",
+                "source_read": "读取暂存原件", "prepare_upload": "查重与申请上传", "transfer_creation": "创建后台传输",
+                "upload_response": "保存上传响应", "commit_response": "读取响应并提交云端", "confirmation": "确认云端内容"][failureStage] ?? "其他处理步骤"
+    }
+    mutating func recordFailure(_ code: String, stage: String, committingResourceID: String?) {
+        error = code; failureStage = stage
+        if stage == "commit_response", code.hasPrefix("UPLOAD_RESPONSE_"),
+           let index = resources.firstIndex(where: { $0.id == committingResourceID }) {
+            resources[index].submitted = false; resources[index].responsePath = nil
+        }
+    }
     func transferDisposition(activeAccount: String) -> TransferDisposition {
         if state == .cancelled || state == .completed { return .cancel }
         if activeAccount.isEmpty || account != activeAccount || state != .transferring { return .pause }

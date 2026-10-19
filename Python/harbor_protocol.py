@@ -58,10 +58,25 @@ class Protocol:
             quality = value.get("quality", "original")
             if quality not in ("original", "quota", "saver"):
                 raise Failure("INVALID_QUALITY")
-            path = self.service.path(value["response_path"])
-            if path.stat().st_size > 4 * 1024 * 1024:
-                raise Failure("INVALID_RESPONSE")
-            decoded, _ = decode_message(path.read_bytes())
+            from pathlib import Path
+            try:
+                path = Path(value["response_path"]).resolve()
+                if not path.is_relative_to(self.service.staging.resolve()):
+                    raise Failure("UPLOAD_RESPONSE_PATH")
+                if not path.is_file():
+                    raise Failure("UPLOAD_RESPONSE_MISSING")
+                size = path.stat().st_size
+                if size == 0:
+                    raise Failure("UPLOAD_RESPONSE_EMPTY")
+                if size > 4 * 1024 * 1024:
+                    raise Failure("UPLOAD_RESPONSE_TOO_LARGE")
+                data = path.read_bytes()
+            except OSError:
+                raise Failure("UPLOAD_RESPONSE_READ") from None
+            try:
+                decoded, _ = decode_message(data)
+            except Exception:
+                raise Failure("UPLOAD_RESPONSE_INVALID") from None
             key = self.api.commit_upload(decoded, value["name"], bytes.fromhex(value["sha1"]),
                 quality="saver" if quality == "saver" else "original",
                 model={"original": "Pixel XL", "quota": "Pixel 8", "saver": "Pixel 2"}[quality])

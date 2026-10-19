@@ -8,6 +8,40 @@ import Photos
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    func testUploadResponseDataWithoutHeadersSurvivesHeaderCallbackAndRelaunch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = UploadResponseStore(root: root)
+        try store.append(Data([8]), id: 7)
+        try store.prepare(7)
+        let relaunched = UploadResponseStore(root: root)
+        try relaunched.prepare(7)
+        try relaunched.append(Data([7]), id: 7)
+        try relaunched.validate(7)
+        XCTAssertEqual(try Data(contentsOf: store.url(7)), Data([8, 7]))
+        XCTAssertThrowsError(try store.validate(8)) { XCTAssertEqual(($0 as? HarborError)?.code, "UPLOAD_RESPONSE_MISSING") }
+        try store.prepare(8)
+        XCTAssertThrowsError(try store.validate(8)) { XCTAssertEqual(($0 as? HarborError)?.code, "UPLOAD_RESPONSE_EMPTY") }
+    }
+
+    func testOnlyProvenPrecommitResponseFailureClearsTheMatchingSubmission() {
+        var job = BackupJob(account: "test", assetID: "asset", assetRevision: "1", settings: BackupSettings())
+        var first = MediaResource(role: "original.photo", path: "", name: "")
+        first.submitted = true; first.responsePath = "response"
+        var second = MediaResource(role: "current.photo", path: "", name: "")
+        second.submitted = true; second.responsePath = "other-response"
+        job.resources = [first, second]
+        job.recordFailure("NETWORK_ERROR", stage: "commit_response", committingResourceID: first.id)
+        XCTAssertTrue(job.resources[0].submitted)
+        job.recordFailure("FILE_ACCESS", stage: "commit_response", committingResourceID: first.id)
+        XCTAssertTrue(job.resources[0].submitted, "Legacy ambiguous errors must still query the cloud first")
+        job.recordFailure("UPLOAD_RESPONSE_MISSING", stage: "commit_response", committingResourceID: first.id)
+        XCTAssertFalse(job.resources[0].submitted)
+        XCTAssertNil(job.resources[0].responsePath)
+        XCTAssertTrue(job.resources[1].submitted)
+        XCTAssertEqual(job.resources[1].responsePath, "other-response")
+    }
+
     func testStoreSurvivesReopenAndKeepsAccountAndPolicySnapshots() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

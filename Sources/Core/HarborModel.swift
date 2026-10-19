@@ -204,10 +204,10 @@ final class HarborModel: ObservableObject {
         do { accounts = try KeychainStore.accounts(); try await loadSettings() } catch { notice = error.localizedDescription }
         cleanupReady = []; switching = false
     }
-    func enqueue(_ assets: [PHAsset], force: Bool = false, feedback: Bool = true) async {
+    func enqueue(_ assets: [PHAsset], force: Bool = false, feedback: Bool = true, policy: BackupSettings? = nil) async {
         guard initialized, !account.isEmpty, !storageFailed, !switching, let store else { notice = "请先连接 Google 账号。"; return }
         guard !assets.isEmpty else { if feedback { notice = "当前范围没有可备份的照片或视频，请检查范围和相册权限。" }; return }
-        let snapshot = settings
+        let snapshot = policy ?? settings
         let targetAccount = account
         let membership = snapshot.syncAlbums ? library.memberships(for: Set(assets.map(\.localIdentifier))) : [:]
         do {
@@ -314,6 +314,8 @@ final class HarborModel: ObservableObject {
     }
     private func process(_ initial: BackupJob) async {
         var job = initial
+        var stage = "preparation"
+        var committingResourceID: String?
         defer { exports.removeValue(forKey: job.id) }
         do {
             try checkpoint(job)
@@ -333,10 +335,12 @@ final class HarborModel: ObservableObject {
                 let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
                 guard free > 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
                 let control = ExportControl(wifiOnly: job.settings.wifiOnly); exports[job.id] = control
+                stage = "export"
                 job.sources = try await ResourceExporter.export(assetID: job.assetID, settings: job.settings, directory: directory, control: control)
                 if let code = control.failure { throw HarborError(code) }
                 try checkpoint(job)
                 if job.isLive {
+                    stage = "motion_package"
                     guard job.settings.live == .motion else { throw HarborError("PAIR_PROTOCOL_UNVERIFIED") }
                     job.resources = try await MotionPhoto.package(job.sources, directory: directory)
                 } else { job.resources = job.sources }
@@ -351,6 +355,7 @@ final class HarborModel: ObservableObject {
                 var request = payload(resource, account: job.account)
                 // After an uncertain commit, query first; never label a submitted key confirmed.
                 if resource.submitted {
+                    stage = "confirmation"
                     job.state = .confirming; try await persist(job)
                     let result = try await engine.invoke("confirm_resource", request)
                     try checkpoint(job)
@@ -359,21 +364,27 @@ final class HarborModel: ObservableObject {
                     job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
                     try await persist(job); continue
                 }
+                stage = "source_read"
+                guard FileManager.default.fileExists(atPath: resource.path) else { throw HarborError("SOURCE_FILE_MISSING") }
                 let digest = try await Task.detached { try ResourceExporter.hash(URL(fileURLWithPath: resource.path)) }.value
                 guard digest.1 == resource.sha256, digest.2 == resource.size else { throw HarborError("SOURCE_CHANGED") }
                 try checkpoint(job)
                 if let response = resource.responsePath {
+                    stage = "commit_response"
+                    committingResourceID = resource.id
                     job.state = .committing; job.resources[index].submitted = true
                     try await persist(job)
                     request["response_path"] = response; request["name"] = resource.name; request["quality"] = job.settings.quality.rawValue
                     let result = try await engine.invoke("commit_resource", request)
                     try checkpoint(job)
                     job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
+                    stage = "confirmation"
                     let confirmation = try await engine.invoke("confirm_resource", request)
                     try checkpoint(job)
                     guard confirmation["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
                     job.resources[index].confirmed = true; try await persist(job)
                 } else {
+                    stage = "prepare_upload"
                     request["force"] = job.forceUpload
                     let plan = try await engine.invoke("prepare_upload", request)
                     try checkpoint(job)
@@ -385,6 +396,7 @@ final class HarborModel: ObservableObject {
                         let reserved = jobs.flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
                         // Background URLSession may make its own file copy.
                         guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
+                        stage = "transfer_creation"
                         let task = try transfer.create(job: job, resource: resource, plan: plan)
                         job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
                         do { try await persist(job) } catch { task.cancel(); throw error }
@@ -414,7 +426,12 @@ final class HarborModel: ObservableObject {
             guard let current = jobs.first(where: { $0.id == job.id }), current.state != .paused, current.state != .cancelled else { return }
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
-            job.error = code; job.attempts += 1
+            // These response errors are guaranteed to occur before gpmc's
+            // commit RPC, so a retry must not get stuck querying an unsent commit.
+            job.recordFailure(code, stage: stage, committingResourceID: committingResourceID)
+            job.attempts += 1
+            let system = error as NSError
+            job.failureSystemCode = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain, "PHPhotosErrorDomain"].contains(system.domain) ? "\(system.domain):\(system.code)" : nil
             if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) && job.attempts <= 3 {
                 job.state = ["REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) ? .confirming : .waiting
@@ -459,6 +476,8 @@ final class HarborModel: ObservableObject {
                 job.state = paused ? .paused : .queued; job.error = ""; job.retryAt = nil
             } else {
                 job.state = paused ? .paused : .waiting; job.error = receipt.error
+                job.failureStage = "upload_response"
+                job.resources[index].responsePath = nil
                 job.attempts += 1; job.retryAt = Date(timeIntervalSinceNow: min(300, pow(2, Double(job.attempts)) * 5))
                 if job.attempts > 3 && !paused { job.state = .failed }
             }
@@ -489,6 +508,16 @@ final class HarborModel: ObservableObject {
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed else { return }
         exports[id]?.cancel("JOB_PAUSED")
         job.state = .cancelled; job.evidence = nil; try? await persist(job); await transfer.cancel(jobID: id)
+    }
+    func reprepare(_ id: String) async {
+        guard initialized, !storageFailed, engine.ready, !engine.busy else { notice = "应用尚未就绪，请等待账号连接完成后重试。"; return }
+        guard let job = jobs.first(where: { $0.id == id }), job.account == account,
+              [.failed, .attention, .paused].contains(job.state), !cleanupRunning, !switching else { return }
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { notice = HarborError("PHOTO_PERMISSION").localizedDescription; return }
+        await cancel(id)
+        // Preserve the original task policy, and check the cloud hash before
+        // uploading again. A settings change must not silently change this task.
+        await enqueue([asset], policy: job.settings)
     }
     func verifyCleanup() async {
         guard !account.isEmpty else { notice = "请先在设置中连接 Google 账号。"; return }
@@ -565,6 +594,8 @@ final class HarborModel: ObservableObject {
         let data: [String: Any] = ["version": 2, "job_count": jobs.count,
             "states": Dictionary(grouping: jobs, by: { $0.state.rawValue }).mapValues(\.count),
             "error_codes": jobs.map(\.error).filter { !$0.isEmpty }, "runtime": engine.runtime,
+            "failure_stages": Dictionary(grouping: jobs.filter { !$0.error.isEmpty }, by: { $0.failureStage ?? "legacy_unknown" }).mapValues(\.count),
+            "file_error_codes": jobs.compactMap(\.failureSystemCode),
             "apple_pair": applePairAvailable, "live_cleanup": false, "staged_bytes": stagedBytes,
             "storage_failed": storageFailed, "credential_storage_available": credentialStorageAvailable,
             "initialized": initialized, "engine_ready": engine.ready, "engine_busy": engine.busy,

@@ -66,8 +66,19 @@ class ProtocolTests(unittest.TestCase):
         self.assertNotIn("confirmed", result)
         outside = Path(self.temp.name) / "private"
         outside.write_bytes(b"x")
-        with self.assertRaisesRegex(Failure, "FILE_ACCESS"):
+        with self.assertRaisesRegex(Failure, "UPLOAD_RESPONSE_PATH"):
             self.service.dispatch("commit_resource", {**self.value, "response_path": str(outside), "name": "x"})
+
+    def test_missing_empty_and_invalid_upload_responses_never_call_cloud_commit(self):
+        path = self.service.staging / "response.bin"
+        calls = []
+        self.service.api.commit_upload = lambda *a, **k: calls.append(True) or "submitted"
+        for content, code in [(None, "UPLOAD_RESPONSE_MISSING"), (b"", "UPLOAD_RESPONSE_EMPTY"), (b"\xff", "UPLOAD_RESPONSE_INVALID")]:
+            if content is not None:
+                path.write_bytes(content)
+            with self.assertRaisesRegex(Failure, code):
+                self.service.dispatch("commit_resource", {**self.value, "response_path": str(path), "name": "x"})
+        self.assertEqual(calls, [])
 
     def test_all_quality_models(self):
         path = self.service.staging / "response.bin"

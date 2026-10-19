@@ -143,6 +143,7 @@ struct JobRow: View {
 struct JobDetailView: View {
     @EnvironmentObject private var model: HarborModel
     let id: String
+    @State private var reprepare = false
     var job: BackupJob? { model.jobs.first { $0.id == id } }
     var body: some View {
         List {
@@ -155,7 +156,11 @@ struct JobDetailView: View {
                     LabeledContent("资源数", value: String(job.resources.count))
                     LabeledContent("创建时间") { Text(job.created, style: .time) }
                 }
-                if !job.error.isEmpty { Section("需要处理") { Text(HarborError(job.error).localizedDescription).foregroundStyle(.secondary) } }
+                if !job.error.isEmpty { Section("需要处理") {
+                    Text(HarborError(job.error).localizedDescription).foregroundStyle(.secondary)
+                    if let stage = job.failureStageTitle { LabeledContent("失败步骤", value: stage) }
+                    if let code = job.failureSystemCode { Text(code).font(.caption).foregroundStyle(.secondary) }
+                } }
                 if job.isLive && job.state == .completed { Section { Text("云端动态标记已确认。官方客户端取回仍需真机验证，本地资源暂不参与清理。").font(.footnote).foregroundStyle(.secondary) } }
                 Section("资源") {
                     ForEach(job.resources) { resource in
@@ -177,9 +182,16 @@ struct JobDetailView: View {
                         else { Button("继续 / 重试", systemImage: "play") { Task { await model.resume(id) } } }
                         Button("取消任务", role: .destructive) { Task { await model.cancel(id) } }
                     }
+                    if [.failed, .attention, .paused].contains(job.state) {
+                        Button("重新准备此任务") { reprepare = true }
+                    }
                 }
             }
         }.navigationTitle("任务详情").navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("重新准备此任务？", isPresented: $reprepare, titleVisibility: .visible) {
+            Button("重新读取原件并查重") { Task { await model.reprepare(id) } }
+            Button("取消", role: .cancel) {}
+        } message: { Text("旧任务保留为已取消，按原任务设置重新读取相册原件，并先检查云端已有内容。不删除相册或云端照片。") }
     }
 }
 

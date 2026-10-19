@@ -23,6 +23,8 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
             .appendingPathComponent("PicHarbor/Staging", isDirectory: true)
     }
     private var lastProgress: [Int: TimeInterval] = [:]
+    private var responseFailures: [Int: String] = [:]
+    private var responses: UploadResponseStore { UploadResponseStore(root: root) }
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.background(withIdentifier: Self.identifier)
         configuration.sessionSendsLaunchEvents = true
@@ -63,22 +65,17 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
     func acknowledge(_ receipt: TransferReceipt) {
         try? FileManager.default.removeItem(at: root.appendingPathComponent("receipt-\(receipt.id).json"))
     }
-    private func responseURL(_ id: Int) -> URL { root.appendingPathComponent("response-\(id).bin") }
+    private func responseURL(_ id: Int) -> URL { responses.url(id) }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         do {
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            try Data().write(to: responseURL(dataTask.taskIdentifier), options: .atomic)
+            try responses.prepare(dataTask.taskIdentifier)
             completionHandler(.allow)
-        } catch { completionHandler(.cancel) }
+        } catch { responseFailures[dataTask.taskIdentifier] = "UPLOAD_RESPONSE_WRITE"; completionHandler(.cancel) }
     }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         do {
-            let url = responseURL(dataTask.taskIdentifier)
-            let file = try FileHandle(forWritingTo: url); defer { try? file.close() }
-            let size = try file.seekToEnd()
-            guard size + UInt64(data.count) <= 4 * 1024 * 1024 else { dataTask.cancel(); return }
-            try file.write(contentsOf: data)
-        } catch { dataTask.cancel() }
+            try responses.append(data, id: dataTask.taskIdentifier)
+        } catch { responseFailures[dataTask.taskIdentifier] = (error as? HarborError)?.code ?? "UPLOAD_RESPONSE_WRITE"; dataTask.cancel() }
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         let now = Date.timeIntervalSinceReferenceDate
@@ -91,7 +88,11 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
         let parts = (task.taskDescription ?? "").components(separatedBy: ":")
         guard parts.count == 2 else { return }
         let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
-        let code = error == nil && (200..<300).contains(status) ? "" : ([401, 403].contains(status) ? "UPLOAD_EXPIRED" : "NETWORK_ERROR")
+        var code = responseFailures.removeValue(forKey: task.taskIdentifier) ?? (error == nil && (200..<300).contains(status) ? "" : ([401, 403].contains(status) ? "UPLOAD_EXPIRED" : "NETWORK_ERROR"))
+        if code.isEmpty {
+            do { try responses.validate(task.taskIdentifier) }
+            catch { code = (error as? HarborError)?.code ?? "UPLOAD_RESPONSE_READ" }
+        }
         let receipt = TransferReceipt(id: task.taskIdentifier, jobID: parts[0], resourceID: parts[1], responsePath: responseURL(task.taskIdentifier).path, status: status, error: code)
         do {
             try JSONEncoder().encode(receipt).write(to: root.appendingPathComponent("receipt-\(receipt.id).json"), options: .atomic)
