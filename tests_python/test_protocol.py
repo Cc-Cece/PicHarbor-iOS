@@ -17,6 +17,17 @@ from blackboxprotobuf import encode_message
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_cleanup_refreshes_expired_evidence_only_when_requested(self):
+        p = self.service.protocol
+        self.service.api.lookups = ["saved", "saved"]
+        self.assertEqual(self.service.dispatch("check_cleanup", self.value)["reason"], "CLOUD_STATE_EXPIRED")
+        def refresh():
+            p.snapshot = {"saved": {"trash": 0, "status": 100, "original": True, "size": self.value["size"]}}
+            p.snapshot_at = time.monotonic()
+        with patch.object(p, "synchronize", side_effect=refresh) as sync, patch.object(p, "original_access", return_value=True):
+            self.assertTrue(self.service.dispatch("check_cleanup", {**self.value, "refresh_if_stale": True})["eligible"])
+            sync.assert_called_once()
+
     def test_confirmation_refresh_uses_delta_and_keeps_unchanged_items(self):
         calls = []
         def state(token):

@@ -132,7 +132,10 @@ class Protocol:
                 raise Failure("INVALID_CHECK_POLICY")
             if state:
                 if not 0 <= time.monotonic() - self.snapshot_at < 300:
-                    return {"eligible": False, "reason": "CLOUD_STATE_EXPIRED"}
+                    if value.get("refresh_if_stale") is True:
+                        self.synchronize()
+                    else:
+                        return {"eligible": False, "reason": "CLOUD_STATE_EXPIRED"}
                 cloud = self.snapshot.get(key)
                 if not cloud or cloud["trash"] != 0 or cloud["status"] != 100 or cloud["original"] is not True or cloud["size"] != value["size"]:
                     return {"eligible": False, "reason": "CLOUD_ORIGINAL_UNCONFIRMED"}

@@ -16,6 +16,13 @@ final class HarborModel: ObservableObject {
     @Published var cleanupRunning = false
     @Published var cleanupReady: [String] = []
     @Published var cleanupResults: [String: String] = [:]
+    @Published private(set) var cleanupOutcomes: [String: CleanupOutcome] = [:]
+    @Published private(set) var cleanupChecked = 0
+    @Published private(set) var cleanupTotal = 0
+    @Published private(set) var cleanupDeleting = false
+    private var cleanupAssetIDs = Set<String>()
+    private var cleanupCancelled = false
+    private var savedCleanupPolicy = ""
     @Published var applePairAvailable = false
     @Published var initialized = false
     @Published var storageFailed = false
@@ -39,6 +46,10 @@ final class HarborModel: ObservableObject {
     var visibleJobs: [BackupJob] { jobs.filter { $0.account == account && $0.activityHidden != true }.sorted { $0.created > $1.created } }
     var activeCount: Int { visibleJobs.filter { $0.state.active || $0.state == .queued }.count }
     var completedCount: Int { visibleJobs.filter { $0.state == .completed }.count }
+    var cleanupCandidates: [BackupJob] {
+        let accessible = Set(library.assets.map(\.localIdentifier))
+        return CleanupCandidates.select(jobs.filter { accessible.contains($0.assetID) }, account: account)
+    }
     var stagedBytes: Int64 { jobs.filter { $0.state != .completed && $0.state != .cancelled }.flatMap(\.resources).reduce(0) { $0 + $1.size } }
     init() {
         engine.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
@@ -142,6 +153,8 @@ final class HarborModel: ObservableObject {
         let saved = try await store.load(AccountSettings.self, kind: "settings")
         settingsGeneration = Dictionary(uniqueKeysWithValues: saved.map { ($0.account, $0.generation ?? 0) })
         settings = saved.first(where: { $0.account == account })?.settings ?? BackupSettings()
+        savedCleanupPolicy = settings.cleanupPolicy
+        cleanupReady = []; cleanupResults = [:]; cleanupOutcomes = [:]; cleanupChecked = 0; cleanupTotal = 0
         assetStates = [:]; updateAssetStates(jobs)
     }
     private func updateAssetStates(_ values: [BackupJob]) {
@@ -163,16 +176,20 @@ final class HarborModel: ObservableObject {
             let generation = (settingsGeneration[targetAccount] ?? 0) + 1
             settingsGeneration[targetAccount] = generation
             try await store.save(AccountSettings(account: targetAccount, settings: snapshot, generation: generation), kind: "settings", id: targetAccount, revision: generation)
-            cleanupReady = []
+            if savedCleanupPolicy != snapshot.cleanupPolicy {
+                savedCleanupPolicy = snapshot.cleanupPolicy; cleanupReady = []
+                if cleanupRunning { cancelCleanupScan() }
+            }
             await applyNetworkSettings()
             await automaticScan(); await pump()
             return true
         } catch { fatalStorage(error); return false }
     }
     private func applyNetworkSettings() async {
-        guard initialized, !updatingNetwork, !switching, !cleanupRunning,
+        guard initialized, !updatingNetwork, !switching, !cleanupDeleting,
               jobs.contains(where: { $0.account == account && $0.unfinished && $0.state != .cancelled && $0.settings.wifiOnly != settings.wifiOnly }) else { return }
         updatingNetwork = true
+        if cleanupRunning { cancelCleanupScan() }
         for control in exports.values { control.cancel("WAITING_NETWORK") }
         let changedJobs = Set(jobs.filter { $0.account == account && $0.unfinished && $0.settings.wifiOnly != settings.wifiOnly }.map(\.id))
         for task in await transfer.tasks() where changedJobs.contains(task.taskDescription?.components(separatedBy: ":").first ?? "") { task.suspend() }
@@ -249,6 +266,7 @@ final class HarborModel: ObservableObject {
         guard !assets.isEmpty else { if feedback { notice = "当前范围没有可备份的照片或视频，请检查范围和相册权限。" }; return }
         var snapshot = policy ?? settings
         snapshot.wifiOnly = settings.wifiOnly
+        snapshot.strictLiveConfirmation = snapshot.strictLiveConfirmation ?? false
         let batch = batchID ?? UUID().uuidString
         let targetAccount = account
         let membership = snapshot.syncAlbums ? library.memberships(for: Set(assets.map(\.localIdentifier))) : [:]
@@ -287,7 +305,7 @@ final class HarborModel: ObservableObject {
     func automaticScan() async {
         guard initialized, !storageFailed else { return }
         do { try await indexLibrary() } catch { fatalStorage(error); return }
-        guard settings.automatic, settings.scopeConfirmed == true, !account.isEmpty, !switching, !cleanupRunning else { return }
+        guard settings.automatic, settings.scopeConfirmed == true, !account.isEmpty, !switching, !cleanupDeleting else { return }
         await enqueue(library.scope(settings), feedback: false, origin: .automatic)
     }
     private func indexLibrary() async throws {
@@ -312,18 +330,20 @@ final class HarborModel: ObservableObject {
     }
     private func runnable(_ job: BackupJob) -> Bool {
         job.account == account && [.queued, .waiting, .confirming, .paired].contains(job.state) &&
+        !cleanupAssetIDs.contains(job.assetID) &&
         (job.retryAt == nil || job.retryAt! <= Date()) && !workers.contains(job.id)
     }
     func pump() async {
-        guard initialized, !account.isEmpty, engine.ready, !storageFailed, !switching, !updatingNetwork, !cleanupRunning else { return }
+        guard initialized, !account.isEmpty, engine.ready, !storageFailed, !switching, !updatingNetwork, !cleanupDeleting else { return }
         if jobs.contains(where: { $0.account == account && $0.unfinished && $0.state != .cancelled && $0.settings.wifiOnly != settings.wifiOnly }) {
-            await applyNetworkSettings(); return
+            await applyNetworkSettings()
+            return
         }
         await collectFinishedStaging()
         let candidates = jobs.filter(runnable).sorted { $0.created < $1.created }
         for var job in candidates {
             // persist() can yield to another pump; recheck occupancy and identity each iteration.
-            guard !switching, !updatingNetwork, !cleanupRunning, !storageFailed, runnable(job) else { continue }
+            guard !switching, !updatingNetwork, !cleanupDeleting, !storageFailed, runnable(job) else { continue }
             let occupying = Set(jobs.filter { $0.account == account && $0.state == .transferring }.map(\.id)).union(workers)
             // One confirmation worker has its own lane; waiting for cloud
             // processing cannot occupy either of the two upload slots.
@@ -370,7 +390,7 @@ final class HarborModel: ObservableObject {
         var job = initial
         var stage = "preparation"
         var committingResourceID: String?
-        var confirmationBegan: Date?
+        var confirmationBegan: TimeInterval?
         defer { exports.removeValue(forKey: job.id) }
         do {
             try checkpoint(job)
@@ -432,6 +452,7 @@ final class HarborModel: ObservableObject {
                     guard let finished = try await processApplePairs(job, directory: directory) else { return }
                     job = finished
                 }
+                if job.hasConfirmedPairs { job.pairedAt = job.pairedAt ?? Date() }
             } else {
                 for index in job.resources.indices where !job.resources[index].confirmed {
                     try checkpoint(job)
@@ -494,15 +515,15 @@ final class HarborModel: ObservableObject {
                 }
             }
             try checkpoint(job)
-            if job.confirmationOnly && !initial.confirmationOnly {
+            if job.settings.requiresStrictConfirmation && job.confirmationOnly && !initial.confirmationOnly {
                 job.state = job.hasConfirmedPairs ? .paired : .confirming
                 if job.hasConfirmedPairs { job.pairedAt = job.pairedAt ?? Date() }
                 job.error = ""; job.retryAt = nil; job.failureStage = "confirmation"; try await persist(job)
                 return // All Live strategies release the upload lane before library queries.
             }
-            if job.isLive {
+            if job.isLive && job.settings.requiresStrictConfirmation {
                 stage = "confirmation"
-                job.beginConfirmation(); confirmationBegan = Date(); try await persist(job)
+                job.beginConfirmation(); confirmationBegan = ProcessInfo.processInfo.systemUptime; try await persist(job)
                 // Older jobs may retain the commit RPC's key rather than the
                 // hash lookup's canonical key. Refresh every version without
                 // retransmitting, including resources already marked confirmed.
@@ -518,10 +539,12 @@ final class HarborModel: ObservableObject {
                 try await persist(job)
                 let dynamic = try await engine.invoke("motion_status", ["account": job.account, "keys": job.resources.map(\.remoteKey)])
                 try checkpoint(job)
-                job.lastConfirmationSeconds = Date().timeIntervalSince(confirmationBegan!)
+                job.lastConfirmationSeconds = max(0, ProcessInfo.processInfo.systemUptime - confirmationBegan!)
                 try await persist(job)
                 guard dynamic["recognized"] as? Bool == true else { throw HarborError(dynamic["reason"] as? String ?? "REMOTE_MOTION_PENDING") }
             }
+            guard job.standardConfirmationPassed else { throw HarborError("REMOTE_NOT_VISIBLE") }
+            job.verificationLevel = job.isLive && job.settings.requiresStrictConfirmation ? "strict" : "standard"
             if job.settings.syncAlbums && !job.albumIDs.isEmpty {
                 job.albumsPending = true; try await persist(job)
                 try await synchronizeAlbums(job)
@@ -534,7 +557,7 @@ final class HarborModel: ObservableObject {
             guard let current = jobs.first(where: { $0.id == job.id }), current.state != .paused, current.state != .cancelled else { return }
             if stage == "pair_commit" && job.isLive && job.settings.live != .motion && !current.resources.isEmpty { stage = current.failureStage ?? stage }
             job = current
-            if let confirmationBegan { job.lastConfirmationSeconds = Date().timeIntervalSince(confirmationBegan) }
+            if let confirmationBegan { job.lastConfirmationSeconds = max(0, ProcessInfo.processInfo.systemUptime - confirmationBegan) }
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
             // These response errors are guaranteed to occur before gpmc's
@@ -766,7 +789,7 @@ final class HarborModel: ObservableObject {
         job.state = .paused; try? await persist(job); await transfer.pause(jobID: id)
     }
     func pauseAll() async { for job in visibleJobs where job.state.active || job.state == .queued || job.state == .waiting { await pause(job.id) } }
-    func resume(_ id: String) async {
+    func resume(_ id: String, useCurrentConfirmationPolicy: Bool = false) async {
         guard !updatingNetwork else { notice = "正在应用网络设置，请稍后继续任务。"; return }
         if workers.contains(id) {
             if jobs.first(where: { $0.id == id })?.state != .paused { notice = "此任务正在处理，请等待本次检查结束。"; return }
@@ -774,6 +797,7 @@ final class HarborModel: ObservableObject {
         }
         guard !updatingNetwork, !switching else { return }
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed, job.state != .cancelled else { return }
+        if useCurrentConfirmationPolicy { job.settings.strictLiveConfirmation = settings.requiresStrictConfirmation }
         job.error = ""; job.retryAt = nil; job.attempts = 0; job.sourceWaits = 0; job.confirmationRetries = 0
         let liveTasks = await transfer.tasks()
         for index in job.resources.indices {
@@ -785,6 +809,13 @@ final class HarborModel: ObservableObject {
             job.state = .queued; try? await persist(job)
         }
         await pump()
+    }
+    func applyConfirmationPolicyToPending() async {
+        let ids = visibleJobs.filter { [.paired, .confirming].contains($0.state) && $0.confirmationOnly }.map(\.id)
+        for id in ids {
+            await pause(id)
+            await resume(id, useCurrentConfirmationPolicy: true)
+        }
     }
     func cancel(_ id: String) async {
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed else { return }
@@ -805,84 +836,152 @@ final class HarborModel: ObservableObject {
     func reprepare(_ id: String) async {
         guard initialized, !storageFailed, !updatingNetwork, engine.ready, !engine.busy else { notice = "应用尚未就绪，请等待账号连接完成后重试。"; return }
         guard let job = jobs.first(where: { $0.id == id }), job.account == account,
-              [.failed, .attention, .paused].contains(job.state), !cleanupRunning, !switching else { return }
+              [.failed, .attention, .paused].contains(job.state), !cleanupDeleting, !cleanupAssetIDs.contains(job.assetID), !switching else { return }
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { notice = HarborError("PHOTO_PERMISSION").localizedDescription; return }
         await cancel(id)
         // Preserve the original task policy, and check the cloud hash before
         // uploading again. A settings change must not silently change this task.
         await enqueue([asset], force: job.forceUpload, policy: job.settings, origin: job.origin ?? .manual, batchID: job.batchID)
     }
-    func verifyCleanup() async {
-        guard !account.isEmpty else { notice = "请先在设置中连接 Google 账号。"; return }
-        guard !cleanupRunning, !updatingNetwork, workers.isEmpty, !visibleJobs.contains(where: { $0.state.active }), !account.isEmpty else { notice = "请先暂停或完成正在运行的备份。"; return }
-        guard visibleJobs.contains(where: { $0.state == .completed }) else { notice = "当前账号还没有可核验的已完成备份。请先完成备份，再检查空间清理。"; return }
-        cleanupRunning = true; cleanupReady = []; cleanupResults = [:]
-        defer { cleanupRunning = false }
-        do {
-            if settings.cloudState { _ = try await engine.invoke("sync_cloud", ["account": account]) }
-            for var job in visibleJobs where job.state == .completed {
-                do {
-                    let evidence = try await checkCleanup(job)
-                    job.evidence = evidence; try await persist(job)
-                    cleanupReady.append(job.id); cleanupResults[job.id] = "核验通过"
-                } catch { cleanupResults[job.id] = error.localizedDescription }
-            }
-        } catch { notice = error.localizedDescription }
+    private func busyCleanupAssets() -> Set<String> {
+        Set(jobs.filter { $0.account == account && (workers.contains($0.id) || $0.state.active || [.queued, .waiting].contains($0.state)) }.map(\.assetID))
     }
-    private func checkCleanup(_ job: BackupJob) async throws -> CleanupEvidence {
-        guard network.connected && (!settings.wifiOnly || network.wifi) else { throw HarborError("WAITING_NETWORK") }
-        guard job.account == account, job.state == .completed, !job.isLive else { throw HarborError(job.isLive ? "LIVE_CLEANUP_UNVERIFIED" : "CLEANUP_UNVERIFIED") }
+    private func cleanupCheckpoint(_ policy: BackupSettings, target: String) throws {
+        guard !cleanupCancelled else { throw HarborError("CLEANUP_CANCELLED") }
+        guard account == target, !target.isEmpty, !switching else { throw HarborError("ACCOUNT_CHANGED") }
+        guard settings.cleanupPolicy == policy.cleanupPolicy else { throw HarborError("CLEANUP_POLICY_CHANGED") }
+        guard network.connected && (!policy.wifiOnly || network.wifi) else { throw HarborError("WAITING_NETWORK") }
+    }
+    func cancelCleanupScan() {
+        guard cleanupRunning, !cleanupDeleting else { return }
+        cleanupCancelled = true
+        for job in jobs where cleanupAssetIDs.contains(job.assetID) { exports[job.id]?.cancel("CLEANUP_CANCELLED") }
+    }
+    private func finishCleanupWork() {
+        cleanupRunning = false; cleanupDeleting = false; cleanupCancelled = false; cleanupAssetIDs = []
+        Task { [weak self] in await self?.applyNetworkSettings(); await self?.pump() }
+    }
+    func verifyCleanup(ids: Set<String>? = nil) async {
+        guard !account.isEmpty else { notice = "请先在设置中连接 Google 账号。"; return }
+        guard initialized, !storageFailed, !switching, !cleanupRunning, !updatingNetwork else { notice = "请等待当前检查或设置更新结束。"; return }
+        let candidates = ids.map { ids in CleanupCandidates.select(visibleJobs.filter { ids.contains($0.id) }, account: account) } ?? cleanupCandidates
+        guard !candidates.isEmpty else { notice = "当前账号还没有可检查的已完成备份。"; return }
+        let target = account, policy = settings, busy = busyCleanupAssets()
+        cleanupRunning = true; cleanupCancelled = false; cleanupChecked = 0; cleanupTotal = candidates.count
+        if ids == nil { cleanupReady = []; cleanupResults = [:]; cleanupOutcomes = [:] }
+        else { cleanupReady.removeAll { ids!.contains($0) } }
+        cleanupAssetIDs = Set(candidates.map(\.assetID)).subtracting(busy)
+        defer { finishCleanupWork() }
+        do {
+            try cleanupCheckpoint(policy, target: target)
+            for var job in candidates {
+                if cleanupCancelled { break }
+                defer { cleanupChecked += 1 }
+                if busy.contains(job.assetID) { cleanupResults[job.id] = "这张照片仍有备份任务，完成后可再次检查。"; cleanupOutcomes[job.id] = .deferred; continue }
+                do {
+                    job.evidence = try await checkCleanup(job, policy: policy)
+                    try cleanupCheckpoint(policy, target: target)
+                    try await persist(job)
+                    cleanupReady.append(job.id); cleanupResults[job.id] = "核验通过，可以清理"; cleanupOutcomes[job.id] = .eligible
+                } catch {
+                    cleanupResults[job.id] = error.localizedDescription
+                    cleanupOutcomes[job.id] = .failure(error)
+                    if cleanupCancelled || account != target || policy.cleanupPolicy != settings.cleanupPolicy { break }
+                }
+            }
+            if cleanupCancelled { notice = "检查已停止，已通过的结果仍保留。" }
+        } catch {
+            for job in candidates where cleanupResults[job.id] == nil { cleanupResults[job.id] = error.localizedDescription; cleanupOutcomes[job.id] = .failure(error) }
+            if !cleanupCancelled { notice = error.localizedDescription }
+        }
+    }
+    private func checkCleanup(_ job: BackupJob, policy: BackupSettings) async throws -> CleanupEvidence {
+        try cleanupCheckpoint(policy, target: job.account)
+        guard job.state == .completed, !job.isLive else { throw HarborError(job.isLive ? "LIVE_CLEANUP_UNVERIFIED" : "CLEANUP_UNVERIFIED") }
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
               PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("SOURCE_CHANGED") }
-        let directory = engine.home.appendingPathComponent("Staging/check-\(UUID().uuidString)", isDirectory: true)
+        let directory = engine.home.appendingPathComponent("Staging/check-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        var full = job.settings; full.edits = .both
-        let control = ExportControl(wifiOnly: settings.wifiOnly); exports[job.id] = control
+        var full = policy; full.edits = .both
+        let control = ExportControl(wifiOnly: policy.wifiOnly); exports[job.id] = control
         defer { exports.removeValue(forKey: job.id) }
-        let current = try await ResourceExporter.export(assetID: job.assetID, settings: full, directory: directory, control: control)
-        guard Set(current.map(\.sha256)).isSubset(of: Set(job.sources.map(\.sha256))), !current.isEmpty else { throw HarborError("CLEANUP_UNVERIFIED") }
+        let current: [MediaResource]
+        await PreparationGate.shared.acquire()
+        do {
+            try cleanupCheckpoint(policy, target: job.account)
+            current = try await ResourceExporter.export(assetID: job.assetID, settings: full, directory: directory, control: control)
+            if let code = control.failure { throw HarborError(code) }
+            await PreparationGate.shared.release()
+        } catch { await PreparationGate.shared.release(); throw error }
+        try cleanupCheckpoint(policy, target: job.account)
+        guard let after = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
+              PhotoLibrary.stamp(after) == job.assetRevision,
+              Set(current.map(\.sha256)).isSubset(of: Set(job.sources.map(\.sha256))), !current.isEmpty else { throw HarborError("CLEANUP_UNVERIFIED") }
         for source in current {
             var request = payload(source, account: job.account)
-            request["cloud_state"] = settings.cloudState; request["original_access"] = settings.originalAccess
+            request["cloud_state"] = policy.cloudState; request["original_access"] = policy.originalAccess
+            request["refresh_if_stale"] = true
             let result = try await engine.invoke("check_cleanup", request)
+            try cleanupCheckpoint(policy, target: job.account)
             guard result["eligible"] as? Bool == true else { throw HarborError(result["reason"] as? String ?? "CLEANUP_UNVERIFIED") }
         }
-        return CleanupEvidence(account: job.account, revision: job.assetRevision, policy: settings.cleanupPolicy,
+        return CleanupEvidence(account: job.account, revision: job.assetRevision, policy: policy.cleanupPolicy,
             manifest: job.sources.map { "\($0.role):\($0.sha256)" }.sorted())
     }
     func deleteVerified(ids: [String]? = nil) async {
-        let selected = ids ?? cleanupReady
-        guard !cleanupRunning, !selected.isEmpty, Set(selected).isSubset(of: Set(cleanupReady)) else { return }
-        cleanupRunning = true
-        defer { cleanupRunning = false; cleanupReady = [] }
+        let selected = Set(ids ?? cleanupReady)
+        guard !cleanupRunning, !switching, !updatingNetwork, !selected.isEmpty,
+              selected.isSubset(of: Set(cleanupReady)) else { return }
+        let target = account, policy = settings, busy = busyCleanupAssets()
+        let requested = visibleJobs.filter { selected.contains($0.id) }
+        cleanupRunning = true; cleanupDeleting = true; cleanupCancelled = false
+        cleanupAssetIDs = Set(requested.map(\.assetID)).subtracting(busy)
+        defer { finishCleanupWork() }
         do {
-            var identifiers = Set<String>()
-            for id in selected {
-                guard var job = jobs.first(where: { $0.id == id }), let evidence = job.evidence,
-                      evidence.valid(job: job, settings: settings) else { throw HarborError("CLEANUP_UNVERIFIED") }
-                // Re-export/hash and re-query immediately before the system deletion request.
-                job.evidence = try await checkCleanup(job); try await persist(job); identifiers.insert(job.assetID)
+            try cleanupCheckpoint(policy, target: target)
+            var passed: [BackupJob] = []
+            for var job in requested {
+                do {
+                    guard !job.isLive, !busy.contains(job.assetID), let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { throw HarborError("CLEANUP_UNVERIFIED") }
+                    if job.evidence?.valid(job: job, settings: policy) != true || PhotoLibrary.stamp(asset) != job.assetRevision {
+                        job.evidence = try await checkCleanup(job, policy: policy); try await persist(job)
+                    }
+                    try cleanupCheckpoint(policy, target: target)
+                    passed.append(job)
+                } catch {
+                    cleanupResults[job.id] = error.localizedDescription; cleanupOutcomes[job.id] = .failure(error); cleanupReady.removeAll { $0 == job.id }
+                }
             }
-            // A long batch must not let the first item's evidence expire while checking the last.
-            for id in selected {
-                guard let job = jobs.first(where: { $0.id == id }), job.evidence?.valid(job: job, settings: settings) == true,
-                      let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
-                      PhotoLibrary.stamp(asset) == job.assetRevision else { throw HarborError("CLEANUP_UNVERIFIED") }
+            // One failed/expired item never authorizes deleting it or blocks all
+            // other selected items. Check fresh evidence again before the system call.
+            var final: [BackupJob] = []
+            for job in passed {
+                if job.evidence?.valid(job: job, settings: policy) == true,
+                   let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
+                   PhotoLibrary.stamp(asset) == job.assetRevision { final.append(job) }
+                else { cleanupResults[job.id] = "检查结果已过期或照片已变化，请重新检查。"; cleanupOutcomes[job.id] = .deferred; cleanupReady.removeAll { $0 == job.id } }
             }
+            try cleanupCheckpoint(policy, target: target)
+            guard !final.isEmpty else { notice = "所选项目需要重新检查，原件已保留。"; return }
             let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             guard authorization == .authorized || authorization == .limited else { throw HarborError("PHOTO_PERMISSION") }
-            let values = PHAsset.fetchAssets(withLocalIdentifiers: Array(identifiers), options: nil)
-            try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.deleteAssets(values) }
+            let identifiers = Set(final.map(\.assetID))
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: Array(identifiers), options: nil)
+            guard assets.count == identifiers.count else { throw HarborError("PHOTO_PERMISSION") }
+            try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.deleteAssets(assets) }
             guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == authorization else { throw HarborError("PHOTO_PERMISSION") }
             let remaining = PHAsset.fetchAssets(withLocalIdentifiers: Array(identifiers), options: nil)
             var present = Set<String>(); remaining.enumerateObjects { asset, _, _ in present.insert(asset.localIdentifier) }
-            for id in selected {
-                cleanupResults[id] = jobs.first(where: { $0.id == id }).map { present.contains($0.assetID) ? "仍保留在相册" : "系统已完成删除请求" } ?? "请检查系统相册"
+            for job in final {
+                cleanupResults[job.id] = present.contains(job.assetID) ? "系统保留了这项照片" : "系统已完成删除请求"
+                cleanupOutcomes[job.id] = present.contains(job.assetID) ? .deferred : .removed
+                cleanupReady.removeAll { $0 == job.id }
             }
             notice = "清理请求已完成，请查看结果。"; await library.refresh()
-        } catch { notice = error.localizedDescription }
+        } catch { notice = "删除未完成：\(error.localizedDescription) 请检查系统相册；备份记录会保留。" }
     }
+
     var diagnostics: String {
         let data: [String: Any] = ["version": 2, "job_count": jobs.count,
             "states": Dictionary(grouping: jobs, by: { $0.state.rawValue }).mapValues(\.count),

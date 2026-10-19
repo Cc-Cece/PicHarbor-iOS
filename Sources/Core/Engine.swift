@@ -24,6 +24,8 @@ struct HarborError: LocalizedError {
         case "MOTION_FORMAT_UNSUPPORTED", "MOTION_METADATA_ERROR": return "动态照片封装未完成，原件已保留。"
         case "LIVE_CLEANUP_UNVERIFIED": return "此 Live Photo 尚无完整关联与官方客户端取回验证，暂不允许清理。"
         case "CLEANUP_UNVERIFIED": return "完整资源或云端核验未通过，原件会保留。"
+        case "CLEANUP_CANCELLED": return "检查已停止，原件会保留。"
+        case "CLEANUP_POLICY_CHANGED": return "清理检查策略已变化，请按新策略重新检查。"
         case "DATABASE_ERROR": return "无法读写任务数据库，请检查剩余空间。"
         case "UPLOAD_EXPIRED": return "上传授权已过期，可重新准备传输。"
         case "DISK_FULL": return "空间不足，无法准备原件或系统后台传输副本。请释放空间后继续。"

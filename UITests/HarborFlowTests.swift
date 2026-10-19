@@ -1,6 +1,19 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testAdvancedBackupChecksDefaultOffAndPersist() {
+        let app = XCUIApplication(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap(); app.buttons["高级备份检查"].tap()
+        let toggle = app.switches["backup.strict"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "0")
+        toggle.tap(); capture("advanced-backup-checks")
+        app.terminate(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap(); app.buttons["高级备份检查"].tap()
+        XCTAssertEqual(app.switches["backup.strict"].value as? String, "1")
+        app.switches["backup.strict"].tap()
+    }
     func testOriginalPairStrategiesCanBeSelectedAndPersisted() {
         let app = XCUIApplication()
         app.launch()
@@ -28,16 +41,19 @@ final class HarborFlowTests: XCTestCase {
         app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["活动"].tap()
+        XCTAssertTrue(app.segmentedControls["activity.source"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls["activity.status"].exists)
+        app.segmentedControls["activity.source"].buttons["手动"].tap()
+        app.segmentedControls["activity.status"].buttons["未完成"].tap()
+        capture("activity-source-status-filters")
+        app.segmentedControls["activity.source"].buttons["全部来源"].tap()
+        app.segmentedControls["activity.status"].buttons["全部"].tap()
         let menu = app.buttons["activity.menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))
         menu.tap()
-        XCTAssertTrue(app.buttons["按批次"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["按备份类型"].exists)
-        XCTAssertTrue(app.buttons["不分组"].exists)
-        capture("activity-grouping-options")
-        app.buttons["按备份类型"].tap()
-        menu.tap()
-        app.buttons["按批次"].tap()
+        XCTAssertTrue(app.buttons["暂停当前结果"].waitForExistence(timeout: 5))
+        capture("activity-filtered-actions")
+        app.navigationBars["活动"].staticTexts["活动"].tap()
         XCTAssertTrue(app.navigationBars["活动"].exists)
     }
     func testPhotoKitExportAfterSystemAuthorization() {

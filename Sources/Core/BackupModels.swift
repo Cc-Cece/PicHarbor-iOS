@@ -35,6 +35,8 @@ struct BackupSettings: Codable, Equatable {
     var cloudState = true
     var originalAccess = true
     var appearance = "system"
+    var strictLiveConfirmation: Bool?
+    var requiresStrictConfirmation: Bool { strictLiveConfirmation ?? false }
     var cleanupPolicy: String { "\(cloudState ? 1 : 0)\(originalAccess ? 1 : 0)" }
     // Scheduling/network/cleanup preferences do not change the encoded media identity.
     var mediaPolicy: String { "\(quality.rawValue):\(live.rawValue):\(edits.rawValue):mux1" }
@@ -115,6 +117,7 @@ struct BackupJob: Codable, Identifiable {
     var confirmationRetries: Int?
     var lastConfirmationAt: Date?
     var lastConfirmationSeconds: Double?
+    var verificationLevel: String?
     var retryAt: Date?
     var created = Date()
     var updated = Date()
@@ -127,6 +130,10 @@ struct BackupJob: Codable, Identifiable {
         origin == .automatic ? "\(account)|\(assetID)|\(assetRevision)" : dedupKey
     }
     var unfinished: Bool { state != .completed && activityHidden != true }
+    var standardConfirmationPassed: Bool {
+        !resources.isEmpty && resources.allSatisfy { $0.confirmed && !$0.remoteKey.isEmpty } &&
+        (!isLive || settings.live == .motion || hasConfirmedPairs)
+    }
     var hasConfirmedPairs: Bool {
         guard isLive, settings.live != .motion, let pairs = livePairs, !pairs.isEmpty,
               let expected = try? LivePairRecord.make(resources), expected.count == pairs.count else { return false }

@@ -11,6 +11,7 @@ import SwiftUI
 final class BackupCoreTests: XCTestCase {
     private func pairedJob() throws -> BackupJob {
         var settings = BackupSettings(); settings.live = .applePair
+        settings.strictLiveConfirmation = true
         var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: settings)
         job.isLive = true
         job.resources = [MediaResource(role: "original.photo", path: "p", name: "photo.heic", remoteKey: "same", confirmed: true),
@@ -18,6 +19,74 @@ final class BackupCoreTests: XCTestCase {
         job.livePairs = try LivePairRecord.make(job.resources)
         job.livePairs?[0].confirmed = true; job.livePairs?[0].remoteKey = "same"
         return job
+    }
+
+    func testDefaultStandardPolicyMigratesAndRequiresCompleteSavedResources() throws {
+        var settings = BackupSettings(); settings.quality = .quota
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+        json.removeValue(forKey: "strictLiveConfirmation")
+        let migrated = try JSONDecoder().decode(BackupSettings.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertFalse(migrated.requiresStrictConfirmation); XCTAssertEqual(migrated.quality, .quota)
+        var job = try pairedJob(); let identity = job.dedupKey
+        job.settings.strictLiveConfirmation = false
+        XCTAssertEqual(job.dedupKey, identity, "Checking policy must never cause an automatic media re-upload")
+        XCTAssertTrue(job.standardConfirmationPassed)
+        XCTAssertFalse(job.flowSteps.contains("严格核验"))
+        job.resources[1].confirmed = false
+        XCTAssertFalse(job.standardConfirmationPassed)
+        job.resources[1].confirmed = true; job.resources[1].remoteKey = "other"
+        XCTAssertFalse(job.standardConfirmationPassed)
+    }
+
+    func testTwoActivityDimensionsPreserveMultiItemBatchWhenOneMatches() throws {
+        var a = try pairedJob(); a.origin = .manual; a.batchID = "batch"; a.state = .completed
+        var b = a; b.id = "b"; b.state = .attention
+        var automatic = a; automatic.id = "automatic"; automatic.batchID = "automatic-batch"; automatic.origin = .automatic
+        var legacy = a; legacy.id = "legacy"; legacy.batchID = nil; legacy.origin = nil
+        let jobs = [a, b, automatic, legacy]
+        let manual = ActivityBatch.make(jobs, source: .manual, status: .unfinished)
+        XCTAssertEqual(manual.count, 1); XCTAssertTrue(manual[0].isBatch)
+        XCTAssertEqual(manual[0].allJobs.count, 2); XCTAssertEqual(manual[0].matching.map(\.id), ["b"])
+        XCTAssertEqual(ActivityBatch.make(jobs, source: .automatic, status: .completed).count, 1)
+        XCTAssertFalse(ActivityBatch.make([legacy], source: .all, status: .all)[0].isBatch)
+        b.state = .cancelled; XCTAssertFalse(ActivityStatus.unfinished.matches(b)); XCTAssertTrue(ActivityStatus.all.matches(b))
+        b.activityHidden = true; XCTAssertTrue(ActivityBatch.make([b], source: .all, status: .all).isEmpty)
+    }
+
+    func testCleanupCandidatesAreAccountScopedAndSelectionNeverAddsNewResults() throws {
+        var a = try pairedJob(); a.state = .completed; a.id = "old"; a.created = Date(timeIntervalSince1970: 1)
+        var recent = a; recent.id = "recent"; recent.created = Date(timeIntervalSince1970: 2)
+        var other = recent; other.id = "other-account"; other.account = "other"
+        var pending = recent; pending.id = "blue"; pending.assetID = "another-asset"; pending.state = .paired
+        XCTAssertEqual(CleanupCandidates.select([a, recent, other, pending], account: "a").map(\.id), ["recent"])
+        XCTAssertEqual(CleanupCandidates.remainingSelection(["old"], eligible: ["old", "new"]), ["old"])
+        XCTAssertTrue(CleanupCandidates.remainingSelection(["old"], eligible: ["new"]).isEmpty)
+        XCTAssertEqual(CleanupOutcome.failure(HarborError("LIVE_CLEANUP_UNVERIFIED")), .deferred)
+        XCTAssertEqual(CleanupOutcome.failure(HarborError("NETWORK_ERROR")), .failed)
+    }
+
+    func testAdvancedDiagnosticExcludesPrivateResourceIdentity() throws {
+        var job = try pairedJob(); job.account = "private@example.test"
+        job.resources[0].name = "private-photo-name.heic"; job.resources[0].sha1 = "private-hash"
+        job.resources[0].remoteKey = "private-cloud-key"; job.resources[0].path = "/private/device/path"
+        for secret in [job.account, job.resources[0].name, job.resources[0].sha1, job.resources[0].remoteKey, job.resources[0].path] {
+            XCTAssertFalse(job.diagnosticText.contains(secret))
+        }
+        XCTAssertTrue(job.diagnosticText.contains(job.id))
+    }
+
+    @MainActor
+    func testStandardAndStrictFlowAppearance() throws {
+        for strict in [false, true] {
+            var job = try pairedJob(); job.settings.strictLiveConfirmation = strict
+            job.state = strict ? .paired : .completed
+            let renderer = ImageRenderer(content: VStack(alignment: .leading, spacing: 20) {
+                Text("备份流程").font(.title2.bold()); TaskFlowView(job: job)
+            }.padding(24).frame(width: 390).background(Color(uiColor: .systemBackground)))
+            guard let image = renderer.uiImage else { return XCTFail("Missing flow render") }
+            let attachment = XCTAttachment(image: image); attachment.name = strict ? "task-flow-strict" : "task-flow-standard"; attachment.lifetime = .keepAlways; add(attachment)
+            XCTAssertEqual(job.flowIndex, strict ? 3 : job.flowSteps.count - 1)
+        }
     }
 
     func testBluePairStateRequiresCompleteSameKeyEvidenceAndIsNotCleanupEligible() throws {

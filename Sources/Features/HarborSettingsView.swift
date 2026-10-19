@@ -17,6 +17,7 @@ struct HarborSettingsView: View {
                 NavigationLink { BackupPreferencesView() } label: { Label("备份偏好", systemImage: "icloud.and.arrow.up") }
                 NavigationLink { BackupScopeView() } label: { Label("备份范围", systemImage: "rectangle.stack") }
                 NavigationLink { NetworkPreferencesView() } label: { Label("网络与后台", systemImage: "wifi") }
+                NavigationLink { AdvancedBackupChecksView() } label: { Label("高级备份检查", systemImage: "slider.horizontal.3") }
             }
             Section("设备") {
                 NavigationLink { PermissionView() } label: { Label("相册访问", systemImage: "photo.badge.checkmark") }
@@ -52,8 +53,28 @@ struct BackupPreferencesView: View {
             Section {
                 Toggle("单向同步相簿", isOn: $model.settings.syncAlbums)
             } footer: { Text("开启后将本地用户相簿添加到应用映射的云端相册；不会因本地移除而删除云端内容。设置只对新任务生效，历史项目可在任务详情按当前设置重新备份。") }
+            Section { NavigationLink("高级备份检查") { AdvancedBackupChecksView() } }
         }.navigationTitle("备份偏好").navigationBarTitleDisplayMode(.inline)
         .onChange(of: model.settings) { _, _ in Task { await model.saveSettings() } }
+    }
+}
+
+struct AdvancedBackupChecksView: View {
+    @EnvironmentObject private var model: HarborModel
+    var body: some View {
+        Form {
+            Section {
+                Toggle("严格核验 Live Photo 动态就绪", isOn: Binding(get: { model.settings.requiresStrictConfirmation }, set: { value in
+                    model.settings.strictLiveConfirmation = value; Task { await model.saveSettings() }
+                })).accessibilityIdentifier("backup.strict")
+            } footer: {
+                Text("默认关闭。标准模式在云端内容保存、原始照片与视频配对确认后完成；开启后继续等待云端处理状态与动态标记，蓝色对勾表示配对已确认、尚未完成。")
+            }
+            Section {
+                Button("应用到已有待确认任务") { Task { await model.applyConfirmationPolicyToPending() } }
+                    .disabled(!model.visibleJobs.contains { [.paired, .confirming].contains($0.state) && $0.confirmationOnly })
+            } footer: { Text("只更新待确认任务的检查策略，保留账号、画质、资源及批次。已完成记录保持原样，不重新上传。清理资格仍需单独检查，Live Photo 清理尚未开放。") }
+        }.navigationTitle("高级备份检查").navigationBarTitleDisplayMode(.inline)
     }
 }
 
