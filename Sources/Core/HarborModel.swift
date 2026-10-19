@@ -517,7 +517,7 @@ final class HarborModel: ObservableObject {
         await cancel(id)
         // Preserve the original task policy, and check the cloud hash before
         // uploading again. A settings change must not silently change this task.
-        await enqueue([asset], policy: job.settings)
+        await enqueue([asset], force: job.forceUpload, policy: job.settings)
     }
     func verifyCleanup() async {
         guard !account.isEmpty else { notice = "请先在设置中连接 Google 账号。"; return }

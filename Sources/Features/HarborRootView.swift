@@ -191,7 +191,7 @@ struct JobDetailView: View {
         .confirmationDialog("重新准备此任务？", isPresented: $reprepare, titleVisibility: .visible) {
             Button("重新读取原件并查重") { Task { await model.reprepare(id) } }
             Button("取消", role: .cancel) {}
-        } message: { Text("旧任务保留为已取消，按原任务设置重新读取相册原件，并先检查云端已有内容。不删除相册或云端照片。") }
+        } message: { Text("旧任务保留为已取消，按原任务设置重新读取相册原件并查重。原任务若为强制重新备份，会保留该选择。不删除相册或云端照片。") }
     }
 }
 
