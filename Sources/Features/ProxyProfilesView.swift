@@ -10,7 +10,7 @@ struct ProxyProfilesView: View {
     @State private var scanner = false
     @State private var reviewScan = false
     @State private var scannedAddress = ""
-    private var canChange: Bool { model.activeCount == 0 && !working && !proxy.busy }
+    private var canChange: Bool { model.activeCount == 0 && !working && !proxy.busy && !proxy.testing }
     var body: some View {
         Form {
             Section {
@@ -95,7 +95,7 @@ struct ProxyProfileEditor: View {
     private var currentID: String? { savedID ?? profileID }
     private var profile: ProxyProfile? { proxy.library.profiles.first { $0.id == currentID } }
     private var isSubscription: Bool { profile == nil || profile?.subscriptionURL != nil }
-    private var canChange: Bool { model.activeCount == 0 && !working && !proxy.busy }
+    private var canChange: Bool { model.activeCount == 0 && !working && !proxy.busy && !proxy.testing }
     var body: some View {
         Form {
             Section {

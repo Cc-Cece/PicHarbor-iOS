@@ -725,3 +725,28 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 这是单个节点链接，请使用订阅二维码或手动导入配置文件。|This is a single-node URL. Use a subscription QR code or import a configuration file.
 连接失败时|When Connection Fails
 连接测试|Connection Test
+{0} 毫秒|{0} ms
+不可用|Unavailable
+任务可单独设置。测速不会中断正在上传的文件；仅在允许时使用直连。|Tasks can override these settings. Tests do not interrupt uploads. Direct connections require permission.
+优先保持正常连接，失败后结合延时和近期表现选择其他节点。|Keep working connections. On failure, choose another node using latency and recent results.
+停止测速|Stop Testing
+允许直连|Allow Direct Connection
+可勾选最多 8 个备用节点，按勾选顺序尝试。|Select up to 8 backup nodes. They are tried in selection order.
+已测速 {0} / {1} 个节点|Tested {0} / {1} nodes
+当前节点|Current Node
+所有节点不可用时|When All Nodes Are Unavailable
+手动选择|Manual
+暂停等待|Pause and Wait
+未测速|Not Tested
+测试访问 Google 的请求延时，并非上传速度。自动模式会按需补测，结果有效期约 5 分钟。|Measures request latency to Google, not upload speed. Automatic mode refreshes results as needed. Results remain current for about 5 minutes.
+测速全部节点|Test All Nodes
+测速完成。|Testing complete.
+测速已停止。|Testing stopped.
+自动选择|Automatic
+节点测速|Node Tests
+节点选择|Node Selection
+节点选择与切换|Node Selection and Switching
+请选择节点|Choose a Node
+近期连接失败，稍后重试。|Connection recently failed. Retry shortly.
+连接时自动选择|Selected When Connecting
+重新测速：{0}|Retest: {0}

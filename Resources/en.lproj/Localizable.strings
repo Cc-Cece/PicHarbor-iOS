@@ -22,6 +22,7 @@
 "{0} · {1} 个节点" = "{0} · {1} nodes";
 "{0} · {1} 项" = "{0} · {1}";
 "{0} 个节点 · 新增 {1}，修改 {2}，移除 {3}" = "{0} nodes: {1} added, {2} changed, {3} removed";
+"{0} 毫秒" = "{0} ms";
 "{0} 项" = "{0}";
 "{0} 项 · {1}\n{2} · {3}" = "{0} selected · {1}\n{2} · {3}";
 "{0} 项 · 已完成 {1} 项" = "{1} of {0} completed";
@@ -45,6 +46,7 @@
 "不会重新上传照片，也不影响已完成的任务。清理本地照片前仍需单独检查。" = "Photos will not be uploaded again. Completed tasks stay unchanged. Cleanup requires a separate check.";
 "不会重新上传照片，也不影响已完成的任务。需要释放本机空间时，请前往 Google 相册。" = "This does not upload photos again or affect completed jobs. To free up device space, use Google Photos.";
 "不创建系统 VPN。其他应用不使用此代理。验证阶段请保持应用在前台。" = "No system VPN is created. Other apps do not use this proxy. Keep PicHarbor in the foreground during testing.";
+"不可用" = "Unavailable";
 "不计配额原画质" = "Original quality · no quota";
 "严格" = "Strict";
 "严格查询次数" = "Strict checks";
@@ -92,6 +94,7 @@
 "代理连接测试通过。" = "The proxy connection test passed.";
 "以上路径来自关闭备份时的真机测试。菜单名称和位置可能随版本或语言变化，请确认 Google 相册当前使用的是备份账号。" = "This path was tested with backup turned off. Menu names and locations may vary by version or language. Make sure Google Photos uses the account you backed up to.";
 "任务" = "Task";
+"任务可单独设置。测速不会中断正在上传的文件；仅在允许时使用直连。" = "Tasks can override these settings. Tests do not interrupt uploads. Direct connections require permission.";
 "任务存储不可用，已停止新任务：{0}" = "Task storage is unavailable. New tasks stopped: {0}";
 "任务已不可用" = "Task unavailable";
 "任务已取消，本机及云端照片保留。" = "Task canceled. Local and cloud photos are kept.";
@@ -101,6 +104,7 @@
 "任务连接策略" = "Task connection policy";
 "任务默认跟随全局，也可在任务详情单独设置。直连需要明确允许，失败后继续等待，不会标记完成。" = "Tasks follow the global policy unless overridden in task details. Direct access requires permission. Failed connections wait and do not mark a task complete.";
 "任务默认跟随此设置，也可单独调整。仅在你允许时使用直连。" = "Tasks follow this setting unless individually overridden. Direct connections require your permission.";
+"优先保持正常连接，失败后结合延时和近期表现选择其他节点。" = "Keep working connections. On failure, choose another node using latency and recent results.";
 "传输中" = "Uploading";
 "传输原始配对资源" = "Upload paired originals";
 "低电量模式" = "Low Power Mode";
@@ -117,8 +121,10 @@
 "停止并从活动中移除，保留本机及云端照片。同一版本仍可手动重新备份。" = "Stop and remove from Activity. Local and cloud photos are kept. You can back up this version manually later.";
 "停止并移除任务" = "Stop and remove task";
 "停止检查" = "Stop checking";
+"停止测速" = "Stop Testing";
 "允许清理尚未完整验证的 Live Photo" = "Allow cleanup of incompletely verified Live Photos";
 "允许的连接均不可用，正在等待代理恢复。" = "No permitted connection is available. Waiting for the proxy to recover.";
+"允许直连" = "Allow Direct Connection";
 "允许访问后，直接浏览并备份照片、视频与 Live Photo。也可以仅授权部分内容。" = "Allow access to browse and back up photos, videos, and Live Photos. You can also allow selected photos only.";
 "允许访问相册" = "Allow Photos access";
 "先备份照片，再关联动态视频。" = "Save the photo first, then link its motion video.";
@@ -190,6 +196,7 @@
 "只打开首页" = "Opened Home only";
 "只用于此任务，不会改变全局设置。修改后会重新连接，并先检查已备份内容。" = "Applies only to this task. Changes reconnect and check existing backups first.";
 "可以离开此页面，进度会持续保存。" = "You can leave this page. Progress is saved.";
+"可勾选最多 8 个备用节点，按勾选顺序尝试。" = "Select up to 8 backup nodes. They are tried in selection order.";
 "可清理" = "Eligible";
 "可用 {0} 个，暂不可用 {1} 个。未通过的节点已保留，可重新检查。" = "{0} available, {1} unavailable. Unavailable nodes are retained for rechecking.";
 "可能影响动态照片的完整取回" = "Live Photos may not restore fully";
@@ -289,6 +296,7 @@
 "已有 gpmc 凭据" = "Existing gpmc credentials";
 "已有备份记录，但暂未查询到对应云端内容。会先重新检查，避免重复上传。" = "A previous backup exists, but the cloud lookup has not found it yet. It will be checked again before uploading.";
 "已检查 {0} / {1} 项" = "Checked {0} / {1}";
+"已测速 {0} / {1} 个节点" = "Tested {0} / {1} nodes";
 "已确认云端保存" = "Cloud saving confirmed";
 "已确认动态处理完成" = "Motion processing confirmed";
 "已退出后台" = "Removed from app switcher";
@@ -325,6 +333,7 @@
 "当前策略使用直连。" = "The current policy uses a direct connection.";
 "当前筛选 {0} 项" = "Filtered: {0}";
 "当前网络" = "Current connection";
+"当前节点" = "Current Node";
 "当前范围没有可备份的照片或视频，请检查范围和相册权限。" = "No photos or videos are available in this scope. Check the scope and Photos access.";
 "当前设置" = "Current settings";
 "当前账号有 {0} 张照片或视频可检查。同一照片只列一次，其他照片的备份可以继续。" = "Ready to check: {0}. Each photo appears once. Backups of other photos can continue.";
@@ -338,10 +347,12 @@
 "恢复默认设置" = "Restore defaults";
 "恢复默认设置？" = "Restore defaults?";
 "我已了解风险" = "I understand the risk";
+"所有节点不可用时" = "When All Nodes Are Unavailable";
 "所选项目需要重新检查，原件已保留。" = "The selection needs another check. Originals are kept.";
 "所需内容已在云端找到并通过检查，已跳过上传。" = "All required content was found in the cloud and passed verification. Upload was skipped.";
 "手动" = "Manual";
 "手动备份" = "Manual backup";
+"手动选择" = "Manual";
 "打开 Google 相册" = "Open Google Photos";
 "打开“Google 相册设定”" = "Open Google Photos settings";
 "打开其他页面" = "Opened another page";
@@ -381,6 +392,7 @@
 "暂停任务" = "Pause tasks";
 "暂停并等待" = "Pause and wait";
 "暂停当前结果" = "Pause filtered tasks";
+"暂停等待" = "Pause and Wait";
 "暂存资源" = "Temporary files";
 "暂无符合条件的任务" = "No matching tasks";
 "暂时无法分享" = "Unable to share";
@@ -404,6 +416,7 @@
 "服务器拒绝了原始资源关联请求。原件与上传响应已保留，请导出诊断并反馈测试方式。" = "The server rejected pairing. Originals and upload responses are kept. Export diagnostics and report the backup method.";
 "未完成" = "Unfinished";
 "未开启" = "Off";
+"未测速" = "Not Tested";
 "未确认" = "Not confirmed";
 "未能保存更新记录。" = "Could not save update history.";
 "未能打开应用" = "App did not open";
@@ -479,6 +492,10 @@
 "测试前应用状态" = "App state before the test";
 "测试当前连接" = "Test current connection";
 "测试此链接" = "Test this link";
+"测试访问 Google 的请求延时，并非上传速度。自动模式会按需补测，结果有效期约 5 分钟。" = "Measures request latency to Google, not upload speed. Automatic mode refreshes results as needed. Results remain current for about 5 minutes.";
+"测速全部节点" = "Test All Nodes";
+"测速完成。" = "Testing complete.";
+"测速已停止。" = "Testing stopped.";
 "深色" = "Dark";
 "添加 Google 账号" = "Add Google account";
 "添加订阅" = "Add Subscription";
@@ -582,8 +599,12 @@
 "自动备份" = "Automatic backup";
 "自动备份会识别范围内新增和修改内容。系统后台安排不保证即时，打开应用可继续。" = "New and changed photos in your scope are detected automatically. Background work may be delayed; open the app to continue.";
 "自动归档" = "Automatic archiving";
+"自动选择" = "Automatic";
 "节点" = "Nodes";
 "节点数" = "Node Count";
+"节点测速" = "Node Tests";
+"节点选择" = "Node Selection";
+"节点选择与切换" = "Node Selection and Switching";
 "节省空间" = "Storage saver";
 "苹果原始资源的云端配对协议尚未验证；原件已保留，不会按两个普通文件上传。" = "Original Apple pairing is not verified for this account. Originals are kept and will not be uploaded as two unrelated files.";
 "蜂窝网络" = "Cellular";
@@ -622,6 +643,7 @@
 "请输入 1–90 的整数。" = "Enter a whole number from 1 to 90.";
 "请输入有效的 HTTP 或 HTTPS 订阅链接。" = "Enter a valid HTTP or HTTPS subscription URL.";
 "请输入有效的 HTTPS 订阅链接。" = "Enter a valid HTTPS subscription URL.";
+"请选择节点" = "Choose a Node";
 "请选择要添加的订阅。" = "Choose a subscription to add.";
 "请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。" = "Choose device cleanup rather than cloud storage cleanup. Removed items appear in Recently Deleted in Apple Photos; empty it yourself if you need the space immediately. With iCloud Photos enabled, local deletions also sync to other devices using the same library.";
 "请验证：关闭第三方 VPN 后登录并备份；两个任务使用不同兜底；断开节点后重试；锁屏后返回继续。应用被暂停时内置代理可能停止，后台持续上传尚未保证。" = "Test sign-in and backup with external VPN apps off, different task policies, node failures, and resuming after locking the screen. The embedded proxy may stop when iOS suspends the app; continuous background uploads are not guaranteed.";
@@ -644,6 +666,7 @@
 "跳过最新云端状态检查" = "Latest cloud status check skipped";
 "输入：我已了解风险" = "Enter: I understand the risk";
 "运行环境检查通过，请连接 Google 账号。" = "Runtime check passed. Connect a Google account.";
+"近期连接失败，稍后重试。" = "Connection recently failed. Retry shortly.";
 "返回活动页可查看其他状态。" = "Go back to Activity to see other statuses.";
 "这些节点已保留，不会用于连接。更新应用或配置后，可重新检查。" = "These nodes are retained and are not used for connections. Recheck after updating the app or configuration.";
 "这些项目已有备份任务或已经完成，请到活动中查看或重试。" = "These photos already have tasks or backups. Check Activity to view or retry them.";
@@ -655,6 +678,7 @@
 "连接 Google 账号，开始备份你的照片与视频。" = "Connect a Google account to back up your photos and videos.";
 "连接失败时" = "When Connection Fails";
 "连接已有凭据" = "Connect with existing credentials";
+"连接时自动选择" = "Selected When Connecting";
 "连接测试" = "Connection Test";
 "连接账号后显示该账号的历史记录。" = "Connect an account to see its history.";
 "连接账号，选择一张原始照片，验证上传与云端查重。上传期间请保持应用在前台。" = "Connect an account and select an original photo to test upload and deduplication. Keep the app open during upload.";
@@ -698,6 +722,7 @@
 "重新检查" = "Check again";
 "重新检查兼容性" = "Recheck Compatibility";
 "重新检查运行环境" = "Check runtime again";
+"重新测速：{0}" = "Retest: {0}";
 "重新读取原件并查重" = "Read original and check backup again";
 "重置当前账号的备份、网络和清理偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。" = "Reset backup, connection, and cleanup preferences for this account. Automatic backup turns off and the scope needs confirmation. Accounts, photos, existing tasks, language, and appearance are kept. Photos will not be uploaded again.";
 "重置当前账号的备份和网络偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。" = "Reset this account's backup and network preferences. Automatic backup will turn off and the scope will need confirmation. Accounts, photos, existing jobs, language and appearance are kept. Photos will not be uploaded again.";

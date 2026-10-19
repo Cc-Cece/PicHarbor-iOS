@@ -18,6 +18,8 @@ struct ProxyPreferences: Codable {
     var primary = ""
     var backups: [String] = []
     var fallback: ProxyFallback = .wait
+    var selection: ProxySelection?
+    var exhaustion: ProxyExhaustion?
 }
 enum ProxyContext {
     // nil: global; -1: an explicitly chosen direct route; positive: loopback port.
@@ -93,6 +95,16 @@ final class ProxyManager: ObservableObject {
     @Published private(set) var busy = false
     @Published var message = ""
     @Published private(set) var library = ProxyProfileLibrary()
+    @Published private(set) var health: [String: ProxyNodeHealth] = [:]
+    @Published private(set) var testing = false
+    @Published private(set) var testedCount = 0
+    @Published private(set) var testTotal = 0
+    @Published private(set) var currentNode = ""
+    @Published private(set) var currentDirect = false
+    private var generation = UUID()
+    private var automaticNode = ""
+    private var sweep: Task<Void, Error>?
+    private var probes: [String: Task<Int?, Never>] = [:]
     private var ports: [String: Int] = [:]
     private let queue = DispatchQueue(label: "io.picharbor.proxy-core", qos: .utility)
     private var starting: Task<Void, Error>?
@@ -101,14 +113,17 @@ final class ProxyManager: ObservableObject {
     private let testStart: ((String) -> Bool)?
     private let testStop: (() -> Void)?
     private let defaults: UserDefaults
+    private let testLatency: ((Int) async -> Int?)?
     private var home: String {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PicHarbor/Proxy").path
     }
     init(read: @escaping () throws -> Data? = ProxySecretStore.read,
          save: @escaping (Data) throws -> Void = ProxySecretStore.save,
-         start: ((String) -> Bool)? = nil, stop: (() -> Void)? = nil, defaults: UserDefaults = .standard) {
+         start: ((String) -> Bool)? = nil, stop: (() -> Void)? = nil, defaults: UserDefaults = .standard,
+         latency: ((Int) async -> Int?)? = nil) {
         readStore = read; writeStore = save; testStart = start; testStop = stop
         self.defaults = defaults
+        testLatency = latency
         preferences = defaults.data(forKey: "picharbor.proxy.preferences.v1").flatMap { try? JSONDecoder().decode(ProxyPreferences.self, from: $0) } ?? ProxyPreferences()
         if let data = try? readStore(), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             if let stored = object["library"], let encoded = try? JSONSerialization.data(withJSONObject: stored),
@@ -189,6 +204,9 @@ final class ProxyManager: ObservableObject {
             }
             if !preferences.enabled || activeNodes.isEmpty { await stopCore() }
             try writeStore(encodedLibrary(proposed))
+            if previous.activeID != proposed.activeID || previous.profiles.first(where: { $0.id == previous.activeID })?.nodes != active?.nodes {
+                generation = UUID(); health = [:]; currentNode = ""; currentDirect = false; automaticNode = ""
+            }
             library = proposed; ports = activePorts; names = activeNodes.compactMap { $0["name"] as? String }
             preferences.primary = active.flatMap { names.contains($0.primary) ? $0.primary : nil } ?? names.first ?? ""
             preferences.backups = active?.backups.filter { names.contains($0) && $0 != preferences.primary } ?? []
@@ -201,7 +219,7 @@ final class ProxyManager: ObservableObject {
         }
     }
     func importText(_ text: String, profileID: String? = nil, name: String = "", subscriptionURL: String? = nil) async throws {
-        guard !busy, text.utf8.count <= 4 * 1024 * 1024 else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
+        guard !busy, !testing, text.utf8.count <= 4 * 1024 * 1024 else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
         busy = true; defer { busy = false }
         let object: [String: Any]
         if let json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] { object = json }
@@ -240,7 +258,7 @@ final class ProxyManager: ObservableObject {
         message = L10n.text("更新成功：{0}", [profile.lastResult])
     }
     func activateProfile(_ id: String) async throws {
-        guard !busy, let profile = library.profiles.first(where: { $0.id == id }) else { throw HarborError("PROXY_UNAVAILABLE") }
+        guard !busy, !testing, let profile = library.profiles.first(where: { $0.id == id }) else { throw HarborError("PROXY_UNAVAILABLE") }
         busy = true; defer { busy = false }
         var proposed = capturedLibrary(); proposed.activeID = id
         let nodes = try JSONSerialization.jsonObject(with: profile.nodes) as? [[String: Any]] ?? []
@@ -265,14 +283,14 @@ final class ProxyManager: ObservableObject {
         catch { self.message = L10n.text("未能保存更新记录。") }
     }
     func removeProfile(_ id: String) async throws {
-        guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
+        guard !busy, !testing else { throw HarborError("PROXY_UNAVAILABLE") }
         busy = true; defer { busy = false }
         var proposed = capturedLibrary(); proposed.profiles.removeAll { $0.id == id }
         if proposed.activeID == id {
             // Never switch silently to a different subscription.
             proposed.activeID = nil
             try writeStore(encodedLibrary(proposed))
-            await stopCore(); running = false; ports = [:]; names = []
+            await stopCore(); running = false; ports = [:]; names = []; generation = UUID(); health = [:]; currentNode = ""; currentDirect = false
             preferences.primary = ""; preferences.backups = []; preferences.enabled = false
         } else { try writeStore(encodedLibrary(proposed)) }
         library = proposed; message = L10n.text("配置已移除。")
@@ -280,7 +298,7 @@ final class ProxyManager: ObservableObject {
     func stop() async {
         if let starting { _ = try? await starting.value }
         await stopCore()
-        running = false
+        running = false; currentNode = ""; currentDirect = false
     }
     func ensureRunning() async throws {
         if running { return }
@@ -296,27 +314,117 @@ final class ProxyManager: ObservableObject {
         starting = operation; defer { starting = nil }
         try await operation.value
     }
-    func route(override: ProxyFallback? = nil, failures: [String] = []) async throws -> (Int, String) {
+    func route(override legacy: ProxyFallback? = nil, failures: [String] = [], policy custom: ProxyPolicy? = nil, preferred: String? = nil) async throws -> (Int, String) {
         guard preferences.enabled else { return (-1, "") }
         guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
         try await ensureRunning()
-        for name in ProxyConfiguration.candidates(preferences, override: override, failures: failures) {
-            if name.isEmpty { return (-1, "") }
-            guard let port = ports[name] else { continue }
-            if await probe(port: port) { return (port, name) }
+        let policy = ProxyPolicy.resolve(preferences, legacy: legacy, override: custom)
+        let token = generation
+        let sticky = preferred ?? (custom == nil && legacy == nil ? automaticNode : nil)
+        var candidates: [String]
+        if policy.selection == .automatic {
+            var ranked = ProxyNodeRanking.ordered(names: names, health: health, preferred: sticky, failures: failures, now: Date())
+            if !ranked.contains(where: { health[$0]?.healthy(at: Date()) == true }) {
+                try await testAllNodes(force: false)
+                ranked = ProxyNodeRanking.ordered(names: names, health: health, preferred: sticky, failures: failures, now: Date())
+            }
+            candidates = ranked
+        } else {
+            var seen = Set<String>()
+            candidates = ([policy.primary] + policy.backups).filter { names.contains($0) && seen.insert($0).inserted && !failures.contains($0) && !(health[$0]?.cooling(at: Date()) ?? false) }
         }
+        for name in candidates {
+            try Task.checkCancellation()
+            guard token == generation, preferences.enabled, !busy else { throw HarborError("PROXY_UNAVAILABLE") }
+            guard let port = ports[name] else { continue }
+            let healthy = health[name]?.healthy(at: Date()) == true
+            let available = healthy ? true : await measureNode(name, port: port) != nil
+            guard token == generation, preferences.enabled, !busy else { throw HarborError("PROXY_UNAVAILABLE") }
+            if available {
+                currentNode = name; currentDirect = false
+                if policy.selection == .automatic && custom == nil && legacy == nil { automaticNode = name }
+                return (port, name)
+            }
+        }
+        try Task.checkCancellation()
+        guard token == generation else { throw HarborError("PROXY_UNAVAILABLE") }
+        if policy.exhaustion == .direct && !failures.contains("") { currentNode = ""; currentDirect = true; return (-1, "") }
         throw HarborError("PROXY_UNAVAILABLE")
     }
-    func probe(port: Int) async -> Bool {
-        await latency(port: port) != nil
+    func recordOutcome(node: String?, errorCode: String?) {
+        guard let node, names.contains(node) else { return }
+        var value = health[node] ?? ProxyNodeHealth()
+        if errorCode == nil { value.succeed(at: Date()) }
+        else if errorCode == "NETWORK_ERROR" { value.fail(at: Date()) }
+        else { return }
+        health[node] = value
     }
+    private func measureNode(_ name: String, port: Int) async -> Int? {
+        if let existing = probes[name] { return await existing.value }
+        let token = generation, began = Date(), injected = testLatency
+        let operation = Task<Int?, Never> {
+            if let injected { return await injected(port) }
+            return await Self.latency(port: port)
+        }
+        probes[name] = operation
+        let milliseconds = await operation.value
+        guard generation == token else { return nil }
+        probes.removeValue(forKey: name)
+        var value = health[name] ?? ProxyNodeHealth()
+        value.measuredAt = Date(); value.milliseconds = milliseconds
+        if milliseconds != nil { value.succeed(at: Date()) }
+        else if (value.lastSuccess ?? .distantPast) <= began { value.fail(at: Date()) }
+        health[name] = value
+        return milliseconds
+    }
+    func testAllNodes(force: Bool = true, only: String? = nil) async throws {
+        if let sweep { return try await sweep.value }
+        guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
+        testing = true; testedCount = 0
+        let operation = Task { @MainActor in
+            try await ensureRunning()
+            let token = generation
+            let targets = names.filter { (only == nil || only == $0) && (force || !(health[$0]?.cooling(at: Date()) ?? false)) }.compactMap { name in ports[name].map { (name, $0) } }
+            testTotal = targets.count
+            await withTaskGroup(of: Void.self) { group in
+                var index = 0
+                for _ in 0..<min(3, targets.count) {
+                    let target = targets[index]; index += 1
+                    group.addTask { _ = await self.measureNode(target.0, port: target.1) }
+                }
+                while await group.next() != nil {
+                    if token == generation { testedCount += 1 }
+                    if Task.isCancelled { group.cancelAll(); continue }
+                    if index < targets.count {
+                        let target = targets[index]; index += 1
+                        group.addTask { _ = await self.measureNode(target.0, port: target.1) }
+                    }
+                }
+            }
+            try Task.checkCancellation()
+        }
+        sweep = operation
+        defer { sweep = nil; testing = false }
+        do { try await operation.value }
+        catch {
+            if !preferences.enabled { await stopCore(); running = false }
+            throw error
+        }
+        if !preferences.enabled { await stopCore(); running = false }
+    }
+    func stopTesting() { sweep?.cancel() }
+    func retestNode(_ name: String) async throws {
+        guard names.contains(name) else { throw HarborError("PROXY_UNAVAILABLE") }
+        try await testAllNodes(only: name)
+    }
+    func probe(port: Int) async -> Bool { await Self.latency(port: port) != nil }
     func testPrimaryLatency() async throws -> (String, Int) {
         guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
         try await ensureRunning()
-        guard let port = ports[preferences.primary], let milliseconds = await latency(port: port) else { throw HarborError("PROXY_UNAVAILABLE") }
+        guard let port = ports[preferences.primary], let milliseconds = await measureNode(preferences.primary, port: port) else { throw HarborError("PROXY_UNAVAILABLE") }
         return (preferences.primary, milliseconds)
     }
-    private func latency(port: Int) async -> Int? {
+    private nonisolated static func latency(port: Int) async -> Int? {
         let configuration = URLSessionConfiguration.ephemeral
         Self.apply(port: port, to: configuration)
         configuration.timeoutIntervalForRequest = 6; configuration.timeoutIntervalForResource = 8

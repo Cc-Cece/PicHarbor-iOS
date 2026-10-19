@@ -438,7 +438,7 @@ final class HarborModel: ObservableObject {
     }
     private func process(_ initial: BackupJob) async {
         do {
-            let route = try await ProxyManager.shared.route(override: initial.proxyFallback, failures: initial.proxyFailures ?? [])
+            let route = try await ProxyManager.shared.route(override: initial.proxyFallback, failures: initial.proxyFailures ?? [], policy: initial.proxyPolicy, preferred: initial.proxyLastNode)
             try checkpoint(initial)
             var job = jobs.first(where: { $0.id == initial.id }) ?? initial
             job.proxyPort = route.0; job.proxyLastNode = route.1
@@ -452,13 +452,13 @@ final class HarborModel: ObservableObject {
             try? await persist(job)
         }
     }
-    func setProxyPolicy(_ id: String, policy: ProxyFallback?) async {
+    func setProxyPolicy(_ id: String, policy: ProxyPolicy?) async {
         guard let existing = jobs.first(where: { $0.id == id }), existing.account == account, existing.unfinished else { return }
         let continueAfter = existing.state.active || [.waiting, .queued].contains(existing.state)
         await pause(id); await transfer.cancel(jobID: id)
         guard var job = jobs.first(where: { $0.id == id }) else { return }
         for index in job.resources.indices { job.resources[index].transportID = nil }
-        job.proxyFallback = policy; job.proxyFailures = []; job.retryAt = nil
+        job.proxyPolicy = policy; job.proxyFallback = nil; job.proxyFailures = []; job.retryAt = nil
         try? await persist(job)
         if continueAfter { await resume(id) }
     }
@@ -641,6 +641,7 @@ final class HarborModel: ObservableObject {
                 try checkpoint(job); job.albumsPending = false
             }
             job.state = .completed; job.completedAt = Date(); job.progress = 1; job.error = ""; job.retryAt = nil
+            if (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: nil) }
             try await persist(job)
             try? FileManager.default.removeItem(at: directory)
         } catch {
@@ -651,6 +652,7 @@ final class HarborModel: ObservableObject {
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
             if code == "NETWORK_ERROR", ProxyManager.shared.preferences.enabled {
                 job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
+                if network.connected && (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: code) }
             }
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
             // These response errors are guaranteed to occur before gpmc's
@@ -882,12 +884,14 @@ final class HarborModel: ObservableObject {
             }
             job.resources[index].transportID = nil
             if receipt.error.isEmpty {
+                if (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: nil) }
                 job.resources[index].responsePath = receipt.responsePath
                 job.state = paused ? .paused : .queued; job.error = ""; job.retryAt = nil
             } else {
                 job.state = paused ? .paused : .waiting; job.error = receipt.error
-                if receipt.error == "NETWORK_ERROR", ProxyManager.shared.preferences.enabled {
+                if receipt.error == "NETWORK_ERROR", receipt.status == 0, !paused, ProxyManager.shared.preferences.enabled {
                     job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
+                    if network.connected && (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: receipt.error) }
                 }
                 job.failureStage = "upload_response"
                 job.resources[index].responsePath = nil
