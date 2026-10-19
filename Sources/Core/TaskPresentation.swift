@@ -53,7 +53,7 @@ extension BackupJob {
         if error == "REMOTE_MOTION_TRASHED" { return "云端项目已在回收站，请先到谷歌相册恢复。" }
         if error.hasPrefix("REMOTE_MOTION_") { return "云端动态照片尚未通过严格核验，稍后会自动检查。" }
         if error == "PAIR_CONFIRMATION_PENDING" || error == "REMOTE_NOT_VISIBLE" { return "资源已发送，正在确认云端保存结果。" }
-        return HarborError(error).localizedDescription
+        return HarborError(error).localizedDescription.replacingOccurrences(of: "（\(error)）", with: "")
     }
     var diagnosticText: String {
         let value: [String: Any] = ["task_reference": id, "state": state.rawValue,
@@ -67,6 +67,9 @@ extension BackupJob {
 }
 
 enum CleanupCandidates {
+    static func policyMatches(_ captured: BackupSettings, current: BackupSettings) -> Bool {
+        captured.cleanupPolicy == current.cleanupPolicy && captured.wifiOnly == current.wifiOnly
+    }
     static func select(_ jobs: [BackupJob], account: String) -> [BackupJob] {
         var seen = Set<String>()
         return jobs.filter { $0.account == account && $0.activityHidden != true && $0.state == .completed }

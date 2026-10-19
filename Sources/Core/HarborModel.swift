@@ -20,9 +20,11 @@ final class HarborModel: ObservableObject {
     @Published private(set) var cleanupChecked = 0
     @Published private(set) var cleanupTotal = 0
     @Published private(set) var cleanupDeleting = false
+    @Published private(set) var cleanupStopping = false
     private var cleanupAssetIDs = Set<String>()
     private var cleanupCancelled = false
     private var savedCleanupPolicy = ""
+    private var savedWifiOnly = true
     @Published var applePairAvailable = false
     @Published var initialized = false
     @Published var storageFailed = false
@@ -173,6 +175,7 @@ final class HarborModel: ObservableObject {
         settingsGeneration = Dictionary(uniqueKeysWithValues: saved.map { ($0.account, $0.generation ?? 0) })
         settings = saved.first(where: { $0.account == account })?.settings ?? BackupSettings()
         savedCleanupPolicy = settings.cleanupPolicy
+        savedWifiOnly = settings.wifiOnly
         cleanupReady = []; cleanupResults = [:]; cleanupOutcomes = [:]; cleanupChecked = 0; cleanupTotal = 0
         assetStates = [:]; updateAssetStates(jobs)
     }
@@ -195,6 +198,13 @@ final class HarborModel: ObservableObject {
             let generation = (settingsGeneration[targetAccount] ?? 0) + 1
             settingsGeneration[targetAccount] = generation
             try await store.save(AccountSettings(account: targetAccount, settings: snapshot, generation: generation), kind: "settings", id: targetAccount, revision: generation)
+            if savedWifiOnly != snapshot.wifiOnly {
+                savedWifiOnly = snapshot.wifiOnly
+                if cleanupRunning {
+                    for job in jobs where cleanupAssetIDs.contains(job.assetID) { exports[job.id]?.cancel("CLEANUP_POLICY_CHANGED") }
+                    cancelCleanupScan()
+                }
+            }
             if savedCleanupPolicy != snapshot.cleanupPolicy {
                 savedCleanupPolicy = snapshot.cleanupPolicy
                 for id in cleanupReady { cleanupResults[id] = "检查策略已变化，请重新检查。"; cleanupOutcomes[id] = .deferred }
@@ -871,16 +881,17 @@ final class HarborModel: ObservableObject {
         guard !storageFailed else { throw HarborError("DATABASE_ERROR") }
         guard !cleanupCancelled else { throw HarborError("CLEANUP_CANCELLED") }
         guard account == target, !target.isEmpty, !switching else { throw HarborError("ACCOUNT_CHANGED") }
-        guard settings.cleanupPolicy == policy.cleanupPolicy else { throw HarborError("CLEANUP_POLICY_CHANGED") }
+        guard CleanupCandidates.policyMatches(policy, current: settings) else { throw HarborError("CLEANUP_POLICY_CHANGED") }
         guard network.connected && (!policy.wifiOnly || network.wifi) else { throw HarborError("WAITING_NETWORK") }
     }
     func cancelCleanupScan() {
         guard cleanupRunning, !cleanupDeleting else { return }
         cleanupCancelled = true
+        cleanupStopping = true
         for job in jobs where cleanupAssetIDs.contains(job.assetID) { exports[job.id]?.cancel("CLEANUP_CANCELLED") }
     }
     private func finishCleanupWork() {
-        cleanupRunning = false; cleanupDeleting = false; cleanupCancelled = false; cleanupAssetIDs = []
+        cleanupRunning = false; cleanupDeleting = false; cleanupStopping = false; cleanupCancelled = false; cleanupAssetIDs = []
         Task { [weak self] in await self?.applyNetworkSettings(); await self?.pump() }
     }
     func verifyCleanup(ids: Set<String>? = nil) async {

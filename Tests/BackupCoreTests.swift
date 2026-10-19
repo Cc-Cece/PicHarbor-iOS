@@ -9,6 +9,21 @@ import SwiftUI
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    func testCleanupSnapshotRejectsNetworkAndVerificationChangesOnly() {
+        let captured = BackupSettings()
+        var changed = captured; changed.wifiOnly = false
+        XCTAssertFalse(CleanupCandidates.policyMatches(captured, current: changed))
+        changed = captured; changed.originalAccess = false
+        XCTAssertFalse(CleanupCandidates.policyMatches(captured, current: changed))
+        changed = captured; changed.appearance = "dark"; changed.strictLiveConfirmation = true
+        XCTAssertTrue(CleanupCandidates.policyMatches(captured, current: changed))
+    }
+    func testMainTaskMessageKeepsCodesInAdvancedInformation() throws {
+        var job = try pairedJob(); job.error = "ENGINE_ERROR"
+        XCTAssertFalse(job.friendlyMessage.contains("ENGINE_ERROR")); XCTAssertTrue(job.diagnosticText.contains("ENGINE_ERROR"))
+        job.error = "REMOTE_MOTION_TRASHED"
+        XCTAssertTrue(job.friendlyMessage.contains("回收站"))
+    }
     private func pairedJob() throws -> BackupJob {
         var settings = BackupSettings(); settings.live = .applePair
         settings.strictLiveConfirmation = true

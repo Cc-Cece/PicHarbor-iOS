@@ -17,8 +17,8 @@ struct CleanupView: View {
                 if !model.settings.cloudState || !model.settings.originalAccess { Label("已降低清理核验强度，请到设置查看跳过项", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
                 if model.cleanupRunning {
                     ProgressView(value: Double(model.cleanupChecked), total: Double(max(1, model.cleanupTotal)))
-                    Text(model.cleanupDeleting ? "正在核对所选项目并请求系统删除" : "已检查 \(model.cleanupChecked) / \(model.cleanupTotal) 项").font(.caption).foregroundStyle(.secondary)
-                    if !model.cleanupDeleting { Button("停止检查") { model.cancelCleanupScan() } }
+                    Text(model.cleanupDeleting ? "正在核对所选项目并请求系统删除" : model.cleanupStopping ? "正在停止，当前请求结束后保留检查结果" : "已检查 \(model.cleanupChecked) / \(model.cleanupTotal) 项").font(.caption).foregroundStyle(.secondary)
+                    if !model.cleanupDeleting && !model.cleanupStopping { Button("停止检查") { model.cancelCleanupScan() } }
                 } else { Button("开始检查") { Task { await model.verifyCleanup() } }.accessibilityIdentifier("cleanup.start") }
             }
             if !model.cleanupResults.isEmpty {
