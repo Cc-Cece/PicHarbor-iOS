@@ -2,6 +2,14 @@
 
 日期：2026-10-19。此版本供阶段验收，**不是完整计划已完成的声明**。
 
+## 0.2.5 新拍照片与旧任务重试修复
+
+- 生产代码 `9fd4f4d`（核心 `45e7aee`），版本 0.2.5，构建号 7。导出前重新获取稳定资产并安全更新无资源任务的版本，导出后再核对版本及资源清单；持续变化有界等待，不消耗网络重试预算。已导出或提交的任务版本不自动改写。
+- [最终设备构建与包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39203920952)通过，本机再次检查通过。包标识 com.cccece.picharbor，最低 iOS 17.0。
+- 最终本机包：`dist/PicHarbor-0.2.5-fresh-photo-final.ipa`，12,254,136 字节，解压 42,130,068 字节。SHA-256：`e09180c1c362b44b4e56f422500659adba637e939b64237fc53ef098c655b51a`。
+- [最终回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39203924480)通过：47 项 Python、30 项原生单元、6 项界面，共 83 项，零失败、零跳过。结果与最终包均对应 `9fd4f4d`。本机日志 `build/fresh-photo-final-tests.log`，测试产物 `build/fresh-photo-final-tests/`。首轮 29 项原生测试通过；该轮因追加网络重试预算修复主动取消，不作为完整回归通过记录。中途生成的 verified 包为首轮代码，以 final 包为交付。
+- 用户已反馈原始联合提交最佳、旧照片两种原始方式通常一次完成；Motion Photo 双条目按特性接受。新拍照片与先照片后视频的静态显示仍需[专项复测](FRESH-PHOTO-FIXES.md)，未将两种原始方式完整样本、官方取回和配额验收标为完成。Live Photo 清理继续关闭。
+
 ## 0.2.4 原始 Live Photo 配对测试版
 
 - 核心代码 `314b5eb`；最终包 `ba30ed4` 另补一行“云端已有完整配对无需再次提交”的显示说明。版本 0.2.4，构建号 6。新增联合提交和先原图后关联视频两种原始配对实验方式；Motion Photo 保持默认，Live 清理仍关闭。
