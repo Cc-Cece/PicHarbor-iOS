@@ -458,6 +458,17 @@ final class HarborModel: ObservableObject {
             if job.isLive {
                 stage = "confirmation"
                 job.state = .confirming; try await persist(job)
+                // Older jobs may retain the commit RPC's key rather than the
+                // hash lookup's canonical key. Refresh every version without
+                // retransmitting, including resources already marked confirmed.
+                for index in job.resources.indices {
+                    let result = try await engine.invoke("confirm_resource", payload(job.resources[index], account: job.account))
+                    try checkpoint(job)
+                    guard result["confirmed"] as? Bool == true,
+                          let key = result["remote_key"] as? String, !key.isEmpty else { throw HarborError("REMOTE_NOT_VISIBLE") }
+                    job.resources[index].remoteKey = key
+                }
+                try await persist(job)
                 let dynamic = try await engine.invoke("motion_status", ["account": job.account, "keys": job.resources.map(\.remoteKey)])
                 try checkpoint(job)
                 guard dynamic["recognized"] as? Bool == true else { throw HarborError(dynamic["reason"] as? String ?? "REMOTE_MOTION_PENDING") }
