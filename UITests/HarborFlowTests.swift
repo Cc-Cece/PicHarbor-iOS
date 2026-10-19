@@ -26,12 +26,12 @@ final class HarborFlowTests: XCTestCase {
         app.tabBars.buttons["设置"].tap(); app.buttons["高级备份检查"].tap()
         let toggle = app.switches["backup.strict"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "0")
-        toggle.tap(); capture("advanced-backup-checks")
+        setSwitch(toggle, on: true); capture("advanced-backup-checks")
         app.terminate(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap(); app.buttons["高级备份检查"].tap()
         XCTAssertEqual(app.switches["backup.strict"].value as? String, "1")
-        app.switches["backup.strict"].tap()
+        setSwitch(app.switches["backup.strict"], on: false)
     }
     func testOriginalPairStrategiesCanBeSelectedAndPersisted() {
         let app = XCUIApplication()
@@ -180,6 +180,14 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.alerts.staticTexts["请先在设置中连接 Google 账号。"].waitForExistence(timeout: 5))
         capture("cleanup-account-required")
         app.alerts.buttons["好"].tap()
+    }
+    private func setSwitch(_ element: XCUIElement, on: Bool) {
+        // SwiftUI exposes the label and control as one wide Switch element.
+        // Tap the trailing native control, then assert the actual UI value.
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        let value = NSPredicate(format: "value == %@", on ? "1" : "0")
+        expectation(for: value, evaluatedWith: element)
+        waitForExpectations(timeout: 5)
     }
     private func authorizePhotosIfNeeded(in app: XCUIApplication) {
         let authorize = app.buttons["允许访问相册"]
