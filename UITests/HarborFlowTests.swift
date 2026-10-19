@@ -280,7 +280,7 @@ final class HarborFlowTests: XCTestCase {
     private func choosePreference(_ app: XCUIApplication, _ identifier: String, _ title: String) {
         let picker = app.buttons[identifier]
         XCTAssertTrue(picker.waitForExistence(timeout: 5)); picker.tap()
-        let option = app.buttons[title].lastMatch
+        let option = app.buttons.matching(identifier: title).firstMatch
         XCTAssertTrue(option.waitForExistence(timeout: 5)); option.tap()
         assertPreference(app, identifier, title)
     }
