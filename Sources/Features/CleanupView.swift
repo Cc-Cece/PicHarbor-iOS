@@ -13,12 +13,13 @@ struct CleanupView: View {
                     GooglePhotosLauncher.open(GooglePhotosLink.launch.url) { if !$0 { unavailable = true } }
                 }.accessibilityIdentifier("googlePhotos.open")
             }
-            Section(L10n.text("在 Google 相册中操作")) {
+            Section {
                 Label(L10n.text("点击首页右上角头像"), systemImage: "1.circle")
                 Label(L10n.text("打开“Google 相册设定”"), systemImage: "2.circle")
                 Label(L10n.text("进入“应用程序与装置”"), systemImage: "3.circle")
                 Label(L10n.text("选择“释放空间”并确认"), systemImage: "4.circle")
-            } footer: { Text(L10n.text("以上路径来自关闭备份时的真机测试。菜单名称和位置可能随版本或语言变化，请确认 Google 相册当前使用的是备份账号。")) }
+            } header: { Text(L10n.text("在 Google 相册中操作")) }
+              footer: { Text(L10n.text("以上路径来自关闭备份时的真机测试。菜单名称和位置可能随版本或语言变化，请确认 Google 相册当前使用的是备份账号。")) }
             Section {
                 Text(L10n.text("请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。")).font(.footnote).foregroundStyle(.secondary)
             }
