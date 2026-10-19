@@ -4,11 +4,15 @@ struct CleanupView: View {
     @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     @State private var confirm = false
-    @State private var selected = Set<String>()
+    @State private var selection = CleanupSelection()
+    private var selected: Set<String> { selection.selected }
     @State private var filter: CleanupOutcome = .all
     var results: [BackupJob] { model.visibleJobs.filter {
         model.cleanupResults[$0.id] != nil && (filter == .all || model.cleanupOutcomes[$0.id] == filter)
     } }
+    private func awaitingLiveVerification(_ job: BackupJob) -> Bool {
+        job.isLive && L10n.message(model.cleanupResults[job.id] ?? "") == L10n.message(LiveCleanupPolicy.waitingMessage)
+    }
     var body: some View {
         List {
             Section {
@@ -28,26 +32,30 @@ struct CleanupView: View {
                 } else { Button(L10n.text("开始检查")) { Task { await model.verifyCleanup() } }.accessibilityIdentifier("cleanup.start") }
             }
             if !model.cleanupResults.isEmpty {
+                if model.visibleJobs.contains(where: awaitingLiveVerification) {
+                    Section {
+                        Text(L10n.text("Live Photo 完整性验证提醒")).font(.headline)
+                        Text(L10n.text("Google 相册的 Live Photo 验证通常需等待 10–20 分钟，请稍后重新检查。超过 1 小时仍未通过，可前往设置了解其他选择。")).font(.subheadline).foregroundStyle(.secondary)
+                        NavigationLink(L10n.text("前往设置")) { CleanupPolicyView() }
+                    }.accessibilityIdentifier("cleanup.liveNotice")
+                }
                 Section {
                     Picker(L10n.text("检查结果"), selection: $filter) { ForEach(CleanupOutcome.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
-                    Button(L10n.text("全选已通过")) { selected = Set(model.cleanupReady) }.disabled(model.cleanupRunning || model.cleanupReady.isEmpty)
-                    if !selected.isEmpty { Button(L10n.text("取消全选")) { selected = [] } }
-                }
+                    Button(L10n.text("全选已通过")) { selection.selectAll(eligible: model.cleanupReady, jobs: model.visibleJobs) }.disabled(model.cleanupRunning || model.cleanupReady.isEmpty)
+                    if !selected.isEmpty { Button(L10n.text("取消全选")) { selection.deselectAll(jobs: model.visibleJobs) }.disabled(model.cleanupRunning) }
+                } footer: { Text(L10n.text("已通过项默认选中，取消勾选后本轮保留。")) }
                 Section(L10n.text("检查结果")) {
                     ForEach(results) { job in
                         HStack {
                             AssetThumbnail(assetID: job.assetID)
                             if model.cleanupReady.contains(job.id) {
-                                Button { if selected.contains(job.id) { selected.remove(job.id) } else { selected.insert(job.id) } } label: {
+                                Button { selection.toggle(job) } label: {
                                     Image(systemName: selected.contains(job.id) ? "checkmark.circle.fill" : "circle")
-                                }.buttonStyle(.borderless).accessibilityLabel(selected.contains(job.id) ? L10n.text("取消选择此项目") : L10n.text("选择此项目")).disabled(model.cleanupRunning)
+                                }.buttonStyle(.borderless).accessibilityLabel(selected.contains(job.id) ? L10n.text("取消选择此项目") : L10n.text("选择此项目")).accessibilityIdentifier("cleanup.select.\(job.id)").disabled(model.cleanupRunning)
                             }
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(job.sources.first?.name ?? L10n.text("备份照片")).lineLimit(1)
-                                Text(L10n.message(model.cleanupResults[job.id] ?? "")).font(.caption).foregroundStyle(model.cleanupReady.contains(job.id) ? .green : .secondary)
-                                if job.isLive && !model.settings.allowsUnverifiedLiveCleanup && model.cleanupOutcomes[job.id] == .deferred {
-                                    NavigationLink(L10n.text("前往设置")) { CleanupPolicyView() }.font(.caption)
-                                }
+                                Text(job.sources.first?.name ?? L10n.text("备份照片")).lineLimit(1).truncationMode(.middle)
+                                Text(awaitingLiveVerification(job) ? L10n.text("等待 Live Photo 完整验证") : L10n.message(model.cleanupResults[job.id] ?? "")).font(.caption).foregroundStyle(model.cleanupReady.contains(job.id) ? .green : .secondary)
                             }
                             Spacer()
                             if !model.cleanupRunning, let outcome = model.cleanupOutcomes[job.id], [.failed, .deferred].contains(outcome) { Button(L10n.text("重新检查")) { Task { await model.verifyCleanup(ids: [job.id]) } }.buttonStyle(.borderless).font(.caption) }
@@ -61,7 +69,9 @@ struct CleanupView: View {
                 } footer: { Text(L10n.text("启用 iCloud 照片时，删除会同步到同一图库的其他设备。系统删除授权由你决定。")) }
             }
         }.navigationTitle(L10n.text("释放空间")).navigationBarTitleDisplayMode(.inline)
-        .onChange(of: model.cleanupReady) { _, values in selected = CleanupCandidates.remainingSelection(selected, eligible: values) }
+        .onAppear { selection.reconcile(eligible: model.cleanupReady, jobs: model.visibleJobs) }
+        .onChange(of: model.cleanupReady) { _, values in selection.reconcile(eligible: values, jobs: model.visibleJobs) }
+        .onChange(of: model.account) { _, _ in selection = CleanupSelection(); selection.reconcile(eligible: model.cleanupReady, jobs: model.visibleJobs) }
         .alert(L10n.text("确认从 iPhone 相册删除？"), isPresented: $confirm) {
             Button(L10n.text("核对并请求删除"), role: .destructive) { let ids = Array(selected); Task { await model.deleteVerified(ids: ids) } }
             Button(L10n.text("取消"), role: .cancel) {}

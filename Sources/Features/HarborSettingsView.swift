@@ -199,10 +199,13 @@ struct CleanupPolicyView: View {
             } footer: { Text(L10n.text("修改设置后需重新检查。检查未通过的照片会保留。")) }
         }.navigationTitle(L10n.text("空间清理核验")).navigationBarTitleDisplayMode(.inline)
         .onAppear { state = model.settings.cloudState; access = model.settings.originalAccess; allowLive = model.settings.allowsUnverifiedLiveCleanup }
-        .alert(L10n.text("可能影响动态照片的完整取回"), isPresented: $liveConfirmation) {
-            Button(L10n.text("了解风险并开启"), role: .destructive) { allowLive = true; applyLive() }
-            Button(L10n.text("暂不开启"), role: .cancel) { allowLive = false }
-        } message: { Text(L10n.text("照片和视频虽已保存，但尚未确认能完整保存回 iPhone。清理后可能需要手动重新配对，部分动态效果可能无法恢复。")) }
+        .sheet(isPresented: $liveConfirmation) {
+            LiveCleanupReminder {
+                allowLive = true; applyLive(); liveConfirmation = false
+            } wait: {
+                allowLive = false; liveConfirmation = false
+            }
+        }
         .alert(L10n.text("降低核验强度"), isPresented: $confirmation) {
             TextField(L10n.text("输入：我已了解风险"), text: $acknowledgment)
             Button(L10n.text("确认降低"), role: .destructive) { if acknowledgment == L10n.text("我已了解风险") { apply() } else { model.notice = L10n.text("确认文字不匹配，策略未改变。") } }
@@ -211,6 +214,35 @@ struct CleanupPolicyView: View {
     }
     private func applyLive() { model.settings.allowUnverifiedLiveCleanup = allowLive; Task { await model.saveSettings() } }
     private func apply() { model.settings.cloudState = state; model.settings.originalAccess = access; Task { await model.saveSettings() } }
+}
+
+private struct LiveCleanupReminder: View {
+    @ObservedObject private var language = LanguagePreferences.shared
+    let enable: () -> Void
+    let wait: () -> Void
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(L10n.text("Live Photo 完整性验证提醒")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                    Text(L10n.text("照片和视频已上传，Google 相册的 Live Photo 验证通常需等待 10–20 分钟。"))
+                    Text(L10n.text("建议继续等待。超过 1 小时仍未通过，或验证异常时，再考虑开启。")).bold()
+                    Text(L10n.text("开启后，不再等待动态效果的完整验证，请先自行确认 Google 相册中的 Live Photo 正常。其他已开启的清理检查仍会执行。"))
+                    Text(L10n.text("清理后，动态效果可能无法完整恢复，保存回 iPhone 时也可能需要其他工具。目前实测暂未发现此问题。"))
+                    Text(L10n.text("开启不会立即删除文件，清理仍需你和系统确认。")).font(.footnote).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding()
+            }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 12) {
+                    Button(role: .destructive, action: enable) { Text(L10n.text("了解风险，仍要开启")).frame(maxWidth: .infinity).padding(.vertical, 6) }
+                        .accessibilityIdentifier("cleanup.live.enable")
+                    Button(action: wait) { Text(L10n.text("继续等待完整验证")).frame(maxWidth: .infinity).padding(.vertical, 6) }
+                        .accessibilityIdentifier("cleanup.live.wait")
+                }.buttonStyle(.bordered).padding().background(.regularMaterial)
+            }
+            .navigationTitle("Live Photo").navigationBarTitleDisplayMode(.inline)
+        }.presentationDragIndicator(.visible)
+    }
 }
 
 struct AccountListView: View {

@@ -91,6 +91,18 @@ final class HarborModel: ObservableObject {
         var done = BackupJob(account: "", assetID: "ui-only-second", assetRevision: "ui-only", settings: BackupSettings())
         done.id = "ui-done"; done.origin = .manual; done.batchID = live.batchID; done.state = .completed; done.verificationLevel = "standard"
         jobs = [live, done]; updateAssetStates(jobs)
+        if ProcessInfo.processInfo.arguments.contains("--cleanup-review-fixture") {
+            var pending = live; pending.id = "ui-live-pending"; pending.assetID = "ui-live-pending-asset"; pending.state = .completed
+            var second = pending; second.id = "ui-live-pending-2"; second.assetID = "ui-live-pending-asset-2"
+            var photo = done; photo.sources = [MediaResource(role: "original.photo", path: "ui-only", name: "IMG_9777.PNG")]
+            var other = photo; other.id = "ui-done-2"; other.assetID = "ui-only-third"
+            other.sources[0].name = "oAExHA9AlAAfpQCrAqAqO_very_long_original_filename.JPG"
+            jobs = [pending, photo, second, other]
+            cleanupResults = [pending.id: LiveCleanupPolicy.waitingMessage, second.id: LiveCleanupPolicy.waitingMessage,
+                              photo.id: L10n.text("核验通过，可以清理"), other.id: L10n.text("核验通过，可以清理")]
+            cleanupOutcomes = [pending.id: .deferred, second.id: .deferred, photo.id: .eligible, other.id: .eligible]
+            cleanupReady = [photo.id, other.id]
+        }
         if ProcessInfo.processInfo.arguments.contains("--queue-notice-fixture") {
             queueNoticeCount = 2; queueNoticeID = UUID(); notice = L10n.text("已加入备份队列。")
         }

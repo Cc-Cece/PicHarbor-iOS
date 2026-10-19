@@ -79,7 +79,7 @@ extension BackupJob {
 }
 
 enum LiveCleanupPolicy {
-    static let waitingMessage = L10n.text("Google 相册的动态照片处理与验证可能需要一些时间，可在约 20 分钟后重新检查。若长时间仍未通过，可前往设置，开启“允许清理尚未完整验证的 Live Photo”。")
+    static var waitingMessage: String { L10n.text("等待 Live Photo 完整验证") }
     static func permits(_ job: BackupJob, settings: BackupSettings) -> Bool {
         !job.isLive || (settings.allowsUnverifiedLiveCleanup && job.standardConfirmationPassed)
     }
@@ -96,6 +96,32 @@ enum CleanupCandidates {
     }
     static func remainingSelection(_ selected: Set<String>, eligible: [String]) -> Set<String> {
         selected.intersection(Set(eligible))
+    }
+}
+
+/// Selection belongs to this screen session; ignored assets stay ignored after a recheck.
+struct CleanupSelection {
+    var selected = Set<String>()
+    private(set) var ignoredAssets = Set<String>()
+
+    mutating func reconcile(eligible: [String], jobs: [BackupJob]) {
+        let allowed = Set(eligible)
+        selected.formIntersection(allowed)
+        for job in jobs where allowed.contains(job.id) && !ignoredAssets.contains(job.assetID) {
+            selected.insert(job.id)
+        }
+    }
+    mutating func toggle(_ job: BackupJob) {
+        if selected.remove(job.id) != nil { ignoredAssets.insert(job.assetID) }
+        else { ignoredAssets.remove(job.assetID); selected.insert(job.id) }
+    }
+    mutating func selectAll(eligible: [String], jobs: [BackupJob]) {
+        for job in jobs where eligible.contains(job.id) { ignoredAssets.remove(job.assetID) }
+        reconcile(eligible: eligible, jobs: jobs)
+    }
+    mutating func deselectAll(jobs: [BackupJob]) {
+        for job in jobs where selected.contains(job.id) { ignoredAssets.insert(job.assetID) }
+        selected.removeAll()
     }
 }
 

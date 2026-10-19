@@ -478,3 +478,15 @@ oauth_token 或 gpmc auth_data|oauth_token or gpmc auth_data
 恢复默认设置？|Restore defaults?
 重置当前账号的备份、网络和清理偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。|Reset backup, connection, and cleanup preferences for this account. Automatic backup turns off and the scope needs confirmation. Accounts, photos, existing tasks, language, and appearance are kept. Photos will not be uploaded again.
 语言|Language
+# Cleanup review and Live Photo reminder (0.2.10)
+Live Photo 完整性验证提醒|Live Photo verification reminder
+Google 相册的 Live Photo 验证通常需等待 10–20 分钟，请稍后重新检查。超过 1 小时仍未通过，可前往设置了解其他选择。|Google Photos verification of Live Photos usually takes 10–20 minutes. Check again later. If it still fails after an hour, see Settings for other options.
+已通过项默认选中，取消勾选后本轮保留。|Verified items are selected by default. Deselect an item to keep it during this review.
+等待 Live Photo 完整验证|Waiting for full Live Photo verification
+照片和视频已上传，Google 相册的 Live Photo 验证通常需等待 10–20 分钟。|The photo and video have been uploaded. Google Photos verification of the Live Photo usually takes 10–20 minutes.
+建议继续等待。超过 1 小时仍未通过，或验证异常时，再考虑开启。|We recommend waiting. Consider enabling this only if verification fails or remains incomplete after an hour.
+开启后，不再等待动态效果的完整验证，请先自行确认 Google 相册中的 Live Photo 正常。其他已开启的清理检查仍会执行。|This skips full verification of the Live Photo effect. First check that the Live Photo works in Google Photos. Other enabled cleanup checks still apply.
+清理后，动态效果可能无法完整恢复，保存回 iPhone 时也可能需要其他工具。目前实测暂未发现此问题。|After cleanup, the motion effect may not fully restore, and saving it back to iPhone may require other tools. This has not occurred in our tests so far.
+开启不会立即删除文件，清理仍需你和系统确认。|Enabling this does not delete files. Cleanup still requires your confirmation and system approval.
+了解风险，仍要开启|Enable despite the risk
+继续等待完整验证|Keep waiting for full verification

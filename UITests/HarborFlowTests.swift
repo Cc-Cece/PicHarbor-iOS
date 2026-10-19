@@ -50,6 +50,25 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 35), .completed)
         XCTAssertTrue(app.navigationBars["活动"].exists)
     }
+    func testCleanupReviewSelectsPassedItemsAndShowsOneLiveReminder() {
+        let app = localizedApp(); app.launchArguments += ["--task-review-fixture", "--cleanup-review-fixture"]; app.launch()
+        XCTAssertTrue(app.buttons["activity.batch"].firstMatch.waitForExistence(timeout: 30))
+        app.tabBars.buttons["备份"].tap()
+        let cleanup = app.buttons["释放 iPhone 空间"]
+        for _ in 0..<4 { if cleanup.isHittable { break }; app.swipeUp() }
+        cleanup.tap()
+        XCTAssertTrue(app.staticTexts["Live Photo 完整性验证提醒"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["Live Photo 完整性验证提醒"].count, 1)
+        capture("cleanup-review-shared-notice")
+        let all = app.buttons["取消全选"]
+        for _ in 0..<4 { if all.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(all.waitForExistence(timeout: 5))
+        all.tap()
+        XCTAssertFalse(app.buttons["取消全选"].exists)
+        app.buttons["全选已通过"].tap()
+        XCTAssertTrue(app.buttons["取消全选"].exists)
+        app.swipeUp(); capture("cleanup-review-selected")
+    }
     func testLiveCleanupRequiresConsentAndPersistsIt() {
         let app = localizedApp(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
@@ -57,10 +76,12 @@ final class HarborFlowTests: XCTestCase {
         let toggle = app.switches["cleanup.allowLive"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "0")
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        XCTAssertTrue(app.alerts["可能影响动态照片的完整取回"].waitForExistence(timeout: 5))
-        app.alerts.buttons["暂不开启"].tap(); XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertTrue(app.staticTexts["Live Photo 完整性验证提醒"].waitForExistence(timeout: 5))
+        capture("cleanup-live-reminder")
+        app.buttons["cleanup.live.wait"].tap(); XCTAssertEqual(toggle.value as? String, "0")
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        app.alerts.buttons["了解风险并开启"].tap(); XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssertTrue(app.buttons["cleanup.live.enable"].waitForExistence(timeout: 5))
+        app.buttons["cleanup.live.enable"].tap(); XCTAssertEqual(toggle.value as? String, "1")
         capture("cleanup-live-consent")
         app.terminate(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }

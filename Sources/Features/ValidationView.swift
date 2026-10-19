@@ -70,7 +70,7 @@ struct ValidationView: View {
                     if engine.records.isEmpty { Text(L10n.text("连接账号后显示该账号的历史记录。")).foregroundStyle(.secondary) }
                     ForEach(engine.records) { record in
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(record.name).lineLimit(2)
+                            Text(record.name).lineLimit(2).truncationMode(.middle)
                             Text(record.stateLabel).font(.subheadline).foregroundStyle(record.state == "confirmed" ? .green : .orange)
                             Text(ByteCountFormatter.string(fromByteCount: record.size, countStyle: .file)).font(.caption).foregroundStyle(.secondary)
                             if !record.error.isEmpty { Text(HarborError(record.error).localizedDescription).font(.caption).foregroundStyle(.secondary) }

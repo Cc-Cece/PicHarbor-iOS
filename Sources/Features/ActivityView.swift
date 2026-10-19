@@ -114,7 +114,7 @@ private struct LegacyBackupRecordsView: View {
     var body: some View {
         List {
             Section { ForEach(model.engine.records) { record in
-                HStack { AssetThumbnail(assetID: ""); VStack(alignment: .leading, spacing: 5) { Text(record.name).lineLimit(1); Text(record.stateLabel).font(.caption).foregroundStyle(.secondary) } }
+                HStack { AssetThumbnail(assetID: ""); VStack(alignment: .leading, spacing: 5) { Text(record.name).lineLimit(1).truncationMode(.middle); Text(record.stateLabel).font(.caption).foregroundStyle(.secondary) } }
             } } footer: { Text(L10n.text("历史记录未关联本机照片，不用于空间清理。")) }
         }.navigationTitle(L10n.text("历史备份记录"))
     }

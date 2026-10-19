@@ -148,7 +148,7 @@ final class BackupCoreTests: XCTestCase {
         b.activityHidden = true; XCTAssertTrue(ActivityBatch.make([b], source: .all, status: .all).isEmpty)
     }
 
-    func testCleanupCandidatesAreAccountScopedAndSelectionNeverAddsNewResults() throws {
+    func testCleanupCandidatesAreAccountScoped() throws {
         var a = try pairedJob(); a.state = .completed; a.id = "old"; a.created = Date(timeIntervalSince1970: 1)
         var recent = a; recent.id = "recent"; recent.created = Date(timeIntervalSince1970: 2)
         var other = recent; other.id = "other-account"; other.account = "other"
@@ -158,6 +158,29 @@ final class BackupCoreTests: XCTestCase {
         XCTAssertTrue(CleanupCandidates.remainingSelection(["old"], eligible: ["new"]).isEmpty)
         XCTAssertEqual(CleanupOutcome.failure(HarborError("LIVE_CLEANUP_UNVERIFIED")), .deferred)
         XCTAssertEqual(CleanupOutcome.failure(HarborError("NETWORK_ERROR")), .failed)
+    }
+
+    func testCleanupSelectionDefaultsToPassedAndPreservesIgnoredAssets() throws {
+        var a = try pairedJob(); a.id = "first"; a.assetID = "asset-a"
+        var b = a; b.id = "second"; b.assetID = "asset-b"
+        var selection = CleanupSelection()
+        selection.reconcile(eligible: [a.id], jobs: [a, b])
+        XCTAssertEqual(selection.selected, [a.id])
+        selection.toggle(a)
+        selection.reconcile(eligible: [a.id, b.id], jobs: [a, b])
+        XCTAssertEqual(selection.selected, [b.id])
+        selection.reconcile(eligible: [], jobs: [a, b])
+        var replacement = a; replacement.id = "new-job-for-asset-a"
+        selection.reconcile(eligible: [replacement.id, b.id], jobs: [replacement, b])
+        XCTAssertEqual(selection.selected, [b.id])
+        selection.selectAll(eligible: [replacement.id, b.id], jobs: [replacement, b])
+        XCTAssertEqual(selection.selected, [replacement.id, b.id])
+        selection.deselectAll(jobs: [replacement, b])
+        selection.reconcile(eligible: [replacement.id, b.id], jobs: [replacement, b])
+        XCTAssertTrue(selection.selected.isEmpty)
+        selection = CleanupSelection()
+        selection.reconcile(eligible: [replacement.id], jobs: [replacement, b])
+        XCTAssertEqual(selection.selected, [replacement.id])
     }
 
     func testAdvancedDiagnosticExcludesPrivateResourceIdentity() throws {

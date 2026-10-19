@@ -116,17 +116,16 @@ struct JobRow: View {
             Image(systemName: job.statusSymbol)
                 .font(.title2).foregroundStyle(job.state == .completed ? .green : .blue).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
-                if showDate { Text(name).lineLimit(1).truncationMode(.middle).layoutPriority(1) }
+                if showDate { Text(name).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading) }
                 else {
                     Button { filename = true } label: { Text(name).lineLimit(2).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading) }
                         .buttonStyle(.plain).accessibilityIdentifier("task.filename").layoutPriority(1)
                         .contextMenu { Button(L10n.text("复制文件名"), systemImage: "doc.on.doc") { UIPasteboard.general.string = name } }
                 }
+                if showDate { Text(L10n.date(job.created)).font(.caption2).foregroundStyle(.secondary) }
                 Text(job.albumsPending ? L10n.text("已备份 · 等待相簿同步") : job.displayStatus).font(.caption).foregroundStyle(.secondary)
                 if job.state == .transferring { ProgressView(value: job.progress).accessibilityLabel(L10n.text("上传进度")) }
-            }
-            Spacer()
-            if showDate { Text(L10n.date(job.created)).font(.caption2).foregroundStyle(.secondary) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 4)
         .sheet(isPresented: $filename) {
             NavigationStack {
