@@ -45,13 +45,7 @@ final class HarborFlowTests: XCTestCase {
         app.launchArguments.append("--verify-photo-export")
         app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
-        let authorize = app.buttons["允许访问相册"]
-        if authorize.exists {
-            authorize.tap()
-            let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Full Access"]
-            XCTAssertTrue(allow.waitForExistence(timeout: 10))
-            if allow.exists { allow.tap() }
-        }
+        authorizePhotosIfNeeded(in: app)
         let report = app.staticTexts["photokit.export.result"]
         let success = NSPredicate(format: "label == %@", "相册资源导出与读取校验通过")
         expectation(for: success, evaluatedWith: report)
@@ -120,14 +114,7 @@ final class HarborFlowTests: XCTestCase {
         if later.waitForExistence(timeout: 30) { capture("welcome"); later.tap() }
         XCTAssertTrue(app.tabBars.buttons["照片"].waitForExistence(timeout: 10))
         capture("photos-permission")
-        let authorize = app.buttons["允许访问相册"]
-        if authorize.exists {
-            authorize.tap()
-            let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-            let allow = springboard.buttons["Allow Full Access"]
-            XCTAssertTrue(allow.waitForExistence(timeout: 10))
-            if allow.exists { allow.tap() }
-        }
+        authorizePhotosIfNeeded(in: app)
         XCTAssertTrue(app.collectionViews.cells.firstMatch.waitForExistence(timeout: 10))
         capture("photos-authorized")
         app.collectionViews.cells.firstMatch.tap()
@@ -158,6 +145,19 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.alerts.staticTexts["请先在设置中连接 Google 账号。"].waitForExistence(timeout: 5))
         capture("cleanup-account-required")
         app.alerts.buttons["好"].tap()
+    }
+    private func authorizePhotosIfNeeded(in app: XCUIApplication) {
+        let authorize = app.buttons["允许访问相册"]
+        let appGrant = app.buttons["Allow Full Access"]
+        let systemGrant = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Full Access"]
+        guard authorize.exists || appGrant.exists || systemGrant.exists else { return }
+        if authorize.exists { authorize.tap() }
+        // Depending on the simulator's OS, this system alert is exposed under
+        // the requesting app or SpringBoard. Exercise the real consent UI.
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in appGrant.exists || systemGrant.exists }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 10), .completed)
+        if appGrant.exists { appGrant.tap() }
+        else if systemGrant.exists { systemGrant.tap() }
     }
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
