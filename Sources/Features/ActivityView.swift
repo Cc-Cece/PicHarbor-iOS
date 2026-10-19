@@ -1,13 +1,14 @@
 import SwiftUI
 
 struct ActivityView: View {
+    var archived = false
     @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     @AppStorage("activity.source.v2") private var sourceRaw = "all"
     @AppStorage("activity.status.v2") private var statusRaw = "all"
     var source: ActivitySource { ActivitySource(rawValue: sourceRaw) ?? .all }
     var status: ActivityStatus { ActivityStatus(rawValue: statusRaw) ?? .all }
-    var batches: [ActivityBatch] { ActivityBatch.make(model.visibleJobs, source: source, status: status) }
+    var batches: [ActivityBatch] { ActivityBatch.make(model.activityJobs(archived: archived), source: source, status: status) }
     var filtered: [BackupJob] { batches.flatMap(\.matching) }
     var body: some View {
         List {
@@ -24,15 +25,16 @@ struct ActivityView: View {
                 if batch.isBatch {
                     HStack {
                         if let job = batch.matching.first { AssetThumbnail(assetID: job.assetID) }
-                        NavigationLink { ActivityBatchView(id: batch.id, source: source, status: status) } label: { ActivityBatchCard(batch: batch) }.accessibilityIdentifier("activity.batch")
+                        NavigationLink { ActivityBatchView(id: batch.id, source: source, status: status, archived: archived) } label: { ActivityBatchCard(batch: batch) }.accessibilityIdentifier("activity.batch")
                     }
                 } else if let job = batch.matching.first { ActivityTaskRow(job: job) }
             }
-            if source == .all && status == .all && !model.engine.records.isEmpty {
+            if !archived && source == .all && status == .all && !model.engine.records.isEmpty {
                 Section { NavigationLink(L10n.text("历史备份记录")) { LegacyBackupRecordsView() } }
             }
-        }.navigationTitle(L10n.text("活动"))
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { ActivityActionsMenu(jobs: filtered) } }
+        }.navigationTitle(archived ? L10n.text("归档记录") : L10n.text("活动"))
+        .task { await model.autoArchive(force: true) }
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { ActivityActionsMenu(jobs: filtered, archived: archived) } }
     }
 }
 
@@ -58,7 +60,8 @@ struct ActivityBatchView: View {
     let id: String
     let source: ActivitySource
     let status: ActivityStatus
-    var batch: ActivityBatch? { ActivityBatch.make(model.visibleJobs, source: source, status: status).first { $0.id == id } }
+    var archived = false
+    var batch: ActivityBatch? { ActivityBatch.make(model.activityJobs(archived: archived), source: source, status: status).first { $0.id == id } }
     var body: some View {
         List {
             if let batch {
@@ -66,7 +69,7 @@ struct ActivityBatchView: View {
                 Section(L10n.text("{0} · {1} 项", [String(describing: status.title), String(describing: batch.matching.count)])) { ForEach(batch.matching) { ActivityTaskRow(job: $0) } }
             } else { ContentUnavailableView(L10n.text("本批暂无符合筛选的任务"), systemImage: "checkmark.circle", description: Text(L10n.text("返回活动页可查看其他状态。"))) }
         }.navigationTitle(L10n.text("备份批次")).navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { ActivityActionsMenu(jobs: batch?.matching ?? []) } }
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { ActivityActionsMenu(jobs: batch?.matching ?? [], archived: archived) } }
     }
 }
 
@@ -81,7 +84,11 @@ struct ActivityTaskRow: View {
             NavigationLink { JobDetailView(id: job.id) } label: { JobRow(job: job) }
                 .accessibilityIdentifier("activity.task.\(job.id)")
         }
-            .swipeActions { if job.unfinished { Button(L10n.text("移除"), role: .destructive) { removing = true } } }
+            .swipeActions {
+                if job.state == .completed {
+                    Button(job.archivedAt == nil ? L10n.text("归档") : L10n.text("取消归档"), systemImage: "archivebox") { Task { await model.archive([job.id], restoring: job.archivedAt != nil) } }.tint(.blue)
+                } else if job.unfinished { Button(L10n.text("移除"), role: .destructive) { removing = true } }
+            }
             .confirmationDialog(L10n.text("移除此任务？"), isPresented: $removing, titleVisibility: .visible) {
                 Button(L10n.text("停止并移除任务"), role: .destructive) { Task { await model.removeUnfinished([job.id]) } }
             } message: { Text(L10n.text("停止并从活动中移除，保留本机及云端照片。同一版本仍可手动重新备份。")) }
@@ -92,19 +99,67 @@ struct ActivityActionsMenu: View {
     @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     let jobs: [BackupJob]
+    var archived = false
     @State private var removal = Set<String>()
     @State private var removing = false
+    @State private var archives = false
+    @State private var selecting = false
     var body: some View {
         Menu {
+            if !archived { Button(L10n.text("归档记录")) { archives = true } }
+            Button(archived ? L10n.text("选择记录取消归档") : L10n.text("选择记录归档")) { selecting = true }.disabled(!jobs.contains { $0.state == .completed })
+            Button(archived ? L10n.text("取消归档当前已完成记录") : L10n.text("归档当前已完成记录"), systemImage: "archivebox") {
+                let ids = Set(jobs.filter { $0.state == .completed }.map(\.id))
+                Task { await model.archive(ids, restoring: archived) }
+            }.disabled(!jobs.contains { $0.state == .completed })
+            if !archived {
             Button(L10n.text("暂停当前结果"), systemImage: "pause") { let ids = jobs.filter { $0.state.active || [.queued, .waiting].contains($0.state) }.map(\.id); Task { for id in ids { await model.pause(id) } } }
             Button(L10n.text("继续当前结果"), systemImage: "play") { let ids = jobs.filter { [.paused, .failed, .attention].contains($0.state) }.map(\.id); Task { for id in ids { await model.resume(id) } } }
             Button(L10n.text("移除当前结果中的未完成任务"), systemImage: "trash", role: .destructive) {
                 removal = Set(jobs.filter(\.unfinished).map(\.id)); removing = true
             }.disabled(!jobs.contains(where: \.unfinished))
+            }
         } label: { Image(systemName: "ellipsis.circle") }.accessibilityIdentifier("activity.menu")
+        .sheet(isPresented: $archives) {
+            NavigationStack { ActivityView(archived: true).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { archives = false } } } }
+        }
+        .sheet(isPresented: $selecting) {
+            NavigationStack { ActivityArchiveSelectionView(ids: Set(jobs.filter { $0.state == .completed }.map(\.id)), restoring: archived).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { selecting = false } } } }
+        }
         .confirmationDialog(L10n.text("移除 {0} 项未完成任务？", [String(describing: removal.count)]), isPresented: $removing, titleVisibility: .visible) {
             Button(L10n.text("停止并移除任务"), role: .destructive) { let ids = removal; Task { await model.removeUnfinished(ids) } }
         } message: { Text(L10n.text("仅处理当前筛选结果。本机及云端照片保留；自动备份不会重新加入已移除项目的同一版本，仍可手动重新备份。")) }
+    }
+}
+
+struct ActivityArchiveSelectionView: View {
+    @ObservedObject private var language = LanguagePreferences.shared
+    @EnvironmentObject private var model: HarborModel
+    @Environment(\.dismiss) private var dismiss
+    let ids: Set<String>
+    let restoring: Bool
+    @State private var selected = Set<String>()
+    var jobs: [BackupJob] { model.activityJobs(archived: restoring).filter { ids.contains($0.id) && $0.state == .completed } }
+    var body: some View {
+        List {
+            Section {
+                Button(L10n.text("全选")) { selected = Set(jobs.map(\.id)) }
+                Button(L10n.text("取消全选")) { selected = [] }
+                Button(restoring ? L10n.text("取消归档所选") : L10n.text("归档所选")) {
+                    let values = selected; Task { await model.archive(values, restoring: restoring); dismiss() }
+                }.disabled(selected.isEmpty)
+            }
+            ForEach(jobs) { job in
+                HStack {
+                    AssetThumbnail(assetID: job.assetID)
+                    Button {
+                        if !selected.insert(job.id).inserted { selected.remove(job.id) }
+                    } label: {
+                        HStack { JobRow(job: job); Image(systemName: selected.contains(job.id) ? "checkmark.circle.fill" : "circle") }
+                    }.buttonStyle(.plain)
+                }
+            }
+        }.navigationTitle(restoring ? L10n.text("取消归档") : L10n.text("归档记录"))
     }
 }
 

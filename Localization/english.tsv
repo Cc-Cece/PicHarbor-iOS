@@ -552,3 +552,46 @@ Google 相册备份|Google Photos backup
 请确认 Google 相册当前使用的是备份账号。菜单名称和位置可能因版本或语言有所不同。|Make sure Google Photos is using the account you backed up to. Menu names and locations may vary by version or language.
 暂时无法直达释放空间|Unable to open Free up space
 请确认已安装 Google 相册，也可以按“其他打开方式”中的步骤进入。|Make sure Google Photos is installed, or follow the steps under Other ways to open.
+下载原件并读取大小|Download originals and read size
+使用当前设置创建任务|Create a task with current settings
+保存|Save
+光圈|Aperture
+全选|Select all
+分享|Share
+分享 Live Photo|Share Live Photo
+分辨率|Resolution
+原件暂不可用，可能需要从 iCloud 下载。|Originals are unavailable and may need to download from iCloud.
+取消归档|Unarchive
+取消归档当前已完成记录|Unarchive completed records in this view
+取消归档所选|Unarchive selected
+将分享照片和配对视频，保留原有信息。能否作为动态照片接收，取决于接收应用。|The photo and paired video will be shared with their original metadata. Live Photo support depends on the receiving app.
+已备份的内容会尝试复用，不会修改已有云端项目。|Existing backed-up content will be reused when possible. Existing cloud items will not be changed.
+已存在，跳过|Already exists, skipped
+已完成备份，部分内容复用了已有云端资源。|Backup complete. Some content was reused from existing cloud items.
+归档|Archive
+归档天数|Days before archiving
+归档当前已完成记录|Archive completed records in this view
+归档所选|Archive selected
+归档记录|Archived records
+所需内容已在云端找到并通过检查，已跳过上传。|All required content was found in the cloud and passed verification. Upload was skipped.
+拍摄位置|Location
+拍摄信息|Camera information
+拍摄时间|Date taken
+时长|Duration
+暂时无法分享|Unable to share
+曝光时间|Exposure time
+曝光补偿|Exposure compensation
+正在准备分享，可能需要下载原件…|Preparing to share. Originals may need to download…
+正在读取大小…|Reading size…
+活动记录|Activity records
+焦距|Focal length
+界面|Interface
+继续|Continue
+自动归档|Automatic archiving
+详情|Details
+请检查照片权限、网络和可用空间后重试。|Check photo access, your connection and available storage, then try again.
+请输入 1–90 的整数。|Enter a whole number from 1 to 90.
+选择记录取消归档|Select records to unarchive
+选择记录归档|Select records to archive
+镜头|Lens
+默认收起 14 天前已完成的记录，照片和备份状态会保留。取消归档后，会重新等待设定天数。此设置适用于本机所有账号。|By default, completed records are archived after 14 days. Photos and backup status are kept. Unarchiving restarts the waiting period. This setting applies to all accounts on this device.

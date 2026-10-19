@@ -20,14 +20,16 @@ struct CleanupView: View {
                 }.disabled(opening).accessibilityIdentifier("googlePhotos.open")
             }
             Section {
-                DisclosureGroup(isExpanded: $alternatives) {
+                Button { alternatives.toggle() } label: {
+                    HStack { Text(L10n.text("其他打开方式")); Spacer(); Image(systemName: alternatives ? "chevron.up" : "chevron.down") }
+                }.accessibilityIdentifier("googlePhotos.alternatives")
+                if alternatives {
                     Text(L10n.text("在主屏幕或 App 资源库中，长按 Google 相册图标，再点“释放空间”。"))
                     Text(L10n.text("也可以打开 Google 相册，点击头像 → Google 相册设定 → 应用程序与装置 → 释放空间。"))
                     Button(L10n.text("打开 Google 相册")) {
                         GooglePhotosLauncher.openApp { if !$0 { unavailable = true } }
                     }.accessibilityIdentifier("googlePhotos.openApp")
-                } label: { Text(L10n.text("其他打开方式")) }
-                .accessibilityIdentifier("googlePhotos.alternatives")
+                }
             } footer: { Text(L10n.text("请确认 Google 相册当前使用的是备份账号。菜单名称和位置可能因版本或语言有所不同。")) }
             Section {
                 Text(L10n.text("请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。")).font(.footnote).foregroundStyle(.secondary)

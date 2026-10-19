@@ -39,6 +39,33 @@ final class HarborModel: ObservableObject {
     var visibleJobs: [BackupJob] { jobs.filter { $0.account == account && $0.activityHidden != true }.sorted { $0.created > $1.created } }
     var activeCount: Int { visibleJobs.filter { $0.state.active || $0.state == .queued }.count }
     var completedCount: Int { visibleJobs.filter { $0.state == .completed }.count }
+    func activityJobs(archived: Bool) -> [BackupJob] { visibleJobs.filter { ($0.archivedAt != nil) == archived } }
+    private var lastArchiveSweep = Date.distantPast
+    func archive(_ ids: Set<String>, restoring: Bool = false) async {
+        guard initialized, !storageFailed, !switching, let store else { return }
+        var changed: [BackupJob] = []
+        var updated = jobs
+        for index in updated.indices {
+            var job = updated[index]
+            guard ids.contains(job.id), job.account == account, job.state == .completed,
+                  job.activityHidden != true, (job.archivedAt != nil) == restoring else { continue }
+            job.archivedAt = restoring ? nil : Date()
+            if restoring { job.unarchivedAt = Date() }
+            job.updated = Date(); job.generation = (job.generation ?? 0) + 1
+            updated[index] = job; changed.append(job)
+        }
+        guard !changed.isEmpty else { return }
+        jobs = updated
+        do { try await store.saveJobs(changed) } catch { fatalStorage(error) }
+    }
+    func autoArchive(force: Bool = false) async {
+        guard initialized, !switching, !storageFailed,
+              force || Date().timeIntervalSince(lastArchiveSweep) >= 3600 else { return }
+        lastArchiveSweep = Date()
+        let prefs = ActivityArchivePreferences.shared
+        guard prefs.enabled else { return }
+        await archive(Set(visibleJobs.filter { $0.shouldAutoArchive(days: prefs.days) }.map(\.id)))
+    }
     var stagedBytes: Int64 { jobs.filter { $0.state != .completed && $0.state != .cancelled }.flatMap(\.resources).reduce(0) { $0 + $1.size } }
     init() {
         engine.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
@@ -133,6 +160,7 @@ final class HarborModel: ObservableObject {
                 try await persist(job)
             }
             initialized = true
+            await autoArchive(force: true)
             for receipt in receipts { await receive(receipt) }
             await applyNetworkSettings()
             await library.refresh()
@@ -140,6 +168,7 @@ final class HarborModel: ObservableObject {
             timer = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(10))
+                    await self?.autoArchive()
                     await self?.pump()
                 }
             }
@@ -164,6 +193,7 @@ final class HarborModel: ObservableObject {
         let saved = try await store.load(AccountSettings.self, kind: "settings")
         settingsGeneration = Dictionary(uniqueKeysWithValues: saved.map { ($0.account, $0.generation ?? 0) })
         settings = saved.first(where: { $0.account == account })?.settings ?? BackupSettings()
+        lastArchiveSweep = .distantPast
         savedWifiOnly = settings.wifiOnly
         assetStates = [:]; updateAssetStates(jobs)
     }
@@ -171,7 +201,7 @@ final class HarborModel: ObservableObject {
         var updated = assetStates
         for job in values where job.account == account && job.activityHidden != true {
             if updated[job.assetID] == nil || job.created >= updated[job.assetID]!.created {
-                updated[job.assetID] = AssetBackupState(account: job.account, revision: job.assetRevision, state: job.state, created: job.created)
+                updated[job.assetID] = AssetBackupState(account: job.account, revision: job.assetRevision, state: job.state, created: job.created, skipped: job.skippedExisting)
             }
         }
         assetStates = updated
@@ -274,7 +304,7 @@ final class HarborModel: ObservableObject {
         do { accounts = try KeychainStore.accounts(); try await loadSettings() } catch { notice = error.localizedDescription }
         switching = false
     }
-    func enqueue(_ assets: [PHAsset], force: Bool = false, feedback: Bool = true, policy: BackupSettings? = nil, origin: BackupOrigin = .manual, batchID: String? = nil) async {
+    func enqueue(_ assets: [PHAsset], force: Bool = false, recreate: Bool = false, feedback: Bool = true, policy: BackupSettings? = nil, origin: BackupOrigin = .manual, batchID: String? = nil) async {
         guard initialized, !account.isEmpty, !storageFailed, !switching, let store else { notice = L10n.text("请先连接 Google 账号。"); return }
         guard !assets.isEmpty else { if feedback { notice = L10n.text("当前范围没有可备份的照片或视频，请检查范围和相册权限。") }; return }
         var snapshot = policy ?? settings
@@ -301,7 +331,7 @@ final class HarborModel: ObservableObject {
                 if jobs.contains(where: { $0.account == targetAccount && $0.assetID == job.assetID &&
                     $0.settings.mediaPolicy == job.settings.mediaPolicy && $0.canRefreshSource &&
                     [.queued, .preparing, .waiting, .paused].contains($0.state) }) { continue }
-                if !force && known.contains(job.discoveryKey(origin: origin)) { continue }
+                if !force && !recreate && known.contains(job.discoveryKey(origin: origin)) { continue }
                 if active.contains(job.dedupKey) || planned.contains(job.dedupKey) { continue }
                 known.insert(job.discoveryKey(origin: origin))
                 planned.insert(job.dedupKey); job.generation = 1; additions.append(job)
@@ -509,6 +539,7 @@ final class HarborModel: ObservableObject {
                         let plan = try await engine.invoke("prepare_upload", request)
                         try checkpoint(job)
                         if plan["exists"] as? Bool == true {
+                            job.resources[index].reused = true
                             job.resources[index].remoteKey = plan["remote_key"] as? String ?? ""
                             job.resources[index].confirmed = true; try await persist(job)
                         } else {
@@ -626,7 +657,12 @@ final class HarborModel: ObservableObject {
             try checkpoint(job)
             if presence["confirmed"] as? Bool == true, let key = presence["remote_key"] as? String, !key.isEmpty {
                 job.livePairs?[pairIndex].confirmed = true; job.livePairs?[pairIndex].remoteKey = key
-                for index in [photoIndex, videoIndex] { job.resources[index].confirmed = true; job.resources[index].remoteKey = key }
+                for index in [photoIndex, videoIndex] {
+                    if !pair.submitted && job.resources[index].responsePath == nil && !job.resources[index].submitted {
+                        job.resources[index].reused = true
+                    }
+                    job.resources[index].confirmed = true; job.resources[index].remoteKey = key
+                }
                 try await persist(job); continue
             }
             // A timeout/termination after submission cannot authorize another
@@ -641,6 +677,7 @@ final class HarborModel: ObservableObject {
                 let existing = presence["photo_key"] as? String ?? ""
                 if !existing.isEmpty {
                     job.resources[photoIndex].remoteKey = existing
+                    if !job.resources[photoIndex].submitted && job.resources[photoIndex].responsePath == nil { job.resources[photoIndex].reused = true }
                     try await persist(job)
                 } else {
                     if job.resources[photoIndex].submitted { throw HarborError("REMOTE_NOT_VISIBLE") }

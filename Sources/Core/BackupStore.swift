@@ -65,4 +65,11 @@ actor BackupStore {
             guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
         } catch { sqlite3_exec(db, "ROLLBACK", nil, nil, nil); throw error }
     }
+    func saveJobs(_ jobs: [BackupJob]) throws {
+        guard sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        do {
+            for job in jobs { try save(job, kind: "job", id: job.id, revision: job.generation ?? 0) }
+            guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { throw HarborError("DATABASE_ERROR") }
+        } catch { sqlite3_exec(db, "ROLLBACK", nil, nil, nil); throw error }
+    }
 }

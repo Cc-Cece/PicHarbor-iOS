@@ -34,6 +34,7 @@ struct ActivityBatch: Identifiable {
 
 extension BackupJob {
     var flowSteps: [String] {
+        if skippedExisting { return [L10n.text("准备照片"), L10n.text("检查是否已备份"), L10n.text("确认保存"), L10n.text("完成")] }
         [isVideo ? L10n.text("准备视频") : L10n.text("准备照片"), L10n.text("检查是否已备份"), isVideo ? L10n.text("上传视频") : L10n.text("上传照片"), L10n.text("确认保存")] + (isLive && settings.requiresStrictConfirmation ? [L10n.text("等待云端处理")] : []) + [L10n.text("完成")]
     }
     var isVideo: Bool { !isLive && (mediaKind == "video" || (sources.isEmpty ? resources : sources).contains { $0.role.hasSuffix(".video") }) }
@@ -50,10 +51,13 @@ extension BackupJob {
         return 3
     }
     var displayStatus: String {
+        if skippedExisting { return L10n.text("已存在，跳过") }
         if [.paused, .waiting, .failed, .attention, .cancelled, .completed, .queued].contains(state) { return state.title }
         return flowSteps[flowIndex]
     }
     var friendlyMessage: String {
+        if skippedExisting { return L10n.text("所需内容已在云端找到并通过检查，已跳过上传。") }
+        if state == .completed && reusedSome { return L10n.text("已完成备份，部分内容复用了已有云端资源。") }
         if error.isEmpty {
             if state == .cancelled { return L10n.text("任务已取消，本机及云端照片保留。") }
             if state == .paired { return L10n.text("照片和视频已保存，正在等待云端完成动态处理。") }

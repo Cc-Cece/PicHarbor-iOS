@@ -35,6 +35,7 @@
 "上次传输中断" = "Previous upload interrupted";
 "上次传输被中断；重新选择同一照片可查重并重试。" = "The previous upload was interrupted. Select the same photo to check and retry.";
 "下次尝试" = "Next attempt";
+"下载原件并读取大小" = "Download originals and read size";
 "不会重新上传照片，也不影响已完成的任务。清理本地照片前仍需单独检查。" = "Photos will not be uploaded again. Completed tasks stay unchanged. Cleanup requires a separate check.";
 "不会重新上传照片，也不影响已完成的任务。需要释放本机空间时，请前往 Google 相册。" = "This does not upload photos again or affect completed jobs. To free up device space, use Google Photos.";
 "不计配额原画质" = "Original quality · no quota";
@@ -82,6 +83,8 @@
 "传输原始配对资源" = "Upload paired originals";
 "低电量模式" = "Low Power Mode";
 "你的照片，尽在这里" = "Your photos, right here";
+"使用当前设置创建任务" = "Create a task with current settings";
+"保存" = "Save";
 "保存上传响应" = "Save upload response";
 "保存后继续等待动态处理" = "Wait for motion processing after saving";
 "保留原任务设置及批次，重新读取照片并查重。旧任务保留为已取消，本机及云端照片均保留。" = "Read the photo again with the same settings and batch. The old task is kept as canceled. Local and cloud photos are kept.";
@@ -94,6 +97,8 @@
 "允许访问相册" = "Allow Photos access";
 "先备份照片，再关联动态视频。" = "Save the photo first, then link its motion video.";
 "先测试启动应用，再逐个测试候选。返回 PicHarbor 后记录实际打开的页面。系统接受链接不代表已到达目标页面。" = "Test app launch first, then each candidate. Return to PicHarbor to record the page that opened. System acceptance does not prove the target page opened.";
+"光圈" = "Aperture";
+"全选" = "Select all";
 "全选已通过" = "Select all eligible";
 "全部" = "All";
 "全部可访问照片与视频" = "All accessible photos and videos";
@@ -113,7 +118,10 @@
 "准备视频" = "Prepare video";
 "凭据仅保存在本机钥匙串" = "Credentials stay in this iPhone’s Keychain";
 "凭据仅保存在本机钥匙串，不导出到诊断报告。应用内网页登录受 Google 规则影响时，可导入已有凭据。" = "Credentials stay in Keychain and are excluded from diagnostics. If Google blocks in-app sign-in, you can import existing credentials.";
+"分享" = "Share";
+"分享 Live Photo" = "Share Live Photo";
 "分享测试结果" = "Share test results";
+"分辨率" = "Resolution";
 "切换方式只影响新任务，已有照片不会自动重新上传。" = "Changes apply to new tasks. Existing photos will not be uploaded again automatically.";
 "创建后台传输" = "Create background upload";
 "创建时间" = "Created";
@@ -132,6 +140,7 @@
 "历史或尚未完成" = "Legacy or not yet completed";
 "历史记录未关联本机照片，不用于空间清理。" = "These records are not linked to local photos and cannot authorize cleanup.";
 "历史记录，来源未知" = "Previous record · Source unknown";
+"原件暂不可用，可能需要从 iCloud 下载。" = "Originals are unavailable and may need to download from iCloud.";
 "原始与编辑后均保留" = "Keep originals and edits; skip identical copies";
 "原始照片配对" = "Original photo pairing";
 "原始照片配对（分步上传）" = "Original photo pairing (separate uploads)";
@@ -140,6 +149,9 @@
 "取消" = "Cancel";
 "取消任务" = "Cancel task";
 "取消全选" = "Deselect all";
+"取消归档" = "Unarchive";
+"取消归档当前已完成记录" = "Unarchive completed records in this view";
+"取消归档所选" = "Unarchive selected";
 "取消选择此项目" = "Deselect this item";
 "受系统限制" = "Restricted by iPhone";
 "只打开首页" = "Opened Home only";
@@ -197,6 +209,7 @@
 "封装文件已确认，完整云端图库暂未索引到此项目，将自动继续检查。" = "The file is saved but is not yet indexed in the cloud library. Checking will continue automatically.";
 "封装文件已确认，谷歌相册仍在处理动态资源，将自动继续检查。" = "The file is saved. Google Photos is still processing the motion. Checking will continue automatically.";
 "将 iPhone 照片与视频备份到 Google Photos。原生浏览，持续记录进度，由你决定何时清理。" = "Back up iPhone photos and videos to Google Photos. Browse your library, track progress, and choose when to free up space.";
+"将分享照片和配对视频，保留原有信息。能否作为动态照片接收，取决于接收应用。" = "The photo and paired video will be shared with their original metadata. Live Photo support depends on the receiving app.";
 "将原始照片和动态视频一起备份。" = "Back up the original photo and its motion video together.";
 "将备份" = "To back up";
 "将本机相簿同步到 Google 相册。从本机相簿移除照片，不会删除云端内容。只对新任务生效。" = "Sync local albums to Google Photos. Removing an album member does not delete cloud content. Applies to new tasks only.";
@@ -216,8 +229,11 @@
 "已处理" = "Processed";
 "已备份" = "Backed up";
 "已备份 · 等待相簿同步" = "Backed up · Album sync pending";
+"已备份的内容会尝试复用，不会修改已有云端项目。" = "Existing backed-up content will be reused when possible. Existing cloud items will not be changed.";
 "已复制测试结果" = "Test results copied";
+"已存在，跳过" = "Already exists, skipped";
 "已完成" = "Completed";
+"已完成备份，部分内容复用了已有云端资源。" = "Backup complete. Some content was reused from existing cloud items.";
 "已导出的暂存原件不存在。请重新准备此任务；不需要删除相册原件。" = "The staged original is missing. Prepare this task again. Keep the original in Photos.";
 "已导出的暂存文件发生变化。请重新准备此任务；已有云端提交会先按内容核对。" = "The staged file changed. Prepare this task again. Existing cloud content will be checked first.";
 "已开启" = "On";
@@ -251,6 +267,11 @@
 "开始备份 {0} 项" = "Start backup ({0})";
 "开始检查" = "Start checking";
 "开源组件" = "Open-source components";
+"归档" = "Archive";
+"归档天数" = "Days before archiving";
+"归档当前已完成记录" = "Archive completed records in this view";
+"归档所选" = "Archive selected";
+"归档记录" = "Archived records";
 "当前状态" = "Current status";
 "当前筛选 {0} 项" = "Filtered: {0}";
 "当前网络" = "Current connection";
@@ -268,6 +289,7 @@
 "恢复默认设置？" = "Restore defaults?";
 "我已了解风险" = "I understand the risk";
 "所选项目需要重新检查，原件已保留。" = "The selection needs another check. Originals are kept.";
+"所需内容已在云端找到并通过检查，已跳过上传。" = "All required content was found in the cloud and passed verification. Upload was skipped.";
 "手动" = "Manual";
 "手动备份" = "Manual backup";
 "打开 Google 相册" = "Open Google Photos";
@@ -275,6 +297,9 @@
 "打开其他页面" = "Opened another page";
 "打开系统设置" = "Open iPhone Settings";
 "批次" = " batch";
+"拍摄位置" = "Location";
+"拍摄信息" = "Camera information";
+"拍摄时间" = "Date taken";
 "按当前核验策略继续" = "Continue with current check settings";
 "按当前设置重新备份" = "Back up again with current settings";
 "提交配对用原图" = "Save original photo for pairing";
@@ -289,6 +314,7 @@
 "无法读取 Live Photo 关键帧，已保留原件。" = "The Live Photo key frame could not be read. Your original is kept.";
 "无法读取原件或写入暂存文件，请检查空间与照片权限。" = "Could not read the original or save a temporary file. Check storage and Photos access.";
 "无法读取这项照片，请检查相册访问权限。" = "This photo could not be read. Check Photos access.";
+"时长" = "Duration";
 "是否占用空间，以 Google 相册显示为准。" = "Storage use is determined by Google Photos.";
 "暂不开启" = "Keep off";
 "暂不支持此媒体格式，原件会保留。" = "This format is not supported yet. Your original is kept.";
@@ -297,8 +323,11 @@
 "暂停当前结果" = "Pause filtered tasks";
 "暂存资源" = "Temporary files";
 "暂无符合条件的任务" = "No matching tasks";
+"暂时无法分享" = "Unable to share";
 "暂时无法打开 Google 相册" = "Unable to open Google Photos";
 "暂时无法直达释放空间" = "Unable to open Free up space";
+"曝光时间" = "Exposure time";
+"曝光补偿" = "Exposure compensation";
 "最新云端状态" = "Latest cloud status";
 "最近 100 条记录 · 当前账号" = "Last 100 records · Current account";
 "最近查询" = "Last check";
@@ -339,6 +368,7 @@
 "正在上传" = "Uploading";
 "正在为未完成任务应用网络设置…" = "Applying connection settings to unfinished tasks…";
 "正在停止，当前请求结束后保留检查结果" = "Stopping after the current request. Completed results are kept.";
+"正在准备分享，可能需要下载原件…" = "Preparing to share. Originals may need to download…";
 "正在准备账号连接…" = "Preparing account connection…";
 "正在加载 Google 登录页面…" = "Loading Google sign-in…";
 "正在处理" = "Processing";
@@ -354,6 +384,7 @@
 "正在独立查询云端确认" = "Checking cloud confirmation";
 "正在等待任务所允许的网络。" = "Waiting for an allowed connection.";
 "正在计算内容哈希" = "Checking file contents";
+"正在读取大小…" = "Reading size…";
 "正在读取照片原件（iCloud 原件可能需要下载）" = "Reading original photo (iCloud may need to download it)";
 "正在连接" = "Connecting";
 "正在连接 Google，请稍候…" = "Connecting to Google…";
@@ -363,6 +394,7 @@
 "此任务正在处理，请等待本次检查结束。" = "This task is being processed. Wait for this check to finish.";
 "没有可显示的项目" = "Nothing to show";
 "活动" = "Activity";
+"活动记录" = "Activity records";
 "浅色" = "Light";
 "测试前应用状态" = "App state before the test";
 "测试此链接" = "Test this link";
@@ -378,6 +410,7 @@
 "清空测试记录" = "Clear test records";
 "清空测试记录？" = "Clear test records?";
 "点击首页右上角头像" = "Tap your profile picture at the top right";
+"焦距" = "Focal length";
 "照片" = "Photos";
 "照片与动态视频哈希已指向同一云端项目" = "Photo and motion video hashes match the same cloud item";
 "照片与视频的关联请求已提交，正在等待云端确认同一动态项目。继续／重试只核验关联，不会重复提交。" = "Pairing was submitted. Waiting for the cloud to confirm a single motion photo. Resume or retry checks pairing without submitting again.";
@@ -393,6 +426,7 @@
 "照片详情" = "Photo details";
 "版本保留" = "Versions to keep";
 "版本策略" = "Version settings";
+"界面" = "Interface";
 "界面样本 Live Photo" = "Sample Live Photo";
 "界面样本视频" = "Sample video";
 "登录 Google" = "Sign in to Google";
@@ -443,6 +477,7 @@
 "系统未能打开此链接" = "System could not open this link";
 "系统错误" = "System error";
 "结果仅保存在本机，不自动发送。反馈时请补充 Google 相册版本；不需要提供账号或登录凭据。" = "Results stay on this device and are not sent automatically. Include your Google Photos version when reporting. No account or login credentials are needed.";
+"继续" = "Continue";
 "继续 / 重试" = "Resume / Retry";
 "继续当前结果" = "Resume filtered tasks";
 "继续等待完整验证" = "Keep waiting for full verification";
@@ -455,6 +490,7 @@
 "自动" = "Automatic";
 "自动备份" = "Automatic backup";
 "自动备份会识别范围内新增和修改内容。系统后台安排不保证即时，打开应用可继续。" = "New and changed photos in your scope are detected automatically. Background work may be delayed; open the app to continue.";
+"自动归档" = "Automatic archiving";
 "节省空间" = "Storage saver";
 "苹果原始资源的云端配对协议尚未验证；原件已保留，不会按两个普通文件上传。" = "Original Apple pairing is not verified for this account. Originals are kept and will not be uploaded as two unrelated files.";
 "蜂窝网络" = "Cellular";
@@ -467,17 +503,20 @@
 "设置入口候选" = "Settings candidate";
 "设置尚未就绪，请等待初始化完成后重试。" = "Settings are not ready. Wait for startup and retry.";
 "诊断" = "Diagnostics";
+"详情" = "Details";
 "语言" = "Language";
 "请允许访问所选照片，然后重新选择。" = "Allow access to the selected photo, then select it again.";
 "请先在设置中连接 Google 账号。" = "Connect a Google account in Settings first.";
 "请先连接 Google 账号" = "Connect a Google account first";
 "请先连接 Google 账号。" = "Connect a Google account first.";
+"请检查照片权限、网络和可用空间后重试。" = "Check photo access, your connection and available storage, then try again.";
 "请求相册访问" = "Request Photos access";
 "请确认 Google 相册当前使用的是备份账号。菜单名称和位置可能因版本或语言有所不同。" = "Make sure Google Photos is using the account you backed up to. Menu names and locations may vary by version or language.";
 "请确认已安装 Google 相册，也可以从主屏幕手动打开。" = "Make sure Google Photos is installed. You can also open it from your Home Screen.";
 "请确认已安装 Google 相册，也可以按“其他打开方式”中的步骤进入。" = "Make sure Google Photos is installed, or follow the steps under Other ways to open.";
 "请等待当前检查或设置更新结束。" = "Wait for the current check or settings update to finish.";
 "请等待照片核验或清理完成后连接账号。" = "Wait for photo checking or cleanup before connecting an account.";
+"请输入 1–90 的整数。" = "Enter a whole number from 1 to 90.";
 "请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。" = "Choose device cleanup rather than cloud storage cleanup. Removed items appear in Recently Deleted in Apple Photos; empty it yourself if you need the space immediately. With iCloud Photos enabled, local deletions also sync to other devices using the same library.";
 "读取响应并提交云端" = "Read response and save to cloud";
 "读取暂存原件" = "Read staged original";
@@ -515,6 +554,8 @@
 "选择一张照片并备份" = "Select a photo to back up";
 "选择当前范围全部" = "Select all in current scope";
 "选择此项目" = "Select this item";
+"选择记录取消归档" = "Select records to unarchive";
+"选择记录归档" = "Select records to archive";
 "通过 Google 相册释放本机空间。后台备份由系统安排，打开 PicHarbor 可继续推进。" = "Free up device space with Google Photos. Background backup is scheduled by iOS; open PicHarbor to continue.";
 "通过 Google 相册释放空间" = "Free up space with Google Photos";
 "通过已有配对查询" = "Found existing pairing";
@@ -537,6 +578,7 @@
 "重置当前账号的备份和网络偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。" = "Reset this account's backup and network preferences. Automatic backup will turn off and the scope will need confirmation. Accounts, photos, existing jobs, language and appearance are kept. Photos will not be uploaded again.";
 "链接测试（临时）" = "Link tests (temporary)";
 "错误码" = "Error code";
+"镜头" = "Lens";
 "降低核验强度" = "Reduce verification";
 "需处理" = "Needs attention";
 "需要处理" = "Needs attention";
@@ -550,3 +592,4 @@
 "高级：导入已有 gpmc 凭据" = "Advanced: import gpmc credentials";
 "默认关闭。开启后，照片和动态视频均已保存即可继续清理检查；取回后可能需要重新配对，部分动态效果可能无法恢复。其他已开启的检查仍会执行。" = "Off by default. Once the photo and video are saved, cleanup checking can continue. Pairing may need repair after retrieval, and some motion effects may not restore. Other enabled checks still apply.";
 "默认关闭。开启后，照片和视频保存成功后还会等待动态处理完成。蓝色对勾表示已保存，仍在等待处理。" = "Off by default. When enabled, backup also waits for motion processing after saving. A blue check means saved but still processing.";
+"默认收起 14 天前已完成的记录，照片和备份状态会保留。取消归档后，会重新等待设定天数。此设置适用于本机所有账号。" = "By default, completed records are archived after 14 days. Photos and backup status are kept. Unarchiving restarts the waiting period. This setting applies to all accounts on this device.";

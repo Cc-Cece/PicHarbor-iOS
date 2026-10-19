@@ -19,11 +19,11 @@ struct HarborSettingsView: View {
                 NavigationLink { BackupPreferencesView() } label: { Label(L10n.text("备份偏好"), systemImage: "icloud.and.arrow.up") }
                 NavigationLink { BackupScopeView() } label: { Label(L10n.text("备份范围"), systemImage: "rectangle.stack") }
                 NavigationLink { NetworkPreferencesView() } label: { Label(L10n.text("网络与后台"), systemImage: "wifi") }
+                NavigationLink { ActivityArchiveSettingsView() } label: { Label(L10n.text("活动记录"), systemImage: "archivebox") }
             }
             Section(L10n.text("设备")) {
-                NavigationLink { LanguagePreferencesView() } label: { Label(L10n.text("语言"), systemImage: "globe") }.accessibilityIdentifier("settings.language")
+                NavigationLink { InterfacePreferencesView() } label: { Label(L10n.text("界面"), systemImage: "paintpalette") }.accessibilityIdentifier("settings.interface")
                 NavigationLink { PermissionView() } label: { Label(L10n.text("相册访问"), systemImage: "photo.badge.checkmark") }
-                NavigationLink { AppearanceView() } label: { Label(L10n.text("外观"), systemImage: "circle.lefthalf.filled") }
             }
             Section {
                 Button(L10n.text("恢复备份默认设置")) { restore = true }
@@ -48,10 +48,10 @@ struct BackupPreferencesView: View {
     var body: some View {
         Form {
             Section {
-                Picker(L10n.text("上传画质"), selection: $model.settings.quality) { ForEach(UploadQuality.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden()
+                Picker(L10n.text("上传画质"), selection: $model.settings.quality) { ForEach(UploadQuality.allCases) { Text($0.title).tag($0) } }.pickerStyle(.menu).accessibilityIdentifier("preferences.quality")
             } header: { Text(L10n.text("上传画质")) } footer: { Text(L10n.text("是否占用空间，以 Google 相册显示为准。")) }
             Section {
-                Picker(L10n.text("备份方式"), selection: $model.settings.live) { ForEach(LiveStrategy.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden()
+                Picker(L10n.text("备份方式"), selection: $model.settings.live) { ForEach(LiveStrategy.allCases) { Text($0.title).tag($0) } }.pickerStyle(.menu).accessibilityIdentifier("preferences.live")
             } header: { Text(L10n.text("Live Photo 备份方式")) } footer: {
                 Text(model.settings.live == .motion ? L10n.text("将照片和动态视频合成一个文件备份。同机查看时可能出现两张。") : model.settings.live == .applePair ? L10n.text("将原始照片和动态视频一起备份。") : L10n.text("先备份照片，再关联动态视频。"))
                 Text(L10n.text("切换方式只影响新任务，已有照片不会自动重新上传。"))
@@ -245,13 +245,48 @@ struct PermissionView: View {
     }
 }
 
-struct AppearanceView: View {
+struct InterfacePreferencesView: View {
     @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     var body: some View {
-        Form { Picker(L10n.text("外观"), selection: $model.settings.appearance) { Text(L10n.text("跟随系统")).tag("system"); Text(L10n.text("浅色")).tag("light"); Text(L10n.text("深色")).tag("dark") }.pickerStyle(.inline) }
-            .navigationTitle(L10n.text("外观")).navigationBarTitleDisplayMode(.inline)
+        Form {
+            Section(L10n.text("语言")) {
+                Picker(L10n.text("语言"), selection: $language.selection) {
+                    ForEach(AppLanguage.allCases) { Text($0.title).tag($0.rawValue).accessibilityIdentifier("language.\($0.rawValue)") }
+                }.pickerStyle(.inline).labelsHidden()
+            }
+            Section(L10n.text("外观")) {
+                Picker(L10n.text("外观"), selection: $model.settings.appearance) { Text(L10n.text("跟随系统")).tag("system"); Text(L10n.text("浅色")).tag("light"); Text(L10n.text("深色")).tag("dark") }.pickerStyle(.inline).labelsHidden()
+            }
+        }
+            .navigationTitle(L10n.text("界面")).navigationBarTitleDisplayMode(.inline)
             .onChange(of: model.settings.appearance) { _, _ in Task { await model.saveSettings() } }
+    }
+}
+
+struct ActivityArchiveSettingsView: View {
+    @ObservedObject private var language = LanguagePreferences.shared
+    @ObservedObject private var prefs = ActivityArchivePreferences.shared
+    @EnvironmentObject private var model: HarborModel
+    @State private var days = ""
+    @State private var invalid = false
+    @FocusState private var editingDays: Bool
+    var body: some View {
+        Form {
+            Section {
+                Toggle(L10n.text("自动归档"), isOn: $prefs.enabled)
+                TextField(L10n.text("归档天数"), text: $days).keyboardType(.numberPad).focused($editingDays).accessibilityIdentifier("archive.days")
+                Button(L10n.text("保存")) {
+                    editingDays = false
+                    invalid = !prefs.setDays(days)
+                    if !invalid { Task { await model.autoArchive(force: true) }; days = String(prefs.days) }
+                }.accessibilityIdentifier("archive.save")
+                if invalid { Text(L10n.text("请输入 1–90 的整数。")).foregroundStyle(.red) }
+            } footer: { Text(L10n.text("默认收起 14 天前已完成的记录，照片和备份状态会保留。取消归档后，会重新等待设定天数。此设置适用于本机所有账号。")) }
+            NavigationLink(L10n.text("归档记录")) { ActivityView(archived: true) }
+        }.navigationTitle(L10n.text("活动记录"))
+        .onAppear { days = String(prefs.days) }
+        .onChange(of: prefs.enabled) { _, _ in Task { await model.autoArchive(force: true) } }
     }
 }
 

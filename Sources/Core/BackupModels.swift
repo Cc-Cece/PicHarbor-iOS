@@ -80,6 +80,7 @@ struct AssetBackupState {
     var revision: String
     var state: JobState
     var created: Date
+    var skipped = false
 }
 struct MediaResource: Codable, Identifiable, Equatable {
     var id = UUID().uuidString
@@ -91,6 +92,7 @@ struct MediaResource: Codable, Identifiable, Equatable {
     var size: Int64 = 0
     var remoteKey = ""
     var confirmed = false
+    var reused: Bool?
     var transportID: Int?
     var responsePath: String?
     var submitted = false
@@ -101,6 +103,8 @@ struct BackupJob: Codable, Identifiable {
     var origin: BackupOrigin?
     var batchID: String?
     var activityHidden: Bool?
+    var archivedAt: Date?
+    var unarchivedAt: Date?
     var account: String
     var assetID: String
     var assetRevision: String
@@ -140,6 +144,13 @@ struct BackupJob: Codable, Identifiable {
         origin == .automatic ? "\(account)|\(assetID)|\(assetRevision)" : dedupKey
     }
     var unfinished: Bool { state != .completed && activityHidden != true }
+    var skippedExisting: Bool { state == .completed && standardConfirmationPassed && resources.allSatisfy { $0.reused == true } }
+    var reusedSome: Bool { resources.contains { $0.reused == true } }
+    func shouldAutoArchive(days: Int, now: Date = Date()) -> Bool {
+        guard state == .completed, activityHidden != true, archivedAt == nil, let completedAt,
+              (1...90).contains(days) else { return false }
+        return max(completedAt, unarchivedAt ?? completedAt) <= now.addingTimeInterval(-Double(days) * 86400)
+    }
     var standardConfirmationPassed: Bool {
         !resources.isEmpty && resources.allSatisfy { $0.confirmed && !$0.remoteKey.isEmpty } &&
         (!isLive || settings.live == .motion || hasConfirmedPairs)

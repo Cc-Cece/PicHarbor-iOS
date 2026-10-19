@@ -32,7 +32,7 @@ struct HarborRootView: View {
         .task(id: model.queueNoticeID) {
             guard L10n.message(model.notice) == L10n.text("已加入备份队列。") else { return }
             let identifier = model.queueNoticeID
-            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
             if identifier == model.queueNoticeID && L10n.message(model.notice) == L10n.text("已加入备份队列。") { model.notice = "" }
         }
         .task {
@@ -81,6 +81,9 @@ struct BackupDashboard: View {
                 NavigationLink { BackupScopeView() } label: { Label(L10n.text("备份范围"), systemImage: "rectangle.stack") }
                 NavigationLink { BackupPreferencesView() } label: { Label(L10n.text("备份偏好"), systemImage: "slider.horizontal.3") }
             }
+            Section {
+                NavigationLink { CleanupView() } label: { Label(L10n.text("释放 iPhone 空间"), systemImage: "internaldrive") }
+            } footer: { Text(L10n.text("通过 Google 相册释放本机空间。后台备份由系统安排，打开 PicHarbor 可继续推进。")) }
             Section(L10n.text("当前设置")) {
                 LabeledContent(L10n.text("上传画质"), value: model.settings.quality.title)
                 LabeledContent("Live Photo", value: model.settings.live.title)
@@ -89,9 +92,6 @@ struct BackupDashboard: View {
                 if !model.network.connected { Label(L10n.text("等待网络连接"), systemImage: "wifi.slash").foregroundStyle(.secondary) }
                 else if model.settings.wifiOnly && !model.network.wifi { Label(L10n.text("等待 Wi-Fi"), systemImage: "wifi").foregroundStyle(.secondary) }
             }
-            Section {
-                NavigationLink { CleanupView() } label: { Label(L10n.text("释放 iPhone 空间"), systemImage: "internaldrive") }
-            } footer: { Text(L10n.text("通过 Google 相册释放本机空间。后台备份由系统安排，打开 PicHarbor 可继续推进。")) }
             if !model.engine.ready { Section { Text(L10n.message(model.engine.message)).foregroundStyle(.secondary) } }
         }
         .navigationTitle(L10n.text("备份"))
@@ -114,7 +114,7 @@ struct JobRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: job.statusSymbol)
-                .font(.title2).foregroundStyle(job.state == .completed ? .green : .blue).accessibilityHidden(true)
+                .font(.title2).foregroundStyle(job.skippedExisting ? .gray : job.state == .completed ? .green : .blue).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 if showDate { Text(name).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading) }
                 else {

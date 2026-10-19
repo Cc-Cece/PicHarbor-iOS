@@ -108,7 +108,7 @@ private struct PhotoGrid: UIViewRepresentable {
             for path in grid.indexPathsForVisibleItems {
                 guard path.item < assets.count, let cell = grid.cellForItem(at: path) as? PhotoCell else { continue }
                 cell.badge.text = selecting ? (selected.contains(assets[path.item].localIdentifier) ? "✓" : "○") : ""
-                cell.applyState(state(for: assets[path.item]), selecting: selecting)
+                cell.applyState(state(for: assets[path.item]), selecting: selecting, skipped: states[assets[path.item].localIdentifier]?.skipped == true)
                 cell.accessibilityTraits = selected.contains(assets[path.item].localIdentifier) ? [.button, .selected] : .button
             }
         }
@@ -129,7 +129,7 @@ private struct PhotoGrid: UIViewRepresentable {
             let asset = parent.assets[indexPath.item]
             cell.configure(asset, manager: parent.manager)
             cell.badge.text = parent.selecting ? (parent.selected.contains(asset.localIdentifier) ? "✓" : "○") : ""
-            cell.applyState(parent.state(for: asset), selecting: parent.selecting)
+            cell.applyState(parent.state(for: asset), selecting: parent.selecting, skipped: parent.states[asset.localIdentifier]?.skipped == true)
             cell.accessibilityTraits = parent.selected.contains(asset.localIdentifier) ? [.button, .selected] : .button
             return cell
         }
@@ -159,12 +159,12 @@ private final class PhotoCell: UICollectionViewCell {
         isAccessibilityElement = true; accessibilityTraits = .button
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    func applyState(_ state: JobState?, selecting: Bool) {
+    func applyState(_ state: JobState?, selecting: Bool, skipped: Bool = false) {
         cloud.isHidden = selecting || state == nil || state == .cancelled
-        accessibilityValue = state?.title
+        accessibilityValue = state == .completed && skipped ? L10n.text("已存在，跳过") : state?.title
         guard let state else { return }
         let symbol = state == .paired ? "checkmark.circle.fill" : state == .completed ? "checkmark.icloud.fill" : state == .failed || state == .attention ? "exclamationmark.icloud" : state == .paused ? "pause.circle.fill" : "icloud.and.arrow.up"
-        cloud.tintColor = state == .paired ? .systemBlue : state == .completed ? .systemGreen : .white
+        cloud.tintColor = state == .paired ? .systemBlue : state == .completed ? (skipped ? .systemGray : .systemGreen) : .white
         cloud.backgroundColor = (state == .paired || state == .completed ? UIColor.black : UIColor.systemBlue).withAlphaComponent(0.8)
         cloud.image = UIImage(systemName: symbol)
     }
@@ -196,6 +196,27 @@ struct AssetDetailView: View {
     @State private var loading = true
     @State private var previewError = false
     @State private var previewRequest: PHImageRequestID?
+    @State private var information = false
+    @State private var filename = false
+    @State private var sizes: [Int: Int64] = [:]
+    @State private var sizeFailed = false
+    @State private var downloadSize = false
+    @State private var sizeReadID = UUID()
+    @State private var sharing = false
+    @State private var shareReady = false
+    @State private var shareError = false
+    @State private var shareWarning = false
+    @State private var shareFiles: [URL] = []
+    @State private var shareDirectory: URL?
+    @State private var shareTask: Task<Void, Never>?
+    @State private var shareControl: ExportControl?
+    var resources: [PHAssetResource] { AssetInformation.resources(asset) }
+    var name: String { resources.first?.originalFilename ?? L10n.text("照片或视频") }
+    var typeName: String { asset.mediaSubtypes.contains(.photoLive) ? "Live Photo" : asset.mediaType == .video ? L10n.text("视频") : L10n.text("照片") }
+    var sizeText: String {
+        if !resources.isEmpty && sizes.count == resources.count { return ByteCountFormatter.string(fromByteCount: sizes.values.reduce(0, +), countStyle: .file) }
+        return sizeFailed ? L10n.text("原件暂不可用，可能需要从 iCloud 下载。") : L10n.text("正在读取大小…")
+    }
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
@@ -207,17 +228,74 @@ struct AssetDetailView: View {
                 if previewError { Text(L10n.text("预览暂不可用，原件可能需要从 iCloud 下载。")).foregroundStyle(.white).padding() }
             }
             VStack(alignment: .leading, spacing: 12) {
+                Button { filename = true } label: { Text(name).font(.headline).lineLimit(1).truncationMode(.middle) }.buttonStyle(.plain)
+                    .contextMenu { Button(L10n.text("复制文件名"), systemImage: "doc.on.doc") { UIPasteboard.general.string = name } }
                 Text(asset.creationDate.map { L10n.date($0, date: .long, time: .short) } ?? L10n.text("照片详情")).font(.headline)
-                Text("\(asset.pixelWidth) × \(asset.pixelHeight)\(asset.mediaSubtypes.contains(.photoLive) ? " · Live Photo" : "")").font(.subheadline).foregroundStyle(.secondary)
+                Text(sizeText + " · " + typeName).font(.subheadline).foregroundStyle(.secondary)
+                if sizeFailed { Button(L10n.text("下载原件并读取大小")) { downloadSize = true; sizeReadID = UUID() } }
+                if sharing { HStack { ProgressView(); Text(L10n.text("正在准备分享，可能需要下载原件…")); Button(L10n.text("取消")) { shareControl?.cancel("JOB_PAUSED"); shareTask?.cancel() } }.font(.caption) }
                 Button { Task { await model.enqueue([asset]) } } label: { Label(L10n.text("备份此项目"), systemImage: "icloud.and.arrow.up").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).disabled(model.account.isEmpty)
                 if let job = model.visibleJobs.first(where: { $0.assetID == asset.localIdentifier }) { NavigationLink { JobDetailView(id: job.id) } label: { Label(job.displayStatus, systemImage: "clock") } }
             }.padding()
         }
         .navigationTitle(L10n.text("照片详情")).navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { dismiss() } } }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { dismiss() } }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { information = true } label: { Image(systemName: "info.circle") }.accessibilityLabel(L10n.text("详情")).accessibilityIdentifier("photo.info")
+                Button { if asset.mediaSubtypes.contains(.photoLive) { shareWarning = true } else { prepareShare() } } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel(L10n.text("分享")).disabled(sharing).accessibilityIdentifier("photo.share")
+            }
+        }
+        .sheet(isPresented: $information) { NavigationStack { AssetInformationView(asset: asset, resources: resources, sizes: sizes) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible) }
+        .sheet(isPresented: $filename) { NavigationStack { ScrollView { Text(name).textSelection(.enabled).padding() }.navigationTitle(L10n.text("完整文件名")).toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("完成")) { filename = false } } } }.presentationDetents([.medium]) }
+        .sheet(isPresented: $shareReady, onDismiss: cleanShare) { AssetShareSheet(files: shareFiles) }
+        .alert(L10n.text("分享 Live Photo"), isPresented: $shareWarning) {
+            Button(L10n.text("继续")) { prepareShare() }; Button(L10n.text("取消"), role: .cancel) {}
+        } message: { Text(L10n.text("将分享照片和配对视频，保留原有信息。能否作为动态照片接收，取决于接收应用。")) }
+        .alert(L10n.text("暂时无法分享"), isPresented: $shareError) { Button(L10n.text("好"), role: .cancel) {} } message: { Text(L10n.text("请检查照片权限、网络和可用空间后重试。")) }
+        .task(id: sizeReadID) {
+            sizes = [:]; sizeFailed = false
+            do {
+                guard !resources.isEmpty else { throw HarborError("RESOURCE_MISSING") }
+                for (index, resource) in resources.enumerated() {
+                    let size = try await AssetByteRequest().size(resource, network: downloadSize)
+                    try Task.checkCancellation(); sizes[index] = size
+                }
+            } catch { if !Task.isCancelled { sizeFailed = true } }
+        }
         .onAppear { load() }.onDisappear {
             player?.pause()
             if let request = previewRequest { model.library.images.cancelImageRequest(request) }
+            if !shareReady { shareControl?.cancel("JOB_PAUSED"); shareTask?.cancel() }
+        }
+    }
+    private func cleanShare() {
+        if let shareDirectory { try? FileManager.default.removeItem(at: shareDirectory) }
+        shareDirectory = nil; shareFiles = []
+    }
+    private func prepareShare() {
+        guard !sharing else { return }
+        sharing = true
+        let control = ExportControl(wifiOnly: false); shareControl = control
+        shareTask = Task { @MainActor in
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Share-" + UUID().uuidString, isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                guard !resources.isEmpty else { throw HarborError("RESOURCE_MISSING") }
+                var files: [URL] = []
+                for (index, resource) in resources.enumerated() {
+                    try Task.checkCancellation()
+                    let folder = directory.appendingPathComponent(String(index)); try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    let url = folder.appendingPathComponent((resource.originalFilename as NSString).lastPathComponent)
+                    try await PhotoResourceWriter.write(resource: resource, url: url, control: control); files.append(url)
+                }
+                try Task.checkCancellation()
+                shareDirectory = directory; shareFiles = files; shareReady = true
+            } catch {
+                try? FileManager.default.removeItem(at: directory)
+                if !Task.isCancelled { shareError = true }
+            }
+            sharing = false; shareControl = nil
         }
     }
     private func load() {

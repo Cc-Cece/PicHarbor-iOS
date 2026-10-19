@@ -28,48 +28,63 @@ final class HarborFlowTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         return app
     }
+    func testArchiveSettingsValidateInputAndArchiveEntryOpens() {
+        let app = localizedApp(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap(); app.buttons["活动记录"].tap()
+        let days = app.textFields["archive.days"]
+        XCTAssertTrue(days.waitForExistence(timeout: 5)); XCTAssertEqual(days.value as? String, "14")
+        days.tap(); days.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "91")
+        app.buttons["archive.save"].tap()
+        XCTAssertTrue(app.staticTexts["请输入 1–90 的整数。"].exists)
+        days.tap(); days.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "14")
+        app.buttons["archive.save"].tap()
+        XCTAssertFalse(app.staticTexts["请输入 1–90 的整数。"].exists)
+        app.buttons["归档记录"].tap()
+        XCTAssertTrue(app.navigationBars["归档记录"].waitForExistence(timeout: 5)); capture("archive-empty")
+    }
     func testLanguageSwitchingPersistsWithoutLeavingSettings() {
         let app = localizedApp(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
-        app.tabBars.buttons["设置"].tap(); app.buttons["settings.language"].tap()
+        app.tabBars.buttons["设置"].tap(); app.buttons["settings.interface"].tap()
         app.buttons["English"].tap()
-        XCTAssertTrue(app.navigationBars["Language"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Interface"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Photos"].exists); capture("language-english")
         app.buttons["粵語（香港）"].tap()
-        XCTAssertTrue(app.navigationBars["語言"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["介面"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["相片"].exists); capture("language-hong-kong")
         app.terminate(); app.launch()
         if app.buttons["稍後"].waitForExistence(timeout: 30) { app.buttons["稍後"].tap() }
-        app.tabBars.buttons["設定"].tap(); app.buttons["settings.language"].tap()
+        app.tabBars.buttons["設定"].tap(); app.buttons["settings.interface"].tap()
         XCTAssertTrue(app.buttons["粵語（香港）"].isSelected)
-        app.buttons["跟隨系統"].tap()
-        XCTAssertTrue(app.navigationBars["语言"].waitForExistence(timeout: 5))
+        app.buttons["跟隨系統"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["界面"].waitForExistence(timeout: 5))
     }
     func testRestoreDefaultsRequiresConfirmationAndRestoresPairing() {
         let app = localizedApp(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap(); app.buttons["备份偏好"].tap()
-        app.buttons["节省空间"].tap()
+        choosePreference(app, "preferences.quality", "节省空间")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let restore = app.buttons["settings.restore"]
         for _ in 0..<3 { if restore.isHittable { break }; app.swipeUp() }
         restore.tap(); app.alerts.buttons["取消"].tap()
         app.swipeDown(); app.buttons["备份偏好"].tap()
-        XCTAssertTrue(app.buttons["节省空间"].isSelected)
+        assertPreference(app, "preferences.quality", "节省空间")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         for _ in 0..<3 { if restore.isHittable { break }; app.swipeUp() }
         restore.tap(); app.alerts.buttons["恢复默认设置"].tap()
         XCTAssertTrue(app.alerts.staticTexts["已恢复默认设置。自动备份已关闭，请重新确认备份范围。"].waitForExistence(timeout: 10))
         app.alerts.buttons["好"].tap(); app.swipeDown(); app.buttons["备份偏好"].tap()
-        XCTAssertTrue(app.buttons["不计配额原画质"].isSelected)
-        XCTAssertTrue(app.buttons["原始照片配对"].isSelected); capture("restored-defaults")
+        assertPreference(app, "preferences.quality", "不计配额原画质")
+        assertPreference(app, "preferences.live", "原始照片配对"); capture("restored-defaults")
     }
-    func testQueueNoticeHidesAfterThirtySeconds() {
+    func testQueueNoticeHidesAfterTenSeconds() {
         let app = localizedApp(); app.launchArguments += ["--task-review-fixture", "--queue-notice-fixture"]; app.launch()
         XCTAssertTrue(app.buttons["关闭备份提示"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["已加入备份队列 · 2 项"].exists)
         let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["关闭备份提示"])
-        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 35), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 15), .completed)
         XCTAssertTrue(app.navigationBars["活动"].exists)
     }
     func testBatchNavigationTaskFlowAndAdvancedInformationSheet() {
@@ -116,22 +131,15 @@ final class HarborFlowTests: XCTestCase {
         app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap(); app.buttons["备份偏好"].tap()
-        let joint = app.buttons["原始照片配对"]
-        if !joint.isHittable { app.swipeUp() }
-        XCTAssertTrue(joint.waitForExistence(timeout: 5)); joint.tap()
+        choosePreference(app, "preferences.live", "原始照片配对")
         capture("live-pair-joint-preference")
-        let repair = app.buttons["原始照片配对（分步上传）"]
-        if !repair.isHittable { app.swipeUp() }
-        repair.tap()
+        choosePreference(app, "preferences.live", "原始照片配对（分步上传）")
         app.terminate(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap(); app.buttons["备份偏好"].tap()
-        if !app.buttons["原始照片配对（分步上传）"].isHittable { app.swipeUp() }
-        XCTAssertTrue(app.buttons["原始照片配对（分步上传）"].isSelected)
+        assertPreference(app, "preferences.live", "原始照片配对（分步上传）")
         capture("live-pair-reconcile-preference")
-        let motion = app.buttons["动态照片封装"]
-        if !motion.isHittable { app.swipeDown() }
-        motion.tap()
+        choosePreference(app, "preferences.live", "动态照片封装")
     }
     func testActivityGroupingOptions() {
         let app = localizedApp()
@@ -211,13 +219,13 @@ final class HarborFlowTests: XCTestCase {
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap()
         app.buttons["备份偏好"].tap()
-        app.buttons["计配额原画质"].tap()
+        choosePreference(app, "preferences.quality", "计配额原画质")
         app.terminate(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap()
         app.buttons["备份偏好"].tap()
-        XCTAssertTrue(app.buttons["计配额原画质"].isSelected)
-        app.buttons["不计配额原画质"].tap()
+        assertPreference(app, "preferences.quality", "计配额原画质")
+        choosePreference(app, "preferences.quality", "不计配额原画质")
     }
 
     func testNativeNavigationAndPreferenceScreens() {
@@ -233,12 +241,15 @@ final class HarborFlowTests: XCTestCase {
         app.collectionViews.cells.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["照片详情"].waitForExistence(timeout: 5))
         capture("photo-detail")
+        app.buttons["photo.info"].tap()
+        XCTAssertTrue(app.navigationBars["详情"].waitForExistence(timeout: 5)); capture("photo-information")
+        app.navigationBars["详情"].buttons["完成"].tap()
+        XCTAssertTrue(app.buttons["photo.share"].exists)
         app.buttons["关闭"].tap()
         app.tabBars.buttons["备份"].tap()
         XCTAssertTrue(app.navigationBars["备份"].waitForExistence(timeout: 5)); capture("backup")
         app.buttons["备份偏好"].tap()
-        XCTAssertTrue(app.buttons["不计配额原画质"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["不计配额原画质"].isSelected)
+        assertPreference(app, "preferences.quality", "不计配额原画质")
         capture("backup-preferences")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.tabBars.buttons["活动"].tap()
@@ -247,7 +258,7 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5)); capture("settings")
         XCTAssertFalse(app.buttons["空间清理核验"].exists)
         XCTAssertFalse(app.buttons["settings.linkTests"].exists)
-        app.buttons["外观"].tap()
+        app.buttons["settings.interface"].tap()
         app.buttons["深色"].tap()
         capture("appearance-dark")
         app.tabBars.buttons["备份"].tap()
@@ -265,6 +276,18 @@ final class HarborFlowTests: XCTestCase {
         let value = NSPredicate(format: "value == %@", on ? "1" : "0")
         expectation(for: value, evaluatedWith: element)
         waitForExpectations(timeout: 5)
+    }
+    private func choosePreference(_ app: XCUIApplication, _ identifier: String, _ title: String) {
+        let picker = app.buttons[identifier]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5)); picker.tap()
+        let option = app.buttons[title].lastMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5)); option.tap()
+        assertPreference(app, identifier, title)
+    }
+    private func assertPreference(_ app: XCUIApplication, _ identifier: String, _ title: String) {
+        let picker = app.buttons[identifier]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertTrue((picker.label + " " + (picker.value as? String ?? "")).contains(title))
     }
     private func openAdvancedChecks(_ app: XCUIApplication) {
         app.tabBars.buttons["设置"].tap()

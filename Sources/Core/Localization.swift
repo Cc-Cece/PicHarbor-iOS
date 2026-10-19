@@ -71,14 +71,3 @@ enum L10n {
         return [day, formatter.string(from: value)].filter { !$0.isEmpty }.joined(separator: " ")
     }
 }
-
-struct LanguagePreferencesView: View {
-    @ObservedObject private var language = LanguagePreferences.shared
-    var body: some View {
-        Form {
-            Picker(L10n.text("语言"), selection: $language.selection) {
-                ForEach(AppLanguage.allCases) { Text($0.title).tag($0.rawValue).accessibilityIdentifier("language.\($0.rawValue)") }
-            }.pickerStyle(.inline).labelsHidden()
-        }.navigationTitle(L10n.text("语言")).navigationBarTitleDisplayMode(.inline)
-    }
-}

@@ -26,10 +26,7 @@ struct JobDetailView: View {
                 }
                 Section {
                     if job.state == .completed {
-                        Button(L10n.text("按当前设置重新备份")) { Task {
-                            if let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject { await model.enqueue([asset], force: true) }
-                            else { model.notice = L10n.text("无法读取这项照片，请检查相册访问权限。") }
-                        } }
+                        Button(job.archivedAt == nil ? L10n.text("归档") : L10n.text("取消归档"), systemImage: "archivebox") { Task { await model.archive([id], restoring: job.archivedAt != nil) } }
                     } else if job.state != .cancelled {
                         if job.confirmationOnly {
                             Button(L10n.text("立即检查保存结果"), systemImage: "arrow.clockwise") { Task { await model.resume(id) } }
@@ -83,15 +80,26 @@ struct TaskFlowView: View {
         if index == job.flowIndex { return [.failed, .attention].contains(job.state) ? "exclamationmark.circle.fill" : job.state == .paused ? "pause.circle.fill" : "circle.inset.filled" }
         return "circle"
     }
-    private func color(_ index: Int) -> Color { job.state == .completed ? .green : index <= job.flowIndex ? .blue : .secondary }
+    private func color(_ index: Int) -> Color { job.skippedExisting ? .gray : job.state == .completed ? .green : index <= job.flowIndex ? .blue : .secondary }
 }
 
 struct TaskAdvancedInformation: View {
+    @EnvironmentObject private var model: HarborModel
     @ObservedObject private var language = LanguagePreferences.shared
     @Environment(\.dismiss) private var dismiss
     let job: BackupJob
     var body: some View {
         List {
+            if job.state == .completed {
+                Section {
+                    Button(L10n.text("使用当前设置创建任务")) { Task {
+                        guard job.account == model.account else { return }
+                        if let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject {
+                            await model.enqueue([asset], recreate: true); dismiss()
+                        } else { model.notice = L10n.text("无法读取这项照片，请检查相册访问权限。") }
+                    } }
+                } footer: { Text(L10n.text("已备份的内容会尝试复用，不会修改已有云端项目。")) }
+            }
             Section(L10n.text("任务")) {
                 LabeledContent(L10n.text("来源"), value: job.origin?.title ?? L10n.text("历史记录，来源未知"))
                 LabeledContent(L10n.text("版本策略"), value: job.settings.edits.title)

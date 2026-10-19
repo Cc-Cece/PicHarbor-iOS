@@ -6,7 +6,7 @@ SwiftUI 原生界面 + 内嵌 Python + gpmc，面向 iOS 17+ iPhone。开发者�
 
 开发版产物、自动测试证据与剩余事项见 [开发版验收说明](docs/DEVELOPMENT-ACCEPTANCE.md)。0.2.12 使用真机验证的链接直达 Google 相册释放空间，两种备用路径默认折叠，临时链接测试页已移除，见[本轮说明](docs/GOOGLE-PHOTOS-DIRECT-0212.md)。原始配对的[测试步骤](docs/LIVE-PAIR-TESTING.md)继续适用。完整格式和规模矩阵仍待验收，不将整个计划标为完成。
 
-目标安装包：`dist/PicHarbor-0.2.12-google-photos-direct.ipa`（构建号 14），构建与回归结果见本轮说明。包含简体中文、English、粵語（香港），支持恢复备份默认值。使用原 Sideloadly 配置覆盖安装。
+当前版本 0.2.13（构建号 15）：界面设置合并、照片详情与分享、查重跳过状态及活动归档，见[本轮说明](docs/INTERFACE-ARCHIVE-0213.md)。目标安装包：`dist/PicHarbor-0.2.13-interface-archive.ipa`。包含简体中文、English、粵語（香港），支持恢复备份默认值。使用原 Sideloadly 配置覆盖安装。
 
 默认采用标准确认：原始配对仍要求照片和视频分别查询后指向同一个云端项目；高级设置可额外启用严格动态确认，蓝色等待仅用于已通过配对、仍在严格确认的任务。旧任务可明确选择应用当前确认策略，无需重传。本机清理由官方 Google 相册执行，PicHarbor 不再扫描或删除照片。
 
