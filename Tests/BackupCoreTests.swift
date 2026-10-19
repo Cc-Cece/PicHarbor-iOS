@@ -4,6 +4,7 @@ import UIKit
 import Darwin
 import AVFoundation
 import UniformTypeIdentifiers
+import Photos
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
