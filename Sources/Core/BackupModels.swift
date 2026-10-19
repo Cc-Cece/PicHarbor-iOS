@@ -103,6 +103,10 @@ struct BackupJob: Codable, Identifiable {
     var origin: BackupOrigin?
     var batchID: String?
     var activityHidden: Bool?
+    var proxyFallback: ProxyFallback?
+    var proxyPort: Int?
+    var proxyLastNode: String?
+    var proxyFailures: [String]?
     var archivedAt: Date?
     var unarchivedAt: Date?
     var account: String

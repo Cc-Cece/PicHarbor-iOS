@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from pathlib import Path
 import sqlite3
 import time
@@ -31,6 +32,8 @@ class IOSApi(Api):
         session = requests.Session()
         session.verify = True
         session.trust_env = False
+        if self.proxy:
+            session.proxies.update({"http": self.proxy, "https": self.proxy})
         return session
 
 
@@ -103,12 +106,13 @@ class Service:
         if not credential or len(credential) > 16384 or any(c in credential for c in "\r\n"):
             raise Failure("INVALID_CREDENTIAL")
         if "androidId=" not in credential:
-            credential = authenticate(credential, timeout=60)
+            credential = authenticate(credential, proxy=value.get("proxy_url", ""), timeout=60)
         fields = parse_qs(credential)
         account = fields.get("Email", [""])[0].strip().lower()
         if "@" not in account or any(c.isspace() for c in account):
             raise Failure("INVALID_CREDENTIAL")
         api = self.api_factory(credential, timeout=60)
+        api.proxy = value.get("proxy_url", "")
         _ = api.bearer_token
         self.api, self.account = api, account
         from harbor_protocol import Protocol
@@ -249,6 +253,13 @@ def dispatch(action, payload):
         request_id = value.get("request_id", "")
         if value.get("protocol_version", 2) != 2:
             raise Failure("PROTOCOL_VERSION")
+        proxy = value.get("proxy_url", "")
+        if proxy:
+            match = re.fullmatch(r"http://127\.0\.0\.1:([0-9]{1,5})", proxy) if isinstance(proxy, str) else None
+            if not match or not 24500 <= int(match[1]) < 24564:
+                raise Failure("INVALID_PROXY")
+        if _service.api is not None:
+            _service.api.proxy = proxy
         return json.dumps({"ok": True, "protocol_version": 2, "request_id": request_id, **_service.dispatch(action, value)})
     except Exception as error:
         code = classify(error)

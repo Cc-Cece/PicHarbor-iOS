@@ -20,6 +20,7 @@ struct JobDetailView: View {
                     Text(job.verificationLevel == "strict" ? L10n.text("已确认动态处理完成") : job.verificationLevel == "standard" ? L10n.text("已确认云端保存") : job.state == .completed ? L10n.text("历史备份记录") : job.settings.requiresStrictConfirmation ? L10n.text("保存后继续等待动态处理") : L10n.text("云端保存确认后完成")).font(.caption).foregroundStyle(.secondary)
                 }
                 Section(L10n.text("备份流程")) { TaskFlowView(job: job) }
+                Section { NavigationLink(L10n.text("任务连接策略")) { TaskProxyPreferencesView(id: id) } }
                 Section(job.state == .failed || job.state == .attention ? L10n.text("需要处理") : L10n.text("当前状态")) {
                     Text(job.friendlyMessage).foregroundStyle(.secondary)
                     if job.state == .transferring { ProgressView(value: job.progress).accessibilityLabel(L10n.text("上传进度")) }

@@ -430,6 +430,32 @@ final class HarborModel: ObservableObject {
         ["account": account, "sha1": resource.sha1, "sha256": resource.sha256, "size": resource.size]
     }
     private func process(_ initial: BackupJob) async {
+        do {
+            let route = try await ProxyManager.shared.route(override: initial.proxyFallback, failures: initial.proxyFailures ?? [])
+            try checkpoint(initial)
+            var job = jobs.first(where: { $0.id == initial.id }) ?? initial
+            job.proxyPort = route.0; job.proxyLastNode = route.1
+            try await persist(job)
+            await ProxyContext.$port.withValue(route.0) { await processRouted(job) }
+        } catch {
+            guard var job = jobs.first(where: { $0.id == initial.id }), job.state != .paused, job.state != .cancelled else { return }
+            job.error = (error as? HarborError)?.code ?? "PROXY_UNAVAILABLE"
+            job.failureStage = "proxy_route"; job.state = .waiting
+            job.retryAt = Date(timeIntervalSinceNow: 15); job.proxyFailures = []
+            try? await persist(job)
+        }
+    }
+    func setProxyPolicy(_ id: String, policy: ProxyFallback?) async {
+        guard let existing = jobs.first(where: { $0.id == id }), existing.account == account, existing.unfinished else { return }
+        let continueAfter = existing.state.active || [.waiting, .queued].contains(existing.state)
+        await pause(id); await transfer.cancel(jobID: id)
+        guard var job = jobs.first(where: { $0.id == id }) else { return }
+        for index in job.resources.indices { job.resources[index].transportID = nil }
+        job.proxyFallback = policy; job.proxyFailures = []; job.retryAt = nil
+        try? await persist(job)
+        if continueAfter { await resume(id) }
+    }
+    private func processRouted(_ initial: BackupJob) async {
         var job = initial
         var stage = "preparation"
         var committingResourceID: String?
@@ -616,6 +642,9 @@ final class HarborModel: ObservableObject {
             job = current
             if let confirmationBegan { job.lastConfirmationSeconds = max(0, ProcessInfo.processInfo.systemUptime - confirmationBegan) }
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
+            if code == "NETWORK_ERROR", ProxyManager.shared.preferences.enabled {
+                job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
+            }
             if code == "ACCOUNT_CHANGED" || code == "JOB_PAUSED" { return }
             // These response errors are guaranteed to occur before gpmc's
             // commit RPC, so a retry must not get stuck querying an unsent commit.
@@ -633,6 +662,9 @@ final class HarborModel: ObservableObject {
             else if code == "PREVIOUS_BACKUP_NOT_VISIBLE" {
                 job.state = job.attempts <= 3 ? .confirming : .attention
                 job.retryAt = job.attempts <= 3 ? Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5) : nil
+            }
+            else if code == "NETWORK_ERROR" && ProxyManager.shared.preferences.enabled {
+                job.state = .waiting; job.retryAt = Date(timeIntervalSinceNow: 10); job.attempts = max(0, job.attempts - 1)
             }
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE"].contains(code) && job.attempts <= 3 {
                 job.state = code == "REMOTE_NOT_VISIBLE" ? (job.hasConfirmedPairs ? .paired : .confirming) : .waiting
@@ -847,10 +879,13 @@ final class HarborModel: ObservableObject {
                 job.state = paused ? .paused : .queued; job.error = ""; job.retryAt = nil
             } else {
                 job.state = paused ? .paused : .waiting; job.error = receipt.error
+                if receipt.error == "NETWORK_ERROR", ProxyManager.shared.preferences.enabled {
+                    job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
+                }
                 job.failureStage = "upload_response"
                 job.resources[index].responsePath = nil
                 job.attempts += 1; job.retryAt = Date(timeIntervalSinceNow: min(300, pow(2, Double(job.attempts)) * 5))
-                if job.attempts > 3 && !paused { job.state = .failed }
+                if job.attempts > 3 && !paused && !ProxyManager.shared.preferences.enabled { job.state = .failed }
             }
             try await persist(job); transfer.acknowledge(receipt); await pump()
         } catch { notice = error.localizedDescription }
@@ -870,6 +905,10 @@ final class HarborModel: ObservableObject {
         guard !updatingNetwork, !switching else { return }
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed, job.state != .cancelled else { return }
         if useCurrentConfirmationPolicy { job.settings.strictLiveConfirmation = settings.requiresStrictConfirmation }
+        if ProxyManager.shared.preferences.enabled || (job.proxyPort ?? 0) > 0 {
+            await transfer.cancel(jobID: id)
+            for index in job.resources.indices { job.resources[index].transportID = nil }
+        }
         job.error = ""; job.retryAt = nil; job.attempts = 0; job.sourceWaits = 0; job.confirmationRetries = 0
         let liveTasks = await transfer.tasks()
         for index in job.resources.indices {

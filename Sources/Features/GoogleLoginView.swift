@@ -8,6 +8,8 @@ struct GoogleLoginView: View {
     @State private var error = ""
     @State private var loading = true
     @State private var attempt = UUID()
+    @State private var preparing = true
+    @State private var proxyPort: Int?
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -21,11 +23,17 @@ struct GoogleLoginView: View {
                         Text(L10n.text("也可以取消后导入已有 gpmc 凭据。")).font(.caption).foregroundStyle(.secondary)
                     }.padding()
                 }
-                GoogleWebView(token: { value in token(value); dismiss() }, failed: { error = $0; loading = false }, loaded: { loading = false })
+                if !preparing { GoogleWebView(token: { value in token(value); dismiss() }, failed: { error = $0; loading = false }, loaded: { loading = false }, port: proxyPort)
                     .id(attempt)
+                }
             }
             .navigationTitle(L10n.text("连接 Google")).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
+            .task(id: attempt) {
+                preparing = true
+                do { let route = try await ProxyManager.shared.route(); proxyPort = route.0 > 0 ? route.0 : nil; preparing = false }
+                catch { self.error = error.localizedDescription; loading = false }
+            }
         }
     }
 }
@@ -34,10 +42,12 @@ private struct GoogleWebView: UIViewRepresentable {
     let token: (String) -> Void
     let failed: (String) -> Void
     let loaded: () -> Void
+    var port: Int?
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        if let port { configuration.websiteDataStore.proxyConfigurations = [ProxyConfigurationForPort.make(port)] }
         let web = WKWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = context.coordinator
         context.coordinator.web = web

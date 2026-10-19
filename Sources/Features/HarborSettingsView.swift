@@ -19,6 +19,7 @@ struct HarborSettingsView: View {
                 NavigationLink { BackupPreferencesView() } label: { Label(L10n.text("备份偏好"), systemImage: "icloud.and.arrow.up") }
                 NavigationLink { BackupScopeView() } label: { Label(L10n.text("备份范围"), systemImage: "rectangle.stack") }
                 NavigationLink { NetworkPreferencesView() } label: { Label(L10n.text("网络与后台"), systemImage: "wifi") }
+                NavigationLink { ProxyPreferencesView() } label: { Label(L10n.text("应用内代理（验证）"), systemImage: "network") }.accessibilityIdentifier("settings.proxy")
                 NavigationLink { ActivityArchiveSettingsView() } label: { Label(L10n.text("活动记录"), systemImage: "archivebox") }
             }
             Section(L10n.text("设备")) {

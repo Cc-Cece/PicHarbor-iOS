@@ -29,8 +29,8 @@ settings:
     CODE_SIGNING_REQUIRED: "NO"
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGN_IDENTITY: ""
-    MARKETING_VERSION: "0.2.14"
-    CURRENT_PROJECT_VERSION: "16"
+    MARKETING_VERSION: "0.2.15"
+    CURRENT_PROJECT_VERSION: "17"
 
 targets:
   PicHarbor:
@@ -38,9 +38,14 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      - path: Runtime/ProxyNotices
+        type: folder
       - path: Resources
         excludes: [Background.plist]
     dependencies:
+      - framework: Runtime/Clash.xcframework
+        embed: false
+      - sdk: libresolv.tbd
       - framework: Runtime/Python.xcframework
         embed: true
         codeSign: false

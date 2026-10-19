@@ -611,3 +611,40 @@ Google 相册备份|Google Photos backup
 移除未完成|Remove unfinished
 继续分享|Continue sharing
 此处会将照片和配对视频作为两个文件分享。如需分享为一张动态照片，请前往 iPhone 自带的“照片”应用。|The photo and paired video will be shared as two files. To share a single Live Photo, use the Photos app on your iPhone.
+暂停并等待|Pause and wait
+尝试备用节点|Try backup nodes
+备用节点失败后尝试直连|Try direct after backup nodes fail
+请先导入代理配置。|Import a proxy configuration first.
+验证版支持最多 64 个节点的 Clash YAML，暂不支持代理提供者或链式代理。|This preview supports Clash YAML with up to 64 nodes. Proxy providers and chained proxies are not supported yet.
+代理启动失败，请检查节点配置，或导入其他配置重试。|The proxy could not start. Check the nodes or import another configuration.
+允许的连接均不可用，正在等待代理恢复。|No permitted connection is available. Waiting for the proxy to recover.
+配置已导入，节点已就绪。|Configuration imported. Nodes are ready.
+仅代理 PicHarbor|Proxy PicHarbor only
+不创建系统 VPN。其他应用不使用此代理。验证阶段请保持应用在前台。|No system VPN is created. Other apps do not use this proxy. Keep PicHarbor in the foreground during testing.
+配置|Configuration
+导入 Clash 配置文件|Import a Clash configuration
+HTTPS 订阅链接|HTTPS subscription URL
+读取订阅|Read subscription
+验证版支持包含 proxies 的 YAML，最多 64 个节点。暂不支持 proxy-providers、链式代理或规则导入。首次订阅下载需要网络可达，也可从文件导入。|This preview supports YAML containing proxies, with up to 64 nodes. Proxy providers, chains and imported rules are not supported. The subscription must be reachable for the initial download; you can also import a file.
+节点|Nodes
+首选节点|Preferred node
+勾选最多 8 个备用节点。只在允许切换的策略下使用，按勾选顺序尝试。|Select up to 8 backup nodes. They are tried in selection order only when the policy permits switching.
+代理不可用时|When the proxy is unavailable
+全局兜底策略|Global fallback policy
+任务默认跟随全局，也可在任务详情单独设置。直连需要明确允许，失败后继续等待，不会标记完成。|Tasks follow the global policy unless overridden in task details. Direct access requires permission. Failed connections wait and do not mark a task complete.
+连接验证|Connection test
+测试当前连接|Test current connection
+代理连接测试通过。|The proxy connection test passed.
+当前策略使用直连。|The current policy uses a direct connection.
+请验证：关闭第三方 VPN 后登录并备份；两个任务使用不同兜底；断开节点后重试；锁屏后返回继续。应用被暂停时内置代理可能停止，后台持续上传尚未保证。|Test sign-in and backup with external VPN apps off, different task policies, node failures, and resuming after locking the screen. The embedded proxy may stop when iOS suspends the app; continuous background uploads are not guaranteed.
+代理组件开源许可|Proxy component licenses
+应用内代理（验证）|In-app proxy (preview)
+未能读取配置文件。|Could not read the configuration file.
+请输入有效的 HTTPS 订阅链接。|Enter a valid HTTPS subscription URL.
+订阅读取失败，请检查网络或改用文件导入。|The subscription could not be loaded. Check your connection or import a file.
+跟随全局|Follow global
+生效策略|Effective policy
+最近连接|Last connection
+直连|Direct
+只影响当前任务，随任务保存，不改变全局。修改会暂停当前传输并从文件边界重新连接，已提交内容仍先确认。|Applies only to this task and is saved with it. The global policy stays unchanged. Changing it reconnects the current transfer from the file boundary; submitted content is checked first.
+任务连接策略|Task connection policy

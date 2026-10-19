@@ -57,6 +57,15 @@ jobs:
           python -m pip install -r Python/requirements.lock
           python -m unittest discover -s tests_python -v
 
+      - name: Cache pinned proxy SDK
+        uses: actions/cache@v4
+        with:
+          path: .runtime-cache/clash3-*
+          key: proxy-clash3-fbee3cf05b24de4e
+
+      - name: Prepare pinned application proxy SDK
+        run: python tools/prepare_proxy.py
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

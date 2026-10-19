@@ -11,6 +11,10 @@ struct HarborError: LocalizedError {
         case "ACCOUNT_BUSY": return L10n.text("正在连接或切换账号，请等待当前操作完成。")
         case "CLEANUP_BUSY": return L10n.text("正在核验或清理照片，请等待完成后再操作账号。")
         case "NETWORK_ERROR": return L10n.text("网络请求失败，请检查网络后重试。")
+        case "PROXY_CONFIG_REQUIRED": return L10n.text("请先导入代理配置。")
+        case "PROXY_CONFIG_UNSUPPORTED": return L10n.text("验证版支持最多 64 个节点的 Clash YAML，暂不支持代理提供者或链式代理。")
+        case "PROXY_START_FAILED": return L10n.text("代理启动失败，请检查节点配置，或导入其他配置重试。")
+        case "PROXY_UNAVAILABLE": return L10n.text("允许的连接均不可用，正在等待代理恢复。")
         case "PREVIOUS_BACKUP_NOT_VISIBLE": return L10n.text("已有备份记录，但暂未查询到对应云端内容。会先重新检查，避免重复上传。")
         case "RUNTIME_UNAVAILABLE": return L10n.text("Python 运行环境不可用，请导出诊断报告。")
         case "KEYCHAIN_ERROR": return L10n.text("无法访问安全凭据存储。")
@@ -132,6 +136,12 @@ final class Engine: ObservableObject {
     func invoke(_ action: String, _ payload: [String: Any] = [:]) async throws -> [String: Any] {
         let requestID = UUID().uuidString
         var envelope = payload
+        if !["probe", "capabilities", "records", "logout"].contains(action) {
+            let port: Int
+            if let inherited = ProxyContext.port { port = inherited }
+            else { port = try await ProxyManager.shared.route().0 }
+            envelope["proxy_url"] = port > 0 ? "http://127.0.0.1:\(port)" : ""
+        }
         envelope["protocol_version"] = 2; envelope["request_id"] = requestID
         let encoded = try JSONSerialization.data(withJSONObject: envelope)
         let input = String(decoding: encoded, as: UTF8.self)
