@@ -83,8 +83,8 @@ final class HarborModel: ObservableObject {
         var policy = BackupSettings(); policy.live = .applePair; policy.strictLiveConfirmation = true
         var live = BackupJob(account: "", assetID: "ui-only-asset", assetRevision: "ui-only", settings: policy)
         live.id = "ui-live"; live.origin = .manual; live.batchID = "ui-review-batch"; live.isLive = true
-        live.resources = [MediaResource(role: "original.photo", path: "ui-only", name: "界面样本 Live Photo", remoteKey: "ui-only", confirmed: true),
-                          MediaResource(role: "original.pairedVideo", path: "ui-only", name: "界面样本视频", remoteKey: "ui-only", confirmed: true)]
+        live.resources = [MediaResource(role: "original.photo", path: "ui-only", name: L10n.text("界面样本 Live Photo"), remoteKey: "ui-only", confirmed: true),
+                          MediaResource(role: "original.pairedVideo", path: "ui-only", name: L10n.text("界面样本视频"), remoteKey: "ui-only", confirmed: true)]
         live.sources = live.resources; live.livePairs = try? LivePairRecord.make(live.resources)
         live.livePairs?[0].confirmed = true; live.livePairs?[0].remoteKey = "ui-only"; live.livePairs?[0].route = "joint"
         live.beginConfirmation(); live.error = "REMOTE_MOTION_NOT_DYNAMIC"
@@ -92,7 +92,7 @@ final class HarborModel: ObservableObject {
         done.id = "ui-done"; done.origin = .manual; done.batchID = live.batchID; done.state = .completed; done.verificationLevel = "standard"
         jobs = [live, done]; updateAssetStates(jobs)
         if ProcessInfo.processInfo.arguments.contains("--queue-notice-fixture") {
-            queueNoticeCount = 2; queueNoticeID = UUID(); notice = "已加入备份队列。"
+            queueNoticeCount = 2; queueNoticeID = UUID(); notice = L10n.text("已加入备份队列。")
         }
         return true
     }
@@ -161,7 +161,7 @@ final class HarborModel: ObservableObject {
         } catch { fatalStorage(error) }
     }
     private func fatalStorage(_ error: Error) {
-        storageFailed = true; notice = "任务存储不可用，已停止新任务：\(error.localizedDescription)"
+        storageFailed = true; notice = L10n.text("任务存储不可用，已停止新任务：{0}", [String(describing: error.localizedDescription)])
     }
     private func persist(_ value: BackupJob) async throws {
         guard let store else { throw HarborError("DATABASE_ERROR") }
@@ -194,9 +194,18 @@ final class HarborModel: ObservableObject {
         assetStates = updated
     }
     struct AccountSettings: Codable { var account: String; var settings: BackupSettings; var generation: Int64? }
+    func restorePreferenceDefaults() async {
+        guard initialized, !storageFailed, !switching, !cleanupRunning, !updatingNetwork else {
+            notice = L10n.text("请等待当前检查或设置更新结束。"); return
+        }
+        settings = settings.restoringDefaults()
+        cleanupReady = []; cleanupResults = [:]; cleanupOutcomes = [:]
+        cleanupChecked = 0; cleanupTotal = 0
+        if await saveSettings() { notice = L10n.text("已恢复默认设置。自动备份已关闭，请重新确认备份范围。") }
+    }
     @discardableResult
     func saveSettings() async -> Bool {
-        guard let store else { notice = "设置尚未就绪，请等待初始化完成后重试。"; return false }
+        guard let store else { notice = L10n.text("设置尚未就绪，请等待初始化完成后重试。"); return false }
         let targetAccount = account
         let snapshot = settings
         do {
@@ -212,7 +221,7 @@ final class HarborModel: ObservableObject {
             }
             if savedCleanupPolicy != snapshot.cleanupPolicy {
                 savedCleanupPolicy = snapshot.cleanupPolicy
-                for id in cleanupReady { cleanupResults[id] = "检查策略已变化，请重新检查。"; cleanupOutcomes[id] = .deferred }
+                for id in cleanupReady { cleanupResults[id] = L10n.text("检查策略已变化，请重新检查。"); cleanupOutcomes[id] = .deferred }
                 cleanupReady = []
                 if cleanupRunning { cancelCleanupScan() }
             }
@@ -260,7 +269,7 @@ final class HarborModel: ObservableObject {
         connectionError = ""
         guard !switching && !updatingNetwork && !engine.busy else { connectionError = HarborError("ACCOUNT_BUSY").localizedDescription; return false }
         guard !cleanupRunning else { connectionError = HarborError("CLEANUP_BUSY").localizedDescription; return false }
-        guard initialized, !storageFailed else { connectionError = "应用尚未就绪，请等待初始化完成并检查诊断。"; return false }
+        guard initialized, !storageFailed else { connectionError = L10n.text("应用尚未就绪，请等待初始化完成并检查诊断。"); return false }
         switching = true
         await pauseAll()
         // Waiting for active protocol calls prevents changing identity mid-commit.
@@ -298,8 +307,8 @@ final class HarborModel: ObservableObject {
         cleanupReady = []; switching = false
     }
     func enqueue(_ assets: [PHAsset], force: Bool = false, feedback: Bool = true, policy: BackupSettings? = nil, origin: BackupOrigin = .manual, batchID: String? = nil) async {
-        guard initialized, !account.isEmpty, !storageFailed, !switching, let store else { notice = "请先连接 Google 账号。"; return }
-        guard !assets.isEmpty else { if feedback { notice = "当前范围没有可备份的照片或视频，请检查范围和相册权限。" }; return }
+        guard initialized, !account.isEmpty, !storageFailed, !switching, let store else { notice = L10n.text("请先连接 Google 账号。"); return }
+        guard !assets.isEmpty else { if feedback { notice = L10n.text("当前范围没有可备份的照片或视频，请检查范围和相册权限。") }; return }
         var snapshot = policy ?? settings
         snapshot.wifiOnly = settings.wifiOnly
         snapshot.strictLiveConfirmation = snapshot.strictLiveConfirmation ?? false
@@ -334,8 +343,8 @@ final class HarborModel: ObservableObject {
                 updateAssetStates(additions)
                 do { try await store.saveBatch(additions.map { ($0.id, $0) }, kind: "job") }
                 catch { fatalStorage(error); throw error }
-                if feedback { queueNoticeCount = additions.count; queueNoticeID = UUID(); notice = "已加入备份队列。" }
-            } else if feedback { notice = "这些项目已有备份任务或已经完成，请到活动中查看或重试。" }
+                if feedback { queueNoticeCount = additions.count; queueNoticeID = UUID(); notice = L10n.text("已加入备份队列。") }
+            } else if feedback { notice = L10n.text("这些项目已有备份任务或已经完成，请到活动中查看或重试。") }
             await pump()
         } catch { notice = error.localizedDescription }
     }
@@ -828,9 +837,9 @@ final class HarborModel: ObservableObject {
     }
     func pauseAll() async { for job in visibleJobs where job.state.active || job.state == .queued || job.state == .waiting { await pause(job.id) } }
     func resume(_ id: String, useCurrentConfirmationPolicy: Bool = false) async {
-        guard !updatingNetwork else { notice = "正在应用网络设置，请稍后继续任务。"; return }
+        guard !updatingNetwork else { notice = L10n.text("正在应用网络设置，请稍后继续任务。"); return }
         if workers.contains(id) {
-            if jobs.first(where: { $0.id == id })?.state != .paused { notice = "此任务正在处理，请等待本次检查结束。"; return }
+            if jobs.first(where: { $0.id == id })?.state != .paused { notice = L10n.text("此任务正在处理，请等待本次检查结束。"); return }
             while workers.contains(id) { try? await Task.sleep(for: .milliseconds(50)) }
         }
         guard !updatingNetwork, !switching else { return }
@@ -872,7 +881,7 @@ final class HarborModel: ObservableObject {
         await collectFinishedStaging()
     }
     func reprepare(_ id: String) async {
-        guard initialized, !storageFailed, !updatingNetwork, engine.ready, !engine.busy else { notice = "应用尚未就绪，请等待账号连接完成后重试。"; return }
+        guard initialized, !storageFailed, !updatingNetwork, engine.ready, !engine.busy else { notice = L10n.text("应用尚未就绪，请等待账号连接完成后重试。"); return }
         guard let job = jobs.first(where: { $0.id == id }), job.account == account,
               [.failed, .attention, .paused].contains(job.state), !cleanupDeleting, !cleanupAssetIDs.contains(job.assetID), !switching else { return }
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { notice = HarborError("PHOTO_PERMISSION").localizedDescription; return }
@@ -902,10 +911,10 @@ final class HarborModel: ObservableObject {
         Task { [weak self] in await self?.applyNetworkSettings(); await self?.pump() }
     }
     func verifyCleanup(ids: Set<String>? = nil) async {
-        guard !account.isEmpty else { notice = "请先在设置中连接 Google 账号。"; return }
-        guard initialized, !storageFailed, !switching, !cleanupRunning, !updatingNetwork else { notice = "请等待当前检查或设置更新结束。"; return }
+        guard !account.isEmpty else { notice = L10n.text("请先在设置中连接 Google 账号。"); return }
+        guard initialized, !storageFailed, !switching, !cleanupRunning, !updatingNetwork else { notice = L10n.text("请等待当前检查或设置更新结束。"); return }
         let candidates = ids.map { ids in CleanupCandidates.select(visibleJobs.filter { ids.contains($0.id) }, account: account) } ?? cleanupCandidates
-        guard !candidates.isEmpty else { notice = "当前账号还没有可检查的已完成备份。"; return }
+        guard !candidates.isEmpty else { notice = L10n.text("当前账号还没有可检查的已完成备份。"); return }
         let target = account, policy = settings, busy = busyCleanupAssets()
         cleanupRunning = true; cleanupCancelled = false; cleanupChecked = 0; cleanupTotal = candidates.count
         if ids == nil { cleanupReady = []; cleanupResults = [:]; cleanupOutcomes = [:] }
@@ -917,19 +926,19 @@ final class HarborModel: ObservableObject {
             for var job in candidates {
                 if cleanupCancelled { break }
                 defer { cleanupChecked += 1 }
-                if busy.contains(job.assetID) { cleanupResults[job.id] = "这张照片仍有备份任务，完成后可再次检查。"; cleanupOutcomes[job.id] = .deferred; continue }
+                if busy.contains(job.assetID) { cleanupResults[job.id] = L10n.text("这张照片仍有备份任务，完成后可再次检查。"); cleanupOutcomes[job.id] = .deferred; continue }
                 do {
                     job.evidence = try await checkCleanup(job, policy: policy)
                     try cleanupCheckpoint(policy, target: target)
                     try await persist(job)
-                    cleanupReady.append(job.id); cleanupResults[job.id] = "核验通过，可以清理"; cleanupOutcomes[job.id] = .eligible
+                    cleanupReady.append(job.id); cleanupResults[job.id] = L10n.text("核验通过，可以清理"); cleanupOutcomes[job.id] = .eligible
                 } catch {
                     cleanupResults[job.id] = error.localizedDescription
                     cleanupOutcomes[job.id] = .failure(error)
                     if cleanupCancelled || account != target || policy.cleanupPolicy != settings.cleanupPolicy { break }
                 }
             }
-            if cleanupCancelled { notice = "检查已停止，已通过的结果仍保留。" }
+            if cleanupCancelled { notice = L10n.text("检查已停止，已通过的结果仍保留。") }
         } catch {
             for job in candidates where cleanupResults[job.id] == nil { cleanupResults[job.id] = error.localizedDescription; cleanupOutcomes[job.id] = .failure(error) }
             if !cleanupCancelled { notice = error.localizedDescription }
@@ -1016,10 +1025,10 @@ final class HarborModel: ObservableObject {
                 if LiveCleanupPolicy.permits(job, settings: policy), job.evidence?.valid(job: job, settings: policy) == true,
                    let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject,
                    PhotoLibrary.stamp(asset) == job.assetRevision { final.append(job) }
-                else { cleanupResults[job.id] = "检查结果已过期或照片已变化，请重新检查。"; cleanupOutcomes[job.id] = .deferred; cleanupReady.removeAll { $0 == job.id } }
+                else { cleanupResults[job.id] = L10n.text("检查结果已过期或照片已变化，请重新检查。"); cleanupOutcomes[job.id] = .deferred; cleanupReady.removeAll { $0 == job.id } }
             }
             try cleanupCheckpoint(policy, target: target)
-            guard !final.isEmpty else { notice = "所选项目需要重新检查，原件已保留。"; return }
+            guard !final.isEmpty else { notice = L10n.text("所选项目需要重新检查，原件已保留。"); return }
             let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             guard authorization == .authorized || authorization == .limited else { throw HarborError("PHOTO_PERMISSION") }
             let identifiers = Set(final.map(\.assetID))
@@ -1030,12 +1039,12 @@ final class HarborModel: ObservableObject {
             let remaining = PHAsset.fetchAssets(withLocalIdentifiers: Array(identifiers), options: nil)
             var present = Set<String>(); remaining.enumerateObjects { asset, _, _ in present.insert(asset.localIdentifier) }
             for job in final {
-                cleanupResults[job.id] = present.contains(job.assetID) ? "系统保留了这项照片" : "系统已完成删除请求"
+                cleanupResults[job.id] = present.contains(job.assetID) ? L10n.text("系统保留了这项照片") : L10n.text("系统已完成删除请求")
                 cleanupOutcomes[job.id] = present.contains(job.assetID) ? .deferred : .removed
                 cleanupReady.removeAll { $0 == job.id }
             }
-            notice = "清理请求已完成，请查看结果。"; await library.refresh()
-        } catch { notice = "删除未完成：\(error.localizedDescription) 请检查系统相册；备份记录会保留。" }
+            notice = L10n.text("清理请求已完成，请查看结果。"); await library.refresh()
+        } catch { notice = L10n.text("删除未完成：{0} 请检查系统相册；备份记录会保留。", [String(describing: error.localizedDescription)]) }
     }
 
     var diagnostics: String {

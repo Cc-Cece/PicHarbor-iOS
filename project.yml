@@ -10,6 +10,7 @@
 name: PicHarbor
 
 options:
+  developmentLanguage: zh-Hans
   bundleIdPrefix: com.cccece
   deploymentTarget:
     iOS: "17.0"
@@ -28,8 +29,8 @@ settings:
     CODE_SIGNING_REQUIRED: "NO"
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGN_IDENTITY: ""
-    MARKETING_VERSION: "0.2.8"
-    CURRENT_PROJECT_VERSION: "10"
+    MARKETING_VERSION: "0.2.9"
+    CURRENT_PROJECT_VERSION: "11"
 
 targets:
   PicHarbor:

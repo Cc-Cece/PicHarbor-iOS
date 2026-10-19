@@ -6,6 +6,7 @@ import AVKit
 private struct AssetSelection: Identifiable { var asset: PHAsset; var id: String { asset.localIdentifier } }
 
 struct LibraryView: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     @State private var selecting = false
     @State private var selected = Set<String>()
@@ -25,17 +26,17 @@ struct LibraryView: View {
         VStack(spacing: 0) {
             if model.library.status == .authorized || model.library.status == .limited {
                 if model.library.status == .limited {
-                    HStack { Label("仅显示已授权内容", systemImage: "lock"); Spacer(); Button("管理") { model.library.manageLimited() } }.font(.caption).padding().background(Color(uiColor: .secondarySystemGroupedBackground))
+                    HStack { Label(L10n.text("仅显示已授权内容"), systemImage: "lock"); Spacer(); Button(L10n.text("管理")) { model.library.manageLimited() } }.font(.caption).padding().background(Color(uiColor: .secondarySystemGroupedBackground))
                 }
                 HStack {
                     Menu {
-                        Button("全部可访问项目") { album = "" }
+                        Button(L10n.text("全部可访问项目")) { album = "" }
                         ForEach(model.library.albums) { group in Button("\(group.title) · \(group.count)") { album = group.id } }
-                    } label: { Label(model.library.albums.first(where: { $0.id == album })?.title ?? "最近项目", systemImage: "chevron.down").font(.subheadline.bold()) }
+                    } label: { Label(model.library.albums.first(where: { $0.id == album })?.title ?? L10n.text("最近项目"), systemImage: "chevron.down").font(.subheadline.bold()) }
                     Spacer()
-                    Text("\(assets.count.formatted()) 项").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.text("{0} 项", [String(describing: assets.count.formatted())])).font(.caption).foregroundStyle(.secondary)
                 }.padding(.horizontal).padding(.vertical, 10)
-                if assets.isEmpty { ContentUnavailableView("没有可显示的项目", systemImage: "photo", description: Text("调整筛选条件或相册访问权限。")) }
+                if assets.isEmpty { ContentUnavailableView(L10n.text("没有可显示的项目"), systemImage: "photo", description: Text(L10n.text("调整筛选条件或相册访问权限。"))) }
                 else {
                     PhotoGrid(assets: assets, manager: model.library.images, selecting: selecting, selected: selected, states: model.assetStates, account: model.account) { asset in
                         if selecting {
@@ -45,36 +46,36 @@ struct LibraryView: View {
                 }
                 if selecting {
                     HStack {
-                        Text("已选择 \(selected.count) 项").font(.subheadline)
+                        Text(L10n.text("已选择 {0} 项", [String(describing: selected.count)])).font(.subheadline)
                         Spacer()
-                        Button("备份", systemImage: "icloud.and.arrow.up") { confirm = true }.buttonStyle(.borderedProminent).disabled(selected.isEmpty || model.account.isEmpty)
+                        Button(L10n.text("备份"), systemImage: "icloud.and.arrow.up") { confirm = true }.buttonStyle(.borderedProminent).disabled(selected.isEmpty || model.account.isEmpty)
                     }.padding().background(.bar)
                 }
             } else {
                 ContentUnavailableView {
-                    Label("你的照片，尽在这里", systemImage: "photo.on.rectangle.angled")
+                    Label(L10n.text("你的照片，尽在这里"), systemImage: "photo.on.rectangle.angled")
                 } description: {
-                    Text("允许访问后，直接浏览并备份照片、视频与 Live Photo。也可以仅授权部分内容。")
+                    Text(L10n.text("允许访问后，直接浏览并备份照片、视频与 Live Photo。也可以仅授权部分内容。"))
                 } actions: {
-                    Button("允许访问相册") { Task { await model.library.authorize() } }.buttonStyle(.borderedProminent)
+                    Button(L10n.text("允许访问相册")) { Task { await model.library.authorize() } }.buttonStyle(.borderedProminent)
                     if model.library.status == .denied || model.library.status == .restricted {
-                        Button("打开系统设置") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
+                        Button(L10n.text("打开系统设置")) { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
                     }
                 }
             }
         }
-        .navigationTitle("照片")
+        .navigationTitle(L10n.text("照片"))
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Menu { Picker("媒体类型", selection: $filter) { Text("全部").tag("all"); Text("照片").tag("photo"); Text("视频").tag("video"); Text("Live Photo").tag("live") } } label: { Image(systemName: "line.3.horizontal.decrease.circle") }.accessibilityLabel("筛选照片")
+                Menu { Picker(L10n.text("媒体类型"), selection: $filter) { Text(L10n.text("全部")).tag("all"); Text(L10n.text("照片")).tag("photo"); Text(L10n.text("视频")).tag("video"); Text("Live Photo").tag("live") } } label: { Image(systemName: "line.3.horizontal.decrease.circle") }.accessibilityLabel(L10n.text("筛选照片"))
             }
-            ToolbarItem(placement: .topBarTrailing) { Button(selecting ? "完成" : "选择") { selecting.toggle(); if !selecting { selected = [] } } }
-            if selecting { ToolbarItem(placement: .bottomBar) { Button("选择当前范围全部") { selected = Set(assets.map(\.localIdentifier)) } } }
+            ToolbarItem(placement: .topBarTrailing) { Button(selecting ? L10n.text("完成") : L10n.text("选择")) { selecting.toggle(); if !selecting { selected = [] } } }
+            if selecting { ToolbarItem(placement: .bottomBar) { Button(L10n.text("选择当前范围全部")) { selected = Set(assets.map(\.localIdentifier)) } } }
         }
         .sheet(item: $detail) { item in NavigationStack { AssetDetailView(asset: item.asset) }.environmentObject(model) }
-        .confirmationDialog("备份已选项目", isPresented: $confirm, titleVisibility: .visible) {
-            Button("开始备份 \(selected.count) 项") { Task {
+        .confirmationDialog(L10n.text("备份已选项目"), isPresented: $confirm, titleVisibility: .visible) {
+            Button(L10n.text("开始备份 {0} 项", [String(describing: selected.count)])) { Task {
                 await model.enqueue(model.library.assets.filter { selected.contains($0.localIdentifier) }); selecting = false; selected = []
             } }
         } message: { Text("\(model.settings.quality.title) · \(model.settings.live.title)\n\(model.settings.edits.title)") }
@@ -82,6 +83,7 @@ struct LibraryView: View {
 }
 
 private struct PhotoGrid: UIViewRepresentable {
+    let languageCode = L10n.language.rawValue
     var assets: [PHAsset]
     let manager: PHCachingImageManager
     var selecting: Bool
@@ -101,7 +103,7 @@ private struct PhotoGrid: UIViewRepresentable {
     func updateUIView(_ grid: UICollectionView, context: Context) {
         let previous = context.coordinator.parent
         context.coordinator.parent = self
-        if previous.assets.map({ $0.localIdentifier + PhotoLibrary.stamp($0) }) != assets.map({ $0.localIdentifier + PhotoLibrary.stamp($0) }) { grid.reloadData() }
+        if previous.languageCode != languageCode || previous.assets.map({ $0.localIdentifier + PhotoLibrary.stamp($0) }) != assets.map({ $0.localIdentifier + PhotoLibrary.stamp($0) }) { grid.reloadData() }
         else {
             for path in grid.indexPathsForVisibleItems {
                 guard path.item < assets.count, let cell = grid.cellForItem(at: path) as? PhotoCell else { continue }
@@ -175,7 +177,7 @@ private final class PhotoCell: UICollectionViewCell {
         if let request { self.manager?.cancelImageRequest(request) }
         self.manager = manager; representedID = asset.localIdentifier
         subtitle.text = asset.mediaType == .video ? String(format: "%d:%02d", Int(asset.duration) / 60, Int(asset.duration) % 60) : asset.mediaSubtypes.contains(.photoLive) ? "◉ LIVE" : ""
-        accessibilityLabel = "\(asset.mediaType == .video ? "视频" : asset.mediaSubtypes.contains(.photoLive) ? "Live Photo" : "照片")，\(asset.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? "")"
+        accessibilityLabel = "\(asset.mediaType == .video ? "视频" : asset.mediaSubtypes.contains(.photoLive) ? "Live Photo" : "照片")，\(asset.creationDate.map { L10n.date($0, time: .short) } ?? "")"
         let options = PHImageRequestOptions(); options.deliveryMode = .opportunistic; options.resizeMode = .fast; options.isNetworkAccessAllowed = false
         request = manager.requestImage(for: asset, targetSize: CGSize(width: 360, height: 360), contentMode: .aspectFill, options: options) { [weak self] image, _ in
             DispatchQueue.main.async { if self?.representedID == asset.localIdentifier { self?.image.image = image } }
@@ -184,6 +186,7 @@ private final class PhotoCell: UICollectionViewCell {
 }
 
 struct AssetDetailView: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     @Environment(\.dismiss) private var dismiss
     let asset: PHAsset
@@ -201,17 +204,17 @@ struct AssetDetailView: View {
                 else if let live { LivePreview(photo: live) }
                 else if let image { Image(uiImage: image).resizable().scaledToFit() }
                 if loading { ProgressView().tint(.white) }
-                if previewError { Text("预览暂不可用，原件可能需要从 iCloud 下载。").foregroundStyle(.white).padding() }
+                if previewError { Text(L10n.text("预览暂不可用，原件可能需要从 iCloud 下载。")).foregroundStyle(.white).padding() }
             }
             VStack(alignment: .leading, spacing: 12) {
-                Text(asset.creationDate?.formatted(date: .long, time: .shortened) ?? "照片详情").font(.headline)
+                Text(asset.creationDate.map { L10n.date($0, date: .long, time: .short) } ?? L10n.text("照片详情")).font(.headline)
                 Text("\(asset.pixelWidth) × \(asset.pixelHeight)\(asset.mediaSubtypes.contains(.photoLive) ? " · Live Photo" : "")").font(.subheadline).foregroundStyle(.secondary)
-                Button { Task { await model.enqueue([asset]) } } label: { Label("备份此项目", systemImage: "icloud.and.arrow.up").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).disabled(model.account.isEmpty)
+                Button { Task { await model.enqueue([asset]) } } label: { Label(L10n.text("备份此项目"), systemImage: "icloud.and.arrow.up").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).disabled(model.account.isEmpty)
                 if let job = model.visibleJobs.first(where: { $0.assetID == asset.localIdentifier }) { NavigationLink { JobDetailView(id: job.id) } label: { Label(job.displayStatus, systemImage: "clock") } }
             }.padding()
         }
-        .navigationTitle("照片详情").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+        .navigationTitle(L10n.text("照片详情")).navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { dismiss() } } }
         .onAppear { load() }.onDisappear {
             player?.pause()
             if let request = previewRequest { model.library.images.cancelImageRequest(request) }

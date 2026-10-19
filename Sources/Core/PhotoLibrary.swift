@@ -54,7 +54,7 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in values.append(asset) }
             var groups: [LibraryAlbum] = []
             PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil).enumerateObjects { collection, _, _ in
-                groups.append(LibraryAlbum(id: collection.localIdentifier, title: collection.localizedTitle ?? "相簿", count: PHAsset.fetchAssets(in: collection, options: nil).count))
+                groups.append(LibraryAlbum(id: collection.localIdentifier, title: collection.localizedTitle ?? L10n.text("相簿"), count: PHAsset.fetchAssets(in: collection, options: nil).count))
             }
             return (values, groups.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending })
         }.value

@@ -29,7 +29,7 @@ struct PhotoKitExportProbe: ViewModifier {
         guard enabled, result.isEmpty,
               model.library.status == .authorized || model.library.status == .limited,
               let asset = model.library.assets.first(where: { $0.mediaType == .image }) else { return }
-        result = "正在校验资源导出"
+        result = L10n.text("正在校验资源导出")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
@@ -40,8 +40,8 @@ struct PhotoKitExportProbe: ViewModifier {
                 let digest = try ResourceExporter.hash(URL(fileURLWithPath: resource.path))
                 guard digest.1 == resource.sha256 && digest.2 == resource.size else { throw HarborError("SOURCE_CHANGED") }
             }
-            result = "相册资源导出与读取校验通过"
-        } catch { result = "资源校验失败：\((error as? HarborError)?.code ?? "FILE_ACCESS")" }
+            result = L10n.text("相册资源导出与读取校验通过")
+        } catch { result = L10n.text("资源校验失败：{0}", [String(describing: (error as? HarborError)?.code ?? "FILE_ACCESS")]) }
     }
     #endif
 }

@@ -3,6 +3,7 @@ import Photos
 
 /// One read-only image entry point for task, batch and cleanup lists.
 struct AssetThumbnail: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     let assetID: String
     @State private var image: UIImage?
@@ -19,7 +20,7 @@ struct AssetThumbnail: View {
                 }.frame(width: 60, height: 60).clipped()
                 if let type { Image(systemName: type).font(.caption).padding(4).foregroundStyle(.white).background(.black.opacity(0.5)) }
             }.frame(width: 60, height: 60).background(Color(uiColor: .secondarySystemBackground)).clipShape(RoundedRectangle(cornerRadius: 10))
-        }.buttonStyle(.borderless).accessibilityLabel("查看照片详情").accessibilityIdentifier("photo.preview.\(assetID)")
+        }.buttonStyle(.borderless).accessibilityLabel(L10n.text("查看照片详情")).accessibilityIdentifier("photo.preview.\(assetID)")
         .task(id: "\(assetID):\(model.library.revision)") {
             cancel(); image = nil; type = nil
             let identifier = generation
@@ -40,6 +41,7 @@ struct AssetThumbnail: View {
 }
 
 struct AssetPreviewDestination: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @Environment(\.dismiss) private var dismiss
     let assetID: String
     private var asset: PHAsset? {
@@ -50,9 +52,9 @@ struct AssetPreviewDestination: View {
     var body: some View {
         if let asset { AssetDetailView(asset: asset) }
         else {
-            ContentUnavailableView("无法查看照片", systemImage: "photo", description: Text("照片可能已从本机删除，或尚未允许访问。"))
-                .navigationTitle("照片详情").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+            ContentUnavailableView(L10n.text("无法查看照片"), systemImage: "photo", description: Text(L10n.text("照片可能已从本机删除，或尚未允许访问。")))
+                .navigationTitle(L10n.text("照片详情")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { dismiss() } } }
         }
     }
 }

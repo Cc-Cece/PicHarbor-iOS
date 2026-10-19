@@ -9,6 +9,52 @@ import SwiftUI
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    private var previousLanguage: String?
+    override func setUp() {
+        super.setUp()
+        previousLanguage = UserDefaults.standard.string(forKey: "picharbor.language")
+        UserDefaults.standard.set("zh-Hans", forKey: "picharbor.language")
+    }
+    override func tearDown() {
+        if let previousLanguage { UserDefaults.standard.set(previousLanguage, forKey: "picharbor.language") }
+        else { UserDefaults.standard.removeObject(forKey: "picharbor.language") }
+        super.tearDown()
+    }
+    func testLanguageResolutionAndPackagedTranslations() {
+        XCTAssertEqual(AppLanguage.resolved("system", preferred: ["en-GB"]), .english)
+        XCTAssertEqual(AppLanguage.resolved("system", preferred: ["zh-Hans-CN"]), .simplified)
+        XCTAssertEqual(AppLanguage.resolved("system", preferred: ["zh-HK"]), .cantonese)
+        XCTAssertEqual(AppLanguage.resolved("system", preferred: ["yue-Hant-HK"]), .cantonese)
+        XCTAssertEqual(AppLanguage.resolved("en", preferred: ["zh-Hans"]), .english)
+        XCTAssertEqual(L10n.text("备份偏好", language: .english), "Backup preferences")
+        XCTAssertEqual(L10n.text("照片", language: .cantonese), "相片")
+        XCTAssertEqual(L10n.text("已选择 {0} 项", ["{1}.HEIC"], language: .english), "Selected: {1}.HEIC")
+        XCTAssertEqual(L10n.message("Backup preferences"), "备份偏好")
+    }
+    func testDatesUseSelectedLanguageRatherThanBundleEnglishFallback() {
+        let value = Date(timeIntervalSince1970: 1792368000)
+        let chinese = L10n.date(value, date: .long, locale: Locale(identifier: "zh_Hans_CN"))
+        let english = L10n.date(value, date: .long, locale: Locale(identifier: "en_US"))
+        let hongKong = L10n.date(value, date: .long, locale: Locale(identifier: "zh_Hant_HK"))
+        XCTAssertTrue(chinese.contains("月")); XCTAssertFalse(chinese.contains("October"))
+        XCTAssertTrue(hongKong.contains("月")); XCTAssertTrue(english.contains("October"))
+    }
+    func testRestoringDefaultsPreservesAppearanceAndExistingTaskPolicy() throws {
+        var old = BackupSettings(); old.live = .motion; old.quality = .saver; old.edits = .current
+        old.automatic = true; old.scopeConfirmed = true; old.selectedAlbums = ["album"]
+        old.wifiOnly = false; old.syncAlbums = true; old.strictLiveConfirmation = true
+        old.cloudState = false; old.originalAccess = false; old.allowUnverifiedLiveCleanup = true; old.appearance = "dark"
+        let job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: old)
+        let defaults = old.restoringDefaults()
+        XCTAssertEqual(defaults.live, .applePair); XCTAssertEqual(defaults.quality, .original); XCTAssertEqual(defaults.edits, .both)
+        XCTAssertFalse(defaults.automatic); XCTAssertNil(defaults.scopeConfirmed); XCTAssertTrue(defaults.selectedAlbums.isEmpty)
+        XCTAssertTrue(defaults.wifiOnly); XCTAssertFalse(defaults.syncAlbums)
+        XCTAssertFalse(defaults.requiresStrictConfirmation); XCTAssertFalse(defaults.allowsUnverifiedLiveCleanup)
+        XCTAssertTrue(defaults.cloudState); XCTAssertTrue(defaults.originalAccess); XCTAssertEqual(defaults.appearance, "dark")
+        let upgraded = try JSONDecoder().decode(BackupJob.self, from: JSONEncoder().encode(job))
+        XCTAssertEqual(upgraded.settings.live, .motion); XCTAssertEqual(upgraded.settings.quality, .saver)
+        XCTAssertEqual(upgraded.dedupKey, job.dedupKey)
+    }
     func testLiveCleanupConsentMigratesOffAndInvalidatesEvidence() throws {
         var settings = BackupSettings()
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
@@ -461,7 +507,7 @@ final class BackupCoreTests: XCTestCase {
     func testDefaultSettingsAndVersionedMediaIdentity() {
         var settings = BackupSettings()
         XCTAssertEqual(settings.quality, .original)
-        XCTAssertEqual(settings.live, .motion)
+        XCTAssertEqual(settings.live, .applePair)
         XCTAssertEqual(settings.edits, .both)
         XCTAssertFalse(settings.automatic)
         let media = settings.mediaPolicy

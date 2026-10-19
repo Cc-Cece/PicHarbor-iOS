@@ -1,0 +1,50 @@
+"""Build checked-in Apple strings tables from reviewed translations.
+
+Only generation needs opencc-python-reimplemented==0.1.7. It is not shipped or
+used by the app. Hong Kong terminology and Cantonese prompts override conversion.
+"""
+import json
+from pathlib import Path
+import re
+from opencc import OpenCC
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def pairs(path):
+    values = {}
+    for line in path.read_text(encoding='utf-8').splitlines():
+        if not line or line.startswith('#'): continue
+        key, value = line.split('|', 1)
+        if key in values: raise ValueError('Duplicate key: ' + key)
+        values[key] = value
+    return values
+
+def decode(value):
+    return value.replace('\\n', '\n').replace('\\"', '"')
+
+def build():
+    english = pairs(ROOT / 'Localization/english.tsv')
+    overrides = pairs(ROOT / 'Localization/hong-kong-overrides.tsv')
+    converter = OpenCC('s2hk')
+    hong_kong = {}
+    for key, value in english.items():
+        if re.search('[\u3400-\u9fff]', value): raise ValueError('Untranslated English: ' + key)
+        translated = converter.convert(key)
+        for old, new in [('照片', '相片'), ('視頻', '影片'), ('文件', '檔案'), ('原件', '原檔'), ('設置', '設定'), ('賬號', '帳戶'), ('帳號', '帳戶'), ('上傳', '上載'), ('默認', '預設'), ('蜂窩', '流動數據'), ('後台', '背景'), ('谷歌相冊', 'Google 相簿'), ('Google 相冊', 'Google 相簿'), ('任務', '工作'), ('核驗', '驗證')]:
+            translated = translated.replace(old, new)
+        hong_kong[key] = overrides.get(key, translated)
+    tables = {'zh-Hans': {key: key for key in english}, 'en': english, 'zh-Hant-HK': hong_kong, 'yue-Hant-HK': hong_kong}
+    (ROOT / 'Resources/MessageKeys.json').write_text(json.dumps([decode(key) for key in english], ensure_ascii=False), encoding='utf-8')
+    for language, values in tables.items():
+        folder = ROOT / 'Resources' / (language + '.lproj'); folder.mkdir(exist_ok=True)
+        output = []
+        for key, value in sorted(values.items()):
+            if sorted(re.findall(r'\{\d+\}', key)) != sorted(re.findall(r'\{\d+\}', value)):
+                raise ValueError('Placeholder mismatch: ' + key)
+            output.append(json.dumps(decode(key), ensure_ascii=False) + ' = ' + json.dumps(decode(value), ensure_ascii=False) + ';')
+        (folder / 'Localizable.strings').write_text('\n'.join(output) + '\n', encoding='utf-8')
+        privacy = {'zh-Hans': '浏览并备份你允许访问的照片与视频；仅在你确认后删除检查通过的本机照片。', 'en': 'Browse and back up photos and videos you allow. Remove verified local photos only after your confirmation.', 'zh-Hant-HK': '瀏覽同備份你允許取用嘅相片同影片；只會喺你確認後刪除通過檢查嘅手機相片。', 'yue-Hant-HK': '瀏覽同備份你允許取用嘅相片同影片；只會喺你確認後刪除通過檢查嘅手機相片。'}
+        (folder / 'InfoPlist.strings').write_text('"NSPhotoLibraryUsageDescription" = ' + json.dumps(privacy[language], ensure_ascii=False) + ';\n', encoding='utf-8')
+    print('Built', len(english), 'strings for', ', '.join(tables))
+
+if __name__ == '__main__': build()

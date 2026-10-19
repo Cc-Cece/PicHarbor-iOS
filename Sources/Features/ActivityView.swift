@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ActivityView: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     @AppStorage("activity.source.v2") private var sourceRaw = "all"
     @AppStorage("activity.status.v2") private var statusRaw = "all"
@@ -11,14 +12,14 @@ struct ActivityView: View {
     var body: some View {
         List {
             Section {
-                Picker("备份来源", selection: $sourceRaw) {
+                Picker(L10n.text("备份来源"), selection: $sourceRaw) {
                     ForEach(ActivitySource.allCases) { Text($0.title).tag($0.rawValue) }
                 }.pickerStyle(.segmented).accessibilityIdentifier("activity.source")
-                Picker("任务状态", selection: $statusRaw) {
+                Picker(L10n.text("任务状态"), selection: $statusRaw) {
                     ForEach(ActivityStatus.allCases) { Text($0.title).tag($0.rawValue) }
                 }.pickerStyle(.segmented).accessibilityIdentifier("activity.status")
             }
-            if batches.isEmpty { ContentUnavailableView("暂无符合条件的任务", systemImage: "clock", description: Text("调整来源或状态筛选，查看其他备份活动。")) }
+            if batches.isEmpty { ContentUnavailableView(L10n.text("暂无符合条件的任务"), systemImage: "clock", description: Text(L10n.text("调整来源或状态筛选，查看其他备份活动。"))) }
             ForEach(batches) { batch in
                 if batch.isBatch {
                     HStack {
@@ -28,29 +29,31 @@ struct ActivityView: View {
                 } else if let job = batch.matching.first { ActivityTaskRow(job: job) }
             }
             if source == .all && status == .all && !model.engine.records.isEmpty {
-                Section { NavigationLink("历史备份记录") { LegacyBackupRecordsView() } }
+                Section { NavigationLink(L10n.text("历史备份记录")) { LegacyBackupRecordsView() } }
             }
-        }.navigationTitle("活动")
+        }.navigationTitle(L10n.text("活动"))
         .toolbar { ToolbarItem(placement: .topBarTrailing) { ActivityActionsMenu(jobs: filtered) } }
     }
 }
 
 struct ActivityBatchCard: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     let batch: ActivityBatch
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: "square.stack.3d.up.fill").font(.title2).foregroundStyle(.blue).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 Text(batch.title).font(.headline)
-                Text(batch.created, format: .dateTime.month().day().hour().minute()).font(.caption).foregroundStyle(.secondary)
-                Text("\(batch.allJobs.count) 项 · 已完成 \(batch.allJobs.filter { $0.state == .completed }.count) 项").font(.caption).foregroundStyle(.secondary)
-                if batch.matching.count != batch.allJobs.count { Text("当前筛选 \(batch.matching.count) 项").font(.caption2).foregroundStyle(.secondary) }
+                Text(L10n.date(batch.created, time: .short)).font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("{0} 项 · 已完成 {1} 项", [String(describing: batch.allJobs.count), String(describing: batch.allJobs.filter { $0.state == .completed }.count)])).font(.caption).foregroundStyle(.secondary)
+                if batch.matching.count != batch.allJobs.count { Text(L10n.text("当前筛选 {0} 项", [String(describing: batch.matching.count)])).font(.caption2).foregroundStyle(.secondary) }
             }
         }.padding(.vertical, 6)
     }
 }
 
 struct ActivityBatchView: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     let id: String
     let source: ActivitySource
@@ -60,14 +63,15 @@ struct ActivityBatchView: View {
         List {
             if let batch {
                 Section { HStack { if let job = batch.matching.first { AssetThumbnail(assetID: job.assetID) }; ActivityBatchCard(batch: batch) } }
-                Section("\(status.title) · \(batch.matching.count) 项") { ForEach(batch.matching) { ActivityTaskRow(job: $0) } }
-            } else { ContentUnavailableView("本批暂无符合筛选的任务", systemImage: "checkmark.circle", description: Text("返回活动页可查看其他状态。")) }
-        }.navigationTitle("备份批次").navigationBarTitleDisplayMode(.inline)
+                Section(L10n.text("{0} · {1} 项", [String(describing: status.title), String(describing: batch.matching.count)])) { ForEach(batch.matching) { ActivityTaskRow(job: $0) } }
+            } else { ContentUnavailableView(L10n.text("本批暂无符合筛选的任务"), systemImage: "checkmark.circle", description: Text(L10n.text("返回活动页可查看其他状态。"))) }
+        }.navigationTitle(L10n.text("备份批次")).navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { ActivityActionsMenu(jobs: batch?.matching ?? []) } }
     }
 }
 
 struct ActivityTaskRow: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     let job: BackupJob
     @State private var removing = false
@@ -77,39 +81,41 @@ struct ActivityTaskRow: View {
             NavigationLink { JobDetailView(id: job.id) } label: { JobRow(job: job) }
                 .accessibilityIdentifier("activity.task.\(job.id)")
         }
-            .swipeActions { if job.unfinished { Button("移除", role: .destructive) { removing = true } } }
-            .confirmationDialog("移除此任务？", isPresented: $removing, titleVisibility: .visible) {
-                Button("停止并移除任务", role: .destructive) { Task { await model.removeUnfinished([job.id]) } }
-            } message: { Text("停止并从活动中移除，保留本机及云端照片。同一版本仍可手动重新备份。") }
+            .swipeActions { if job.unfinished { Button(L10n.text("移除"), role: .destructive) { removing = true } } }
+            .confirmationDialog(L10n.text("移除此任务？"), isPresented: $removing, titleVisibility: .visible) {
+                Button(L10n.text("停止并移除任务"), role: .destructive) { Task { await model.removeUnfinished([job.id]) } }
+            } message: { Text(L10n.text("停止并从活动中移除，保留本机及云端照片。同一版本仍可手动重新备份。")) }
     }
 }
 
 struct ActivityActionsMenu: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     let jobs: [BackupJob]
     @State private var removal = Set<String>()
     @State private var removing = false
     var body: some View {
         Menu {
-            Button("暂停当前结果", systemImage: "pause") { let ids = jobs.filter { $0.state.active || [.queued, .waiting].contains($0.state) }.map(\.id); Task { for id in ids { await model.pause(id) } } }
-            Button("继续当前结果", systemImage: "play") { let ids = jobs.filter { [.paused, .failed, .attention].contains($0.state) }.map(\.id); Task { for id in ids { await model.resume(id) } } }
-            Button("移除当前结果中的未完成任务", systemImage: "trash", role: .destructive) {
+            Button(L10n.text("暂停当前结果"), systemImage: "pause") { let ids = jobs.filter { $0.state.active || [.queued, .waiting].contains($0.state) }.map(\.id); Task { for id in ids { await model.pause(id) } } }
+            Button(L10n.text("继续当前结果"), systemImage: "play") { let ids = jobs.filter { [.paused, .failed, .attention].contains($0.state) }.map(\.id); Task { for id in ids { await model.resume(id) } } }
+            Button(L10n.text("移除当前结果中的未完成任务"), systemImage: "trash", role: .destructive) {
                 removal = Set(jobs.filter(\.unfinished).map(\.id)); removing = true
             }.disabled(!jobs.contains(where: \.unfinished))
         } label: { Image(systemName: "ellipsis.circle") }.accessibilityIdentifier("activity.menu")
-        .confirmationDialog("移除 \(removal.count) 项未完成任务？", isPresented: $removing, titleVisibility: .visible) {
-            Button("停止并移除任务", role: .destructive) { let ids = removal; Task { await model.removeUnfinished(ids) } }
-        } message: { Text("仅处理当前筛选结果。本机及云端照片保留；自动备份不会重新加入已移除项目的同一版本，仍可手动重新备份。") }
+        .confirmationDialog(L10n.text("移除 {0} 项未完成任务？", [String(describing: removal.count)]), isPresented: $removing, titleVisibility: .visible) {
+            Button(L10n.text("停止并移除任务"), role: .destructive) { let ids = removal; Task { await model.removeUnfinished(ids) } }
+        } message: { Text(L10n.text("仅处理当前筛选结果。本机及云端照片保留；自动备份不会重新加入已移除项目的同一版本，仍可手动重新备份。")) }
     }
 }
 
 private struct LegacyBackupRecordsView: View {
+    @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
     var body: some View {
         List {
             Section { ForEach(model.engine.records) { record in
                 HStack { AssetThumbnail(assetID: ""); VStack(alignment: .leading, spacing: 5) { Text(record.name).lineLimit(1); Text(record.stateLabel).font(.caption).foregroundStyle(.secondary) } }
-            } } footer: { Text("历史记录未关联本机照片，不用于空间清理。") }
-        }.navigationTitle("历史备份记录")
+            } } footer: { Text(L10n.text("历史记录未关联本机照片，不用于空间清理。")) }
+        }.navigationTitle(L10n.text("历史备份记录"))
     }
 }

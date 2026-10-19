@@ -4,7 +4,7 @@ enum UploadQuality: String, Codable, CaseIterable, Identifiable {
     case original, quota, saver
     var id: String { rawValue }
     var title: String {
-        switch self { case .original: return "不计配额原画质"; case .quota: return "计配额原画质"; case .saver: return "节省空间" }
+        switch self { case .original: return L10n.text("不计配额原画质"); case .quota: return L10n.text("计配额原画质"); case .saver: return L10n.text("节省空间") }
     }
 }
 enum LiveStrategy: String, Codable, CaseIterable, Identifiable {
@@ -12,20 +12,20 @@ enum LiveStrategy: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .motion: return "动态照片封装"
-        case .applePair: return "原始照片配对"
-        case .appleReconcile: return "原始照片配对（分步上传）"
+        case .motion: return L10n.text("动态照片封装")
+        case .applePair: return L10n.text("原始照片配对")
+        case .appleReconcile: return L10n.text("原始照片配对（分步上传）")
         }
     }
 }
 enum EditPolicy: String, Codable, CaseIterable, Identifiable {
     case both, original, current
     var id: String { rawValue }
-    var title: String { self == .both ? "原始与编辑后均保留" : self == .original ? "仅原始版本" : "仅编辑后版本" }
+    var title: String { self == .both ? L10n.text("原始与编辑后均保留") : self == .original ? L10n.text("仅原始版本") : L10n.text("仅编辑后版本") }
 }
 struct BackupSettings: Codable, Equatable {
     var quality: UploadQuality = .original
-    var live: LiveStrategy = .motion
+    var live: LiveStrategy = .applePair
     var edits: EditPolicy = .both
     var automatic = false
     var scopeConfirmed: Bool?
@@ -42,23 +42,28 @@ struct BackupSettings: Codable, Equatable {
     var cleanupPolicy: String { "\(cloudState ? 1 : 0)\(originalAccess ? 1 : 0):live\(allowsUnverifiedLiveCleanup ? 1 : 0)" }
     // Scheduling/network/cleanup preferences do not change the encoded media identity.
     var mediaPolicy: String { "\(quality.rawValue):\(live.rawValue):\(edits.rawValue):mux1" }
+    func restoringDefaults() -> BackupSettings {
+        var value = BackupSettings()
+        value.appearance = appearance
+        return value
+    }
 }
 enum JobState: String, Codable {
     case queued, preparing, transferring, committing, confirming, paired, completed, paused, waiting, failed, attention, cancelled
     var title: String {
         switch self {
-        case .queued: return "等待备份"
-        case .preparing: return "准备照片"
-        case .transferring: return "上传中"
-        case .committing: return "确认保存"
-        case .confirming: return "确认保存"
-        case .paired: return "即将完成 · 配对已确认"
-        case .completed: return "已备份"
-        case .paused: return "已暂停"
-        case .waiting: return "等待条件"
-        case .failed: return "可重试"
-        case .attention: return "需要处理"
-        case .cancelled: return "已取消"
+        case .queued: return L10n.text("等待备份")
+        case .preparing: return L10n.text("准备照片")
+        case .transferring: return L10n.text("上传中")
+        case .committing: return L10n.text("确认保存")
+        case .confirming: return L10n.text("确认保存")
+        case .paired: return L10n.text("即将完成 · 配对已确认")
+        case .completed: return L10n.text("已备份")
+        case .paused: return L10n.text("已暂停")
+        case .waiting: return L10n.text("等待条件")
+        case .failed: return L10n.text("可重试")
+        case .attention: return L10n.text("需要处理")
+        case .cancelled: return L10n.text("已取消")
         }
     }
     var active: Bool { [.preparing, .transferring, .committing, .confirming, .paired].contains(self) }
@@ -66,7 +71,7 @@ enum JobState: String, Codable {
 enum TransferDisposition: Equatable { case run, pause, cancel }
 enum BackupOrigin: String, Codable, CaseIterable {
     case manual, automatic
-    var title: String { self == .manual ? "手动备份" : "自动备份" }
+    var title: String { self == .manual ? L10n.text("手动备份") : L10n.text("自动备份") }
 }
 struct AssetBackupState {
     var account: String
@@ -205,11 +210,11 @@ struct BackupJob: Codable, Identifiable {
     }
     var failureStageTitle: String? {
         guard let failureStage else { return nil }
-        return ["preparation": "准备暂存目录", "source_stability": "等待相册资源稳定", "export": "从相册导出资源", "motion_package": "封装动态照片",
-                "source_read": "读取暂存原件", "prepare_upload": "查重与申请上传", "transfer_creation": "创建后台传输",
-                "upload_response": "保存上传响应", "commit_response": "读取响应并提交云端", "confirmation": "确认云端内容",
-                "pair_export": "准备原始配对资源", "pair_lookup": "检查照片与视频关联", "pair_photo_commit": "提交配对用原图",
-                "pair_transfer": "传输原始配对资源", "pair_commit": "关联照片与视频", "pair_confirmation": "确认同一云端动态项目"][failureStage] ?? "其他处理步骤"
+        return ["preparation": L10n.text("准备暂存目录"), "source_stability": L10n.text("等待相册资源稳定"), "export": L10n.text("从相册导出资源"), "motion_package": L10n.text("封装动态照片"),
+                "source_read": L10n.text("读取暂存原件"), "prepare_upload": L10n.text("查重与申请上传"), "transfer_creation": L10n.text("创建后台传输"),
+                "upload_response": L10n.text("保存上传响应"), "commit_response": L10n.text("读取响应并提交云端"), "confirmation": L10n.text("确认云端内容"),
+                "pair_export": L10n.text("准备原始配对资源"), "pair_lookup": L10n.text("检查照片与视频关联"), "pair_photo_commit": L10n.text("提交配对用原图"),
+                "pair_transfer": L10n.text("传输原始配对资源"), "pair_commit": L10n.text("关联照片与视频"), "pair_confirmation": L10n.text("确认同一云端动态项目")][failureStage] ?? L10n.text("其他处理步骤")
     }
     mutating func recordFailure(_ code: String, stage: String, committingResourceID: String?) {
         error = code; failureStage = stage
