@@ -84,7 +84,7 @@ import PackageDescription
 let package = Package(name: "PicHarbor", platforms: [.macOS(.v14)], targets: [
     .target(name: "ProxyBridgeHarness", path: "Bridge", publicHeadersPath: "include",
             cSettings: [.unsafeFlags(["-fobjc-arc", "-F", FRAMEWORK])],
-            linkerSettings: [.unsafeFlags(["-F", FRAMEWORK, "-framework", "Clash", "-framework", "Foundation", "-framework", "Network", "-framework", "Security", "-framework", "SystemConfiguration", "-lresolv", "-ObjC"])]),
+            linkerSettings: [.unsafeFlags(["-F", FRAMEWORK, "-framework", "Clash", "-framework", "Foundation", "-framework", "Network", "-framework", "Security", "-framework", "SystemConfiguration", "-lresolv", "-Xlinker", "-ObjC"])]),
     .target(name: "PicHarbor", dependencies: ["ProxyBridgeHarness"], path: "Sources"),
     .testTarget(name: "ProxyTests", dependencies: ["PicHarbor", "ProxyBridgeHarness"], path: "Tests")
 ])
