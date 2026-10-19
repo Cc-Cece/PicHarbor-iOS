@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 @testable import PicHarbor
 
 final class ProxyRoutingTests: XCTestCase {
@@ -47,7 +48,16 @@ final class ProxyRoutingTests: XCTestCase {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("proxy-test-" + UUID().uuidString)
         let (json, _) = try ProxyConfiguration.runtime([node])
         XCTAssertTrue(ProxyCoreBridge.start(json, home: home.path))
-        ProxyCoreBridge.stop()
+        defer { ProxyCoreBridge.stop() }
+        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(descriptor, 0); defer { Darwin.close(descriptor) }
+        var address = sockaddr_in(); address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET); address.sin_port = UInt16(24500).bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let result = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        XCTAssertEqual(result, 0, "The core must expose the loopback listener, not merely report startup success")
     }
     func testTaskPolicyAndConnectionStateSurviveSerialization() throws {
         var job = BackupJob(account: "test@example.com", assetID: "asset", assetRevision: "revision", settings: BackupSettings())

@@ -19,6 +19,7 @@ final class HarborTransferTask {
         self.raw = raw; taskIdentifier = (port << 32) | raw.taskIdentifier
     }
     var taskDescription: String? { raw.taskDescription }
+    var originalRequest: URLRequest? { raw.originalRequest }
     var state: URLSessionTask.State { raw.state }
     func resume() { raw.resume() }
     func suspend() { raw.suspend() }

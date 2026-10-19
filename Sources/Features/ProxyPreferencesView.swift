@@ -25,7 +25,7 @@ struct ProxyPreferencesView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if !proxy.names.isEmpty {
-                Section(L10n.text("节点")) {
+                Section {
                     Picker(L10n.text("首选节点"), selection: $proxy.preferences.primary) {
                         ForEach(proxy.names, id: \.self) { Text($0).tag($0) }
                     }.disabled(!canChangeCore)
@@ -35,7 +35,7 @@ struct ProxyPreferencesView: View {
                             if selected && proxy.preferences.backups.count < 8 { proxy.preferences.backups.append(name) }
                         })).disabled(!canChangeCore)
                     }
-                } footer: { Text(L10n.text("勾选最多 8 个备用节点。只在允许切换的策略下使用，按勾选顺序尝试。")) }
+                } header: { Text(L10n.text("节点")) } footer: { Text(L10n.text("勾选最多 8 个备用节点。只在允许切换的策略下使用，按勾选顺序尝试。")) }
             }
             Section {
                 Picker(L10n.text("代理不可用时"), selection: $proxy.preferences.fallback) {
