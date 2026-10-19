@@ -206,6 +206,7 @@ struct JobDetailView: View {
                     LabeledContent("开始核验") { Text(started, style: .time) }
                     if let paired = job.pairedAt { LabeledContent("配对确认") { Text(paired, style: .time) } }
                     LabeledContent("核验次数", value: String(job.confirmationChecks ?? 0))
+                    if let checked = job.lastConfirmationAt { LabeledContent("最近核验") { Text(checked, style: .time) } }
                     if let seconds = job.lastConfirmationSeconds { LabeledContent("最近一次查询", value: String(format: "%.1f 秒", seconds)) }
                     if let retry = job.retryAt { LabeledContent("下次尝试") { Text(retry, style: .time) } }
                     if let completed = job.completedAt { LabeledContent("完成时间") { Text(completed, style: .time) } }

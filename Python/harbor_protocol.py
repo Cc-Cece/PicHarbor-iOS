@@ -150,6 +150,7 @@ class Protocol:
         # starts a full sync; never publish a partially applied delta.
         self.snapshot, self.snapshot_at, self.sync_token = {}, 0, ""
         for _ in range(10):
+            page_token = token  # Pagination belongs to the input sync context.
             response = self.api.get_library_state(token if ready else "")
             more = _get_nested(response, "1", "7") == 2
             seen = set()
@@ -182,7 +183,7 @@ class Protocol:
                 if resume in seen:
                     raise Failure("SYNC_CYCLE")
                 seen.add(resume)
-                response = self.api.get_library_page(resume, token) if ready else self.api.get_library_page_init(resume)
+                response = self.api.get_library_page(resume, page_token) if ready else self.api.get_library_page_init(resume)
             if not token:
                 raise Failure("SYNC_TOKEN_MISSING")
             if not more:

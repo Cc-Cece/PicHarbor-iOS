@@ -59,7 +59,7 @@ class ProtocolTests(unittest.TestCase):
         self.service.api.get_library_page = MagicMock(return_value={"1": {"6": "final", "2": {"1": "added", "2": {"11": 100}}}})
         p.synchronize()
         self.service.api.get_library_state.assert_called_once_with("before")
-        self.service.api.get_library_page.assert_called_once_with("resume", "next")
+        self.service.api.get_library_page.assert_called_once_with("resume", "before")
         self.assertEqual(set(p.snapshot), {"keep", "added"})
         self.assertEqual(p.sync_token, "final")
 

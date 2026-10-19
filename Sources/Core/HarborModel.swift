@@ -432,11 +432,6 @@ final class HarborModel: ObservableObject {
                     guard let finished = try await processApplePairs(job, directory: directory) else { return }
                     job = finished
                 }
-                if !initial.confirmationOnly {
-                    job.state = .paired; job.pairedAt = job.pairedAt ?? Date(); job.error = ""; job.retryAt = nil
-                    job.failureStage = "confirmation"; try await persist(job)
-                    return // Release the upload lane before querying library state.
-                }
             } else {
                 for index in job.resources.indices where !job.resources[index].confirmed {
                     try checkpoint(job)
@@ -499,6 +494,12 @@ final class HarborModel: ObservableObject {
                 }
             }
             try checkpoint(job)
+            if job.confirmationOnly && !initial.confirmationOnly {
+                job.state = job.hasConfirmedPairs ? .paired : .confirming
+                if job.hasConfirmedPairs { job.pairedAt = job.pairedAt ?? Date() }
+                job.error = ""; job.retryAt = nil; job.failureStage = "confirmation"; try await persist(job)
+                return // All Live strategies release the upload lane before library queries.
+            }
             if job.isLive {
                 stage = "confirmation"
                 job.beginConfirmation(); confirmationBegan = Date(); try await persist(job)
