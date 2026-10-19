@@ -58,6 +58,12 @@ struct ProxyNodeHealth: Equatable {
         coolingUntil = now.addingTimeInterval(min(120, 15 * pow(2, Double(failures - 1))))
     }
     func penalty(at now: Date) -> Int { now.timeIntervalSince(lastFailure ?? .distantPast) < 300 ? failures * 500 : 0 }
+    mutating func recordMeasurement(_ milliseconds: Int?, began: Date, now: Date) {
+        measuredAt = now; self.milliseconds = milliseconds
+        if milliseconds != nil {
+            if (lastFailure ?? .distantPast) <= began { succeed(at: now) }
+        } else if (lastSuccess ?? .distantPast) <= began { fail(at: now) }
+    }
 }
 enum ProxyNodeRanking {
     static func ordered(names: [String], health: [String: ProxyNodeHealth], preferred: String?, failures: [String], now: Date) -> [String] {

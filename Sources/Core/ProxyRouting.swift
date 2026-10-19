@@ -345,7 +345,7 @@ final class ProxyManager: ObservableObject {
             let healthy = health[name]?.healthy(at: Date()) == true
             let available = healthy ? true : await measureNode(name, port: port) != nil
             guard token == generation, preferences.enabled, !busy else { throw HarborError("PROXY_UNAVAILABLE") }
-            if available {
+            if (available || health[name]?.healthy(at: Date()) == true) && !(health[name]?.cooling(at: Date()) ?? false) {
                 currentNode = name; currentDirect = false
                 if policy.selection == .automatic && custom == nil && legacy == nil { automaticNode = name }
                 return (port, name)
@@ -381,9 +381,7 @@ final class ProxyManager: ObservableObject {
         guard generation == token else { return nil }
         probes.removeValue(forKey: name)
         var value = health[name] ?? ProxyNodeHealth()
-        value.measuredAt = Date(); value.milliseconds = milliseconds
-        if milliseconds != nil { value.succeed(at: Date()) }
-        else if (value.lastSuccess ?? .distantPast) <= began { value.fail(at: Date()) }
+        value.recordMeasurement(milliseconds, began: began, now: Date())
         health[name] = value
         return milliseconds
     }

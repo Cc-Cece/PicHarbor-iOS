@@ -33,6 +33,17 @@ final class ProxySelectionTests: XCTestCase {
         XCTAssertFalse(b.healthy(at: now.addingTimeInterval(301)))
         XCTAssertEqual(a.penalty(at: now.addingTimeInterval(302)), 0)
     }
+    func testOlderProbeCannotOverwriteNewerTransferEvidence() {
+        let began = Date()
+        var failed = ProxyNodeHealth()
+        failed.fail(at: began.addingTimeInterval(1))
+        failed.recordMeasurement(30, began: began, now: began.addingTimeInterval(2))
+        XCTAssertTrue(failed.cooling(at: began.addingTimeInterval(2)))
+        var succeeded = ProxyNodeHealth()
+        succeeded.succeed(at: began.addingTimeInterval(1))
+        succeeded.recordMeasurement(nil, began: began, now: began.addingTimeInterval(2))
+        XCTAssertTrue(succeeded.healthy(at: began.addingTimeInterval(2)))
+    }
     @MainActor func testAutomaticSweepIsBoundedAndFailoverUsesActualOutcomes() async throws {
         let suite = "ProxySelection." + UUID().uuidString, defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
