@@ -679,6 +679,7 @@
 "连接失败时" = "When Connection Fails";
 "连接已有凭据" = "Connect with existing credentials";
 "连接时自动选择" = "Selected When Connecting";
+"连接正常" = "Connection Healthy";
 "连接测试" = "Connection Test";
 "连接账号后显示该账号的历史记录。" = "Connect an account to see its history.";
 "连接账号，选择一张原始照片，验证上传与云端查重。上传期间请保持应用在前台。" = "Connect an account and select an original photo to test upload and deduplication. Keep the app open during upload.";

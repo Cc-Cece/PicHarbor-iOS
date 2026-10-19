@@ -750,3 +750,4 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 近期连接失败，稍后重试。|Connection recently failed. Retry shortly.
 连接时自动选择|Selected When Connecting
 重新测速：{0}|Retest: {0}
+连接正常|Connection Healthy
