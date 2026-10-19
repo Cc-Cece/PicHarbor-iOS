@@ -45,11 +45,13 @@ extension BackupJob {
     }
     var friendlyMessage: String {
         if error.isEmpty {
+            if state == .cancelled { return "任务已取消，本机及云端照片保留。" }
             if state == .paired { return "照片与视频已配对，正在等待严格核验。" }
             if state == .paused { return "任务已暂停，继续后会从已有进度推进。" }
             return state == .completed ? "已按本任务的检查策略完成备份。" : "可以离开此页面，进度会持续保存。"
         }
-        if error.hasPrefix("REMOTE_MOTION_") { return "云端仍在准备动态照片，稍后会自动检查。" }
+        if error == "REMOTE_MOTION_TRASHED" { return "云端项目已在回收站，请先到谷歌相册恢复。" }
+        if error.hasPrefix("REMOTE_MOTION_") { return "云端动态照片尚未通过严格核验，稍后会自动检查。" }
         if error == "PAIR_CONFIRMATION_PENDING" || error == "REMOTE_NOT_VISIBLE" { return "资源已发送，正在确认云端保存结果。" }
         return HarborError(error).localizedDescription
     }

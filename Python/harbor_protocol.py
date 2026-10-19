@@ -111,7 +111,7 @@ class Protocol:
             keys = value.get("keys", [])
             if not isinstance(keys, list) or not keys or not all(isinstance(key, str) and key for key in keys):
                 raise Failure("INVALID_REMOTE_KEYS")
-            if not 0 <= time.monotonic() - self.snapshot_at < 15:
+            if not (self.snapshot_at > 0 and 0 <= time.monotonic() - self.snapshot_at < 15):
                 self.synchronize()
             checks = []
             for key in keys:
@@ -131,7 +131,7 @@ class Protocol:
             if type(state) is not bool or type(access) is not bool:
                 raise Failure("INVALID_CHECK_POLICY")
             if state:
-                if not 0 <= time.monotonic() - self.snapshot_at < 300:
+                if not (self.snapshot_at > 0 and 0 <= time.monotonic() - self.snapshot_at < 300):
                     if value.get("refresh_if_stale") is True:
                         self.synchronize()
                     else:

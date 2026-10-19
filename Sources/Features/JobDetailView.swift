@@ -15,7 +15,7 @@ struct JobDetailView: View {
                 Section {
                     HStack(spacing: 16) { TaskThumbnail(assetID: job.assetID); JobRow(job: job) }
                     Text(job.settings.quality.title + (job.isLive ? " · " + job.settings.live.title : "")).font(.caption).foregroundStyle(.secondary)
-                    Text(job.verificationLevel == "strict" ? "严格核验通过" : job.verificationLevel == "standard" ? "标准核验通过" : job.settings.requiresStrictConfirmation ? "本任务使用严格核验" : "本任务使用标准核验").font(.caption).foregroundStyle(.secondary)
+                    Text(job.verificationLevel == "strict" ? "严格核验通过" : job.verificationLevel == "standard" ? "标准核验通过" : job.state == .completed ? "历史任务，未单独记录核验级别" : job.settings.requiresStrictConfirmation ? "本任务使用严格核验" : "本任务使用标准核验").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("备份流程") { TaskFlowView(job: job) }
                 Section(job.state == .failed || job.state == .attention ? "需要处理" : "当前状态") {

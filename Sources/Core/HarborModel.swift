@@ -177,7 +177,9 @@ final class HarborModel: ObservableObject {
             settingsGeneration[targetAccount] = generation
             try await store.save(AccountSettings(account: targetAccount, settings: snapshot, generation: generation), kind: "settings", id: targetAccount, revision: generation)
             if savedCleanupPolicy != snapshot.cleanupPolicy {
-                savedCleanupPolicy = snapshot.cleanupPolicy; cleanupReady = []
+                savedCleanupPolicy = snapshot.cleanupPolicy
+                for id in cleanupReady { cleanupResults[id] = "检查策略已变化，请重新检查。"; cleanupOutcomes[id] = .deferred }
+                cleanupReady = []
                 if cleanupRunning { cancelCleanupScan() }
             }
             await applyNetworkSettings()
@@ -847,6 +849,7 @@ final class HarborModel: ObservableObject {
         Set(jobs.filter { $0.account == account && (workers.contains($0.id) || $0.state.active || [.queued, .waiting].contains($0.state)) }.map(\.assetID))
     }
     private func cleanupCheckpoint(_ policy: BackupSettings, target: String) throws {
+        guard !storageFailed else { throw HarborError("DATABASE_ERROR") }
         guard !cleanupCancelled else { throw HarborError("CLEANUP_CANCELLED") }
         guard account == target, !target.isEmpty, !switching else { throw HarborError("ACCOUNT_CHANGED") }
         guard settings.cleanupPolicy == policy.cleanupPolicy else { throw HarborError("CLEANUP_POLICY_CHANGED") }
@@ -931,7 +934,7 @@ final class HarborModel: ObservableObject {
     }
     func deleteVerified(ids: [String]? = nil) async {
         let selected = Set(ids ?? cleanupReady)
-        guard !cleanupRunning, !switching, !updatingNetwork, !selected.isEmpty,
+        guard initialized, !storageFailed, !cleanupRunning, !switching, !updatingNetwork, !selected.isEmpty,
               selected.isSubset(of: Set(cleanupReady)) else { return }
         let target = account, policy = settings, busy = busyCleanupAssets()
         let requested = visibleJobs.filter { selected.contains($0.id) }

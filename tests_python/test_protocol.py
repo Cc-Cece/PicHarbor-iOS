@@ -20,7 +20,8 @@ class ProtocolTests(unittest.TestCase):
     def test_cleanup_refreshes_expired_evidence_only_when_requested(self):
         p = self.service.protocol
         self.service.api.lookups = ["saved", "saved"]
-        self.assertEqual(self.service.dispatch("check_cleanup", self.value)["reason"], "CLOUD_STATE_EXPIRED")
+        with patch("harbor_protocol.time.monotonic", return_value=100):
+            self.assertEqual(self.service.dispatch("check_cleanup", self.value)["reason"], "CLOUD_STATE_EXPIRED")
         def refresh():
             p.snapshot = {"saved": {"trash": 0, "status": 100, "original": True, "size": self.value["size"]}}
             p.snapshot_at = time.monotonic()
