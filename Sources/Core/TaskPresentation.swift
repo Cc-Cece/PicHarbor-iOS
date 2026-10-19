@@ -35,7 +35,7 @@ struct ActivityBatch: Identifiable {
 extension BackupJob {
     var flowSteps: [String] {
         if skippedExisting { return [L10n.text("准备照片"), L10n.text("检查是否已备份"), L10n.text("确认保存"), L10n.text("完成")] }
-        [isVideo ? L10n.text("准备视频") : L10n.text("准备照片"), L10n.text("检查是否已备份"), isVideo ? L10n.text("上传视频") : L10n.text("上传照片"), L10n.text("确认保存")] + (isLive && settings.requiresStrictConfirmation ? [L10n.text("等待云端处理")] : []) + [L10n.text("完成")]
+        return [isVideo ? L10n.text("准备视频") : L10n.text("准备照片"), L10n.text("检查是否已备份"), isVideo ? L10n.text("上传视频") : L10n.text("上传照片"), L10n.text("确认保存")] + (isLive && settings.requiresStrictConfirmation ? [L10n.text("等待云端处理")] : []) + [L10n.text("完成")]
     }
     var isVideo: Bool { !isLive && (mediaKind == "video" || (sources.isEmpty ? resources : sources).contains { $0.role.hasSuffix(".video") }) }
     var flowIndex: Int {

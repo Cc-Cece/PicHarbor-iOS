@@ -275,7 +275,9 @@ struct ActivityArchiveSettingsView: View {
         Form {
             Section {
                 Toggle(L10n.text("自动归档"), isOn: $prefs.enabled)
-                TextField(L10n.text("归档天数"), text: $days).keyboardType(.numberPad).focused($editingDays).accessibilityIdentifier("archive.days")
+                LabeledContent(L10n.text("归档天数")) {
+                    TextField(L10n.text("归档天数"), text: $days).keyboardType(.numberPad).focused($editingDays).multilineTextAlignment(.trailing).frame(width: 80).accessibilityIdentifier("archive.days")
+                }
                 Button(L10n.text("保存")) {
                     editingDays = false
                     invalid = !prefs.setDays(days)
