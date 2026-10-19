@@ -9,6 +9,7 @@ struct ProxyPreferencesView: View {
     @State private var subscription = ""
     @State private var working = false
     @State private var result = ""
+    @State private var subscriptionFeedback = false
     var canChangeCore: Bool { model.activeCount == 0 && !working && !proxy.busy }
     var body: some View {
         Form {
@@ -19,8 +20,12 @@ struct ProxyPreferencesView: View {
             }
             Section(L10n.text("配置")) {
                 Button(L10n.text("导入 Clash 配置文件")) { importer = true }.disabled(!canChangeCore)
-                SecureField(L10n.text("HTTPS 订阅链接"), text: $subscription).textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField(L10n.text("HTTP 或 HTTPS 订阅链接"), text: $subscription).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Button(L10n.text("读取订阅")) { fetchSubscription() }.disabled(!canChangeCore || subscription.isEmpty)
+                if subscriptionFeedback {
+                    if working { ProgressView() }
+                    if !result.isEmpty { Text(result).font(.footnote) }
+                }
                 Text(L10n.text("验证版支持包含 proxies 的 YAML，最多 64 个节点。暂不支持 proxy-providers、链式代理或规则导入。首次订阅下载需要网络可达，也可从文件导入。"))
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -44,15 +49,15 @@ struct ProxyPreferencesView: View {
             } header: { Text(L10n.text("全局兜底策略")) } footer: { Text(L10n.text("任务默认跟随全局，也可在任务详情单独设置。直连需要明确允许，失败后继续等待，不会标记完成。")) }
             Section(L10n.text("连接验证")) {
                 Button(L10n.text("测试当前连接")) {
-                    working = true; result = ""
+                    working = true; result = ""; subscriptionFeedback = false
                     Task {
                         defer { working = false }
-                        do { let route = try await proxy.route(); result = route.0 > 0 ? L10n.text("代理连接测试通过。") : L10n.text("当前策略使用直连。") }
+                        do { let (name, milliseconds) = try await proxy.testPrimaryLatency(); result = L10n.text("首选节点 {0}：{1} 毫秒", [name, String(milliseconds)]) }
                         catch { result = error.localizedDescription }
                     }
                 }.disabled(working || proxy.busy)
-                if working { ProgressView() }
-                if !result.isEmpty { Text(result).font(.footnote) }
+                if working && !subscriptionFeedback { ProgressView(L10n.text("正在处理，请稍候…")) }
+                if !result.isEmpty && !subscriptionFeedback { Text(result).font(.footnote) }
                 if !proxy.message.isEmpty { Text(proxy.message).font(.footnote) }
             }
             Section {
@@ -86,14 +91,19 @@ struct ProxyPreferencesView: View {
         }
     }
     private func fetchSubscription() {
-        guard let url = URL(string: subscription), url.scheme == "https", url.host != nil else { result = L10n.text("请输入有效的 HTTPS 订阅链接。"); return }
+        subscriptionFeedback = true
+        let address = subscription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: address), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let host = url.host, !host.isEmpty else { result = L10n.text("请输入有效的 HTTP 或 HTTPS 订阅链接。"); return }
         working = true
+        result = L10n.text("正在读取订阅…")
         Task {
             defer { working = false }
             do {
-                let route = try await proxy.route()
+                // Bootstrap a first subscription without requiring an existing proxy.
+                let route = proxy.preferences.enabled && !proxy.names.isEmpty ? try await proxy.route() : (-1, "")
                 let configuration = URLSessionConfiguration.ephemeral; ProxyManager.apply(port: route.0, to: configuration)
                 configuration.timeoutIntervalForRequest = 30
+                configuration.timeoutIntervalForResource = 45
                 let session = URLSession(configuration: configuration); defer { session.invalidateAndCancel() }
                 let (bytes, response) = try await session.bytes(from: url)
                 guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw HarborError("NETWORK_ERROR") }
@@ -102,7 +112,8 @@ struct ProxyPreferencesView: View {
                     guard data.count < 4 * 1024 * 1024 else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }; data.append(byte)
                 }
                 guard let text = String(data: data, encoding: .utf8) else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
-                try await proxy.importText(text); subscription = ""; result = ""
+                result = L10n.text("订阅已下载，正在导入…")
+                try await proxy.importText(text); subscription = ""; result = L10n.text("订阅已导入。")
             } catch { result = (error as? HarborError)?.localizedDescription ?? L10n.text("订阅读取失败，请检查网络或改用文件导入。") }
         }
     }

@@ -152,14 +152,26 @@ final class ProxyManager: ObservableObject {
         throw HarborError("PROXY_UNAVAILABLE")
     }
     func probe(port: Int) async -> Bool {
+        await latency(port: port) != nil
+    }
+    func testPrimaryLatency() async throws -> (String, Int) {
+        guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
+        try await ensureRunning()
+        guard let port = ports[preferences.primary], let milliseconds = await latency(port: port) else { throw HarborError("PROXY_UNAVAILABLE") }
+        return (preferences.primary, milliseconds)
+    }
+    private func latency(port: Int) async -> Int? {
         let configuration = URLSessionConfiguration.ephemeral
         Self.apply(port: port, to: configuration)
         configuration.timeoutIntervalForRequest = 6; configuration.timeoutIntervalForResource = 8
         let session = URLSession(configuration: configuration); defer { session.invalidateAndCancel() }
+        let started = ContinuousClock.now
         do {
             let (_, response) = try await session.data(from: URL(string: "https://www.gstatic.com/generate_204")!)
-            return (response as? HTTPURLResponse)?.statusCode == 204
-        } catch { return false }
+            guard (response as? HTTPURLResponse)?.statusCode == 204 else { return nil }
+            let elapsed = started.duration(to: .now).components
+            return max(1, Int(elapsed.seconds * 1000 + elapsed.attoseconds / 1_000_000_000_000_000))
+        } catch { return nil }
     }
     nonisolated static func apply(port: Int, to configuration: URLSessionConfiguration) {
         guard port > 0 else { return }

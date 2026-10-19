@@ -648,3 +648,10 @@ HTTPS 订阅链接|HTTPS subscription URL
 直连|Direct
 只影响当前任务，随任务保存，不改变全局。修改会暂停当前传输并从文件边界重新连接，已提交内容仍先确认。|Applies only to this task and is saved with it. The global policy stays unchanged. Changing it reconnects the current transfer from the file boundary; submitted content is checked first.
 任务连接策略|Task connection policy
+HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
+首选节点 {0}：{1} 毫秒|Primary node {0}: {1} ms
+正在处理，请稍候…|Working, please wait…
+请输入有效的 HTTP 或 HTTPS 订阅链接。|Enter a valid HTTP or HTTPS subscription URL.
+正在读取订阅…|Downloading subscription…
+订阅已下载，正在导入…|Subscription downloaded. Importing…
+订阅已导入。|Subscription imported.

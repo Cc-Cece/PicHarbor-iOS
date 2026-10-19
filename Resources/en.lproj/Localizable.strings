@@ -7,6 +7,7 @@
 "Google 相册的 Live Photo 验证通常需等待 10–20 分钟，请稍后重新检查。超过 1 小时仍未通过，可前往设置了解其他选择。" = "Google Photos verification of Live Photos usually takes 10–20 minutes. Check again later. If it still fails after an hour, see Settings for other options.";
 "Google 相册的动态照片处理与验证可能需要一些时间，可在约 20 分钟后重新检查。若长时间仍未通过，可前往设置，开启“允许清理尚未完整验证的 Live Photo”。" = "Google Photos may need time to process and verify the motion. Try checking again in about 20 minutes. If it still cannot be verified, open Settings and enable “Allow cleanup of incompletely verified Live Photos”.";
 "Google 页面加载失败，请检查网络后重新打开。" = "Could not load Google. Check your connection and try again.";
+"HTTP 或 HTTPS 订阅链接" = "HTTP or HTTPS subscription URL";
 "HTTPS 订阅链接" = "HTTPS subscription URL";
 "Live Photo 备份方式" = "Live Photo backup method";
 "Live Photo 完整性验证提醒" = "Live Photo verification reminder";
@@ -402,6 +403,7 @@
 "正在准备账号连接…" = "Preparing account connection…";
 "正在加载 Google 登录页面…" = "Loading Google sign-in…";
 "正在处理" = "Processing";
+"正在处理，请稍候…" = "Working, please wait…";
 "正在应用网络设置，请稍后继续任务。" = "Applying connection settings. Resume the task shortly.";
 "正在提交云端记录" = "Saving cloud record";
 "正在查询云端内容" = "Checking cloud content";
@@ -416,6 +418,7 @@
 "正在计算内容哈希" = "Checking file contents";
 "正在读取大小…" = "Reading size…";
 "正在读取照片原件（iCloud 原件可能需要下载）" = "Reading original photo (iCloud may need to download it)";
+"正在读取订阅…" = "Downloading subscription…";
 "正在连接" = "Connecting";
 "正在连接 Google，请稍候…" = "Connecting to Google…";
 "正在连接或切换账号…" = "Connecting or switching account…";
@@ -534,6 +537,8 @@
 "蜂窝网络" = "Cellular";
 "视频" = "Videos";
 "计配额原画质" = "Original quality · uses quota";
+"订阅已下载，正在导入…" = "Subscription downloaded. Importing…";
+"订阅已导入。" = "Subscription imported.";
 "订阅读取失败，请检查网络或改用文件导入。" = "The subscription could not be loaded. Check your connection or import a file.";
 "让回忆安心留存" = "Keep your memories safe";
 "设备" = "Device";
@@ -557,6 +562,7 @@
 "请等待当前检查或设置更新结束。" = "Wait for the current check or settings update to finish.";
 "请等待照片核验或清理完成后连接账号。" = "Wait for photo checking or cleanup before connecting an account.";
 "请输入 1–90 的整数。" = "Enter a whole number from 1 to 90.";
+"请输入有效的 HTTP 或 HTTPS 订阅链接。" = "Enter a valid HTTP or HTTPS subscription URL.";
 "请输入有效的 HTTPS 订阅链接。" = "Enter a valid HTTPS subscription URL.";
 "请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。" = "Choose device cleanup rather than cloud storage cleanup. Removed items appear in Recently Deleted in Apple Photos; empty it yourself if you need the space immediately. With iCloud Photos enabled, local deletions also sync to other devices using the same library.";
 "请验证：关闭第三方 VPN 后登录并备份；两个任务使用不同兜底；断开节点后重试；锁屏后返回继续。应用被暂停时内置代理可能停止，后台持续上传尚未保证。" = "Test sign-in and backup with external VPN apps off, different task policies, node failures, and resuming after locking the screen. The embedded proxy may stop when iOS suspends the app; continuous background uploads are not guaranteed.";
@@ -638,6 +644,7 @@
 "预览暂不可用，原件可能需要从 iCloud 下载。" = "Preview unavailable. The original may need to download from iCloud.";
 "额外核验" = "Extra checks";
 "首选节点" = "Preferred node";
+"首选节点 {0}：{1} 毫秒" = "Primary node {0}: {1} ms";
 "验证版支持包含 proxies 的 YAML，最多 64 个节点。暂不支持 proxy-providers、链式代理或规则导入。首次订阅下载需要网络可达，也可从文件导入。" = "This preview supports YAML containing proxies, with up to 64 nodes. Proxy providers, chains and imported rules are not supported. The subscription must be reachable for the initial download; you can also import a file.";
 "验证版支持最多 64 个节点的 Clash YAML，暂不支持代理提供者或链式代理。" = "This preview supports Clash YAML with up to 64 nodes. Proxy providers and chained proxies are not supported yet.";
 "高级信息" = "Advanced information";
