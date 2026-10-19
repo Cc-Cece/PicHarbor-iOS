@@ -34,10 +34,10 @@ final class HarborFlowTests: XCTestCase {
         app.tabBars.buttons["设置"].tap(); app.buttons["活动记录"].tap()
         let days = app.textFields["archive.days"]
         XCTAssertTrue(days.waitForExistence(timeout: 5)); XCTAssertEqual(days.value as? String, "14")
-        days.tap(); days.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "91")
+        days.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap(); days.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "91")
         app.buttons["archive.save"].tap()
         XCTAssertTrue(app.staticTexts["请输入 1–90 的整数。"].exists)
-        days.tap(); days.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "14")
+        days.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap(); days.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "14")
         app.buttons["archive.save"].tap()
         XCTAssertFalse(app.staticTexts["请输入 1–90 的整数。"].exists)
         app.buttons["归档记录"].tap()
@@ -156,7 +156,9 @@ final class HarborFlowTests: XCTestCase {
         let menu = app.buttons["activity.menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))
         menu.tap()
-        XCTAssertTrue(app.buttons["暂停当前结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["暂停任务"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["已归档"].exists)
+        XCTAssertTrue(app.buttons["移除未完成"].exists)
         capture("activity-filtered-actions")
         app.navigationBars["活动"].staticTexts["活动"].tap()
         XCTAssertTrue(app.navigationBars["活动"].exists)

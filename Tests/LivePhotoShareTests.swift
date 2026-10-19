@@ -10,6 +10,7 @@ import UIKit
 @testable import PicHarbor
 
 final class LivePhotoShareTests: XCTestCase {
+    @MainActor
     func testOneItemOffersNativeLivePhotoAndStaticFallback() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
