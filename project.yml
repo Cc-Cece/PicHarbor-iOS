@@ -17,6 +17,9 @@ options:
   groupSortPosition: top
 
 settings:
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG"
   base:
     SWIFT_VERSION: "5.0"
     ONLY_ACTIVE_ARCH: "YES"

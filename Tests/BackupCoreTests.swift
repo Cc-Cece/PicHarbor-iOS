@@ -227,20 +227,4 @@ final class BackupCoreTests: XCTestCase {
         XCTAssertEqual(job.transferDisposition(activeAccount: "a"), .cancel)
     }
 
-    func testPhotoKitExportKeepsReadableOriginalAfterVersionDeduplication() async throws {
-        let options = PHFetchOptions()
-        options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        let asset = try XCTUnwrap(PHAsset.fetchAssets(with: options).firstObject, "CI photo authorization: \(PHPhotoLibrary.authorizationStatus(for: .readWrite).rawValue)")
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let resources = try await ResourceExporter.export(assetID: asset.localIdentifier, settings: BackupSettings(), directory: directory)
-        XCTAssertFalse(resources.isEmpty)
-        for resource in resources {
-            let digest = try ResourceExporter.hash(URL(fileURLWithPath: resource.path))
-            XCTAssertEqual(digest.1, resource.sha256)
-            XCTAssertEqual(digest.2, resource.size)
-        }
-    }
 }

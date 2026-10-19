@@ -14,6 +14,7 @@ struct HarborRootView: View {
             NavigationStack { HarborSettingsView() }.tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
         }
         .environmentObject(model)
+        .modifier(PhotoKitExportProbe(model: model))
         .tint(.blue)
         .preferredColorScheme(model.settings.appearance == "dark" ? .dark : model.settings.appearance == "light" ? .light : nil)
         .safeAreaInset(edge: .top) {

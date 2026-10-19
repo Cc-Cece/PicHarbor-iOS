@@ -1,6 +1,25 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testPhotoKitExportAfterSystemAuthorization() {
+        let app = XCUIApplication()
+        app.launchArguments.append("--verify-photo-export")
+        app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        let authorize = app.buttons["允许访问相册"]
+        if authorize.exists {
+            authorize.tap()
+            let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Full Access"]
+            XCTAssertTrue(allow.waitForExistence(timeout: 10))
+            if allow.exists { allow.tap() }
+        }
+        let report = app.staticTexts["photokit.export.result"]
+        let success = NSPredicate(format: "label == %@", "相册资源导出与读取校验通过")
+        expectation(for: success, evaluatedWith: report)
+        waitForExpectations(timeout: 20)
+        capture("photokit-export-verified")
+    }
+
     func testAddGoogleAccountCanBeOpenedRepeatedly() {
         let app = XCUIApplication()
         app.launch()
