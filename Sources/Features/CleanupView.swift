@@ -14,7 +14,11 @@ struct CleanupView: View {
                 Label("确认保存，再释放空间", systemImage: "checkmark.shield").font(.headline)
                 Text("当前账号有 \(model.cleanupCandidates.count) 张照片或视频可检查。同一照片只列一次，其他照片的备份可以继续。").font(.subheadline).foregroundStyle(.secondary)
                 Text("Live Photo 在完整资源取回验证开放前会保留。").font(.footnote).foregroundStyle(.secondary)
-                if !model.settings.cloudState || !model.settings.originalAccess { Label("已降低清理核验强度，请到设置查看跳过项", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
+                if !model.settings.cloudState || !model.settings.originalAccess {
+                    Label("已降低清理核验强度", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+                    if !model.settings.cloudState { Text("跳过最新云端状态检查").font(.caption).foregroundStyle(.secondary) }
+                    if !model.settings.originalAccess { Text("跳过原件访问与大小检查").font(.caption).foregroundStyle(.secondary) }
+                }
                 if model.cleanupRunning {
                     ProgressView(value: Double(model.cleanupChecked), total: Double(max(1, model.cleanupTotal)))
                     Text(model.cleanupDeleting ? "正在核对所选项目并请求系统删除" : model.cleanupStopping ? "正在停止，当前请求结束后保留检查结果" : "已检查 \(model.cleanupChecked) / \(model.cleanupTotal) 项").font(.caption).foregroundStyle(.secondary)
