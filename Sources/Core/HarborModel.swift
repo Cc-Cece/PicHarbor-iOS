@@ -189,6 +189,15 @@ final class HarborModel: ObservableObject {
                 for task in await transfer.tasks() where oldIDs.contains(task.taskIdentifier) { task.cancel() }
             }
         } catch { fatalStorage(error) }
+        // A rapid toggle back can leave the original policy unchanged after
+        // the suspension above. Resume only tasks still owned by runnable jobs.
+        for task in await transfer.tasks() {
+            guard let job = jobs.first(where: { $0.resources.contains { $0.transportID == task.taskIdentifier } }),
+                  job.account == account, job.state == .transferring,
+                  job.settings.wifiOnly == settings.wifiOnly,
+                  task.originalRequest?.allowsCellularAccess == !settings.wifiOnly else { continue }
+            if task.state == .suspended { task.resume() }
+        }
         updatingNetwork = false
         await replayReceipts()
         await pump()
