@@ -91,7 +91,7 @@ struct BackupDashboard: View {
             }
             Section {
                 NavigationLink { CleanupView() } label: { Label(L10n.text("释放 iPhone 空间"), systemImage: "internaldrive") }
-            } footer: { Text(L10n.text("仅清理核验通过且由你确认的本地照片。后台任务由系统安排，打开应用可继续推进。")) }
+            } footer: { Text(L10n.text("通过 Google 相册释放本机空间。后台备份由系统安排，打开 PicHarbor 可继续推进。")) }
             if !model.engine.ready { Section { Text(L10n.message(model.engine.message)).foregroundStyle(.secondary) } }
         }
         .navigationTitle(L10n.text("备份"))

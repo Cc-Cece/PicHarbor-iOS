@@ -490,3 +490,59 @@ Google 相册的 Live Photo 验证通常需等待 10–20 分钟，请稍后重�
 开启不会立即删除文件，清理仍需你和系统确认。|Enabling this does not delete files. Cleanup still requires your confirmation and system approval.
 了解风险，仍要开启|Enable despite the risk
 继续等待完整验证|Keep waiting for full verification
+# Google Photos handoff and temporary link review (0.2.11)
+已关闭|Off
+恢复备份默认设置|Restore backup defaults
+重置当前账号的备份和网络偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。|Reset this account's backup and network preferences. Automatic backup will turn off and the scope will need confirmation. Accounts, photos, existing jobs, language and appearance are kept. Photos will not be uploaded again.
+不会重新上传照片，也不影响已完成的任务。需要释放本机空间时，请前往 Google 相册。|This does not upload photos again or affect completed jobs. To free up device space, use Google Photos.
+通过 Google 相册释放本机空间。后台备份由系统安排，打开 PicHarbor 可继续推进。|Free up device space with Google Photos. Background backup is scheduled by iOS; open PicHarbor to continue.
+前往 Google 相册释放空间|Free up space with Google Photos
+通过 Google 相册释放空间|Free up space with Google Photos
+备份完成后，使用 Google 相册的“释放空间”，由它识别并移除已备份的本机照片和视频。|After backup, use Free up space in Google Photos to identify and remove backed-up photos and videos from this device.
+打开 Google 相册|Open Google Photos
+在 Google 相册中操作|In Google Photos
+点击首页右上角头像|Tap your profile picture at the top right
+打开“Google 相册设定”|Open Google Photos settings
+进入“应用程序与装置”|Go to Apps and devices
+选择“释放空间”并确认|Choose Free up space and confirm
+以上路径来自关闭备份时的真机测试。菜单名称和位置可能随版本或语言变化，请确认 Google 相册当前使用的是备份账号。|This path was tested with backup turned off. Menu names and locations may vary by version or language. Make sure Google Photos uses the account you backed up to.
+请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。|Choose device cleanup rather than cloud storage cleanup. Removed items appear in Recently Deleted in Apple Photos; empty it yourself if you need the space immediately. With iCloud Photos enabled, local deletions also sync to other devices using the same library.
+链接测试（临时）|Link tests (temporary)
+正在测试能否直接打开释放空间页面，目前仍需按上方步骤操作。|Direct access to Free up space is being tested. For now, follow the steps above.
+暂时无法打开 Google 相册|Unable to open Google Photos
+在 App Store 查看|View in App Store
+请确认已安装 Google 相册，也可以从主屏幕手动打开。|Make sure Google Photos is installed. You can also open it from your Home Screen.
+启动应用|Launch app
+设置入口候选|Settings candidate
+设备设置候选|Device settings candidate
+释放空间候选 A|Free up space candidate A
+释放空间候选 B|Free up space candidate B
+释放空间候选 C|Free up space candidate C
+释放空间候选 D|Free up space candidate D
+尚未记录|Not recorded
+到达释放空间页|Reached Free up space
+只打开首页|Opened Home only
+打开其他页面|Opened another page
+未能打开应用|App did not open
+临时测试页面，确认后会移除。除应用启动链接外，以下路径均为猜测，尚无已验证的释放空间直达链接。|This temporary page will be removed after testing. All paths except the app launch link are guesses. No direct Free up space link has been verified.
+先测试启动应用，再逐个测试候选。返回 PicHarbor 后记录实际打开的页面。系统接受链接不代表已到达目标页面。|Test app launch first, then each candidate. Return to PicHarbor to record the page that opened. System acceptance does not prove the target page opened.
+Google 相册备份|Google Photos backup
+未确认|Not confirmed
+测试前应用状态|App state before the test
+已退出后台|Removed from app switcher
+仍在后台|Still in app switcher
+建议分别测试 Google 相册不在后台、仍在后台，以及备份关闭时的表现。记录每个入口最近一次结果即可。|Try Google Photos both closed and in the app switcher, including with backup turned off. The latest result for each link is kept.
+公开收录的启动链接，待真机确认|Publicly listed launch link; device test needed
+路径猜测，未经验证|Guessed path; unverified
+测试此链接|Test this link
+系统已接受链接，请记录实际页面|System accepted the link; record the actual page
+系统未能打开此链接|System could not open this link
+尚未收到系统打开结果|No system open result received
+实际打开位置|Page that opened
+复制测试结果|Copy test results
+分享测试结果|Share test results
+清空测试记录|Clear test records
+结果仅保存在本机，不自动发送。反馈时请补充 Google 相册版本；不需要提供账号或登录凭据。|Results stay on this device and are not sent automatically. Include your Google Photos version when reporting. No account or login credentials are needed.
+清空测试记录？|Clear test records?
+清空|Clear
+已复制测试结果|Test results copied

@@ -45,7 +45,7 @@ def build():
                 raise ValueError('Placeholder mismatch: ' + key)
             output.append(json.dumps(decode(key), ensure_ascii=False) + ' = ' + json.dumps(decode(value), ensure_ascii=False) + ';')
         (folder / 'Localizable.strings').write_text('\n'.join(output) + '\n', encoding='utf-8')
-        privacy = {'zh-Hans': '浏览并备份你允许访问的照片与视频；仅在你确认后删除检查通过的本机照片。', 'en': 'Browse and back up photos and videos you allow. Remove verified local photos only after your confirmation.', 'zh-Hant-HK': '瀏覽同備份你允許取用嘅相片同影片；只會喺你確認後刪除通過檢查嘅手機相片。', 'yue-Hant-HK': '瀏覽同備份你允許取用嘅相片同影片；只會喺你確認後刪除通過檢查嘅手機相片。'}
+        privacy = {'zh-Hans': '浏览并备份你允许访问的照片与视频。', 'en': 'Browse and back up photos and videos you allow.', 'zh-Hant-HK': '瀏覽同備份你允許取用嘅相片同影片。', 'yue-Hant-HK': '瀏覽同備份你允許取用嘅相片同影片。'}
         (folder / 'InfoPlist.strings').write_text('"NSPhotoLibraryUsageDescription" = ' + json.dumps(privacy[language], ensure_ascii=False) + ';\n', encoding='utf-8')
     print('Built', len(english), 'strings for', ', '.join(tables))
 

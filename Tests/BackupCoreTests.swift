@@ -9,6 +9,53 @@ import SwiftUI
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    func testGooglePhotosCandidatesAreUniqueAndDoNotContainCloudCleanupURLs() {
+        let links = GooglePhotosLink.candidates
+        XCTAssertEqual(links.count, 7)
+        XCTAssertEqual(Set(links.map(\.id)).count, links.count)
+        XCTAssertEqual(Set(links.map(\.address)).count, links.count)
+        XCTAssertEqual(links.filter(\.isLaunch).map(\.id), ["launch"])
+        for link in links {
+            XCTAssertEqual(link.url.scheme, "googlephotos")
+            XCTAssertNil(link.url.query); XCTAssertNil(link.url.user); XCTAssertNil(link.url.password)
+        }
+    }
+    @MainActor
+    func testLinkResultsRequireManualDestinationAndPersistIndependently() throws {
+        let suite = "link-review-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = GooglePhotosLinkTestStore(defaults: defaults)
+        let link = GooglePhotosLink.launch, second = GooglePhotosLink.candidates[1]
+        store.record(.cleanup, for: link)
+        XCTAssertTrue(store.records.isEmpty)
+        let first = store.begin(link, context: "backup=off;launch=cold")
+        store.finish(link, attempt: first, accepted: true)
+        XCTAssertEqual(store.records[link.id]?.destination, .unrecorded)
+        store.record(.home, for: link)
+        _ = store.begin(second, context: "backup=off;launch=warm")
+        let restored = GooglePhotosLinkTestStore(defaults: defaults)
+        XCTAssertEqual(restored.records[link.id]?.destination, .home)
+        XCTAssertNil(restored.records[second.id]?.accepted)
+        XCTAssertTrue(restored.report.contains("destination=home"))
+        XCTAssertTrue(restored.report.contains("backup=off;launch=cold"))
+        restored.clear()
+        XCTAssertTrue(GooglePhotosLinkTestStore(defaults: defaults).records.isEmpty)
+    }
+    @MainActor
+    func testStaleLinkOpenCallbackDoesNotOverwriteNewAttempt() {
+        let suite = "link-review-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = GooglePhotosLinkTestStore(defaults: defaults), link = GooglePhotosLink.launch
+        let old = store.begin(link, context: "backup=off")
+        let current = store.begin(link, context: "backup=on")
+        store.finish(link, attempt: old, accepted: false)
+        XCTAssertNil(store.records[link.id]?.accepted)
+        store.finish(link, attempt: current, accepted: true)
+        XCTAssertEqual(store.records[link.id]?.accepted, true)
+        XCTAssertEqual(store.records[link.id]?.destination, .unrecorded)
+    }
     private var previousLanguage: String?
     override func setUp() {
         super.setUp()

@@ -23,23 +23,23 @@ struct HarborSettingsView: View {
             Section(L10n.text("设备")) {
                 NavigationLink { LanguagePreferencesView() } label: { Label(L10n.text("语言"), systemImage: "globe") }.accessibilityIdentifier("settings.language")
                 NavigationLink { PermissionView() } label: { Label(L10n.text("相册访问"), systemImage: "photo.badge.checkmark") }
-                NavigationLink { CleanupPolicyView() } label: { Label(L10n.text("空间清理核验"), systemImage: "checkmark.shield") }
                 NavigationLink { AppearanceView() } label: { Label(L10n.text("外观"), systemImage: "circle.lefthalf.filled") }
             }
             Section {
-                Button(L10n.text("恢复备份与清理默认设置")) { restore = true }
-                    .disabled(!model.initialized || model.cleanupRunning || model.switching || model.updatingNetwork || model.storageFailed)
+                Button(L10n.text("恢复备份默认设置")) { restore = true }
+                    .disabled(!model.initialized || model.switching || model.updatingNetwork || model.storageFailed)
                     .accessibilityIdentifier("settings.restore")
             }
             Section {
                 NavigationLink { DiagnosticsView() } label: { Label(L10n.text("诊断"), systemImage: "stethoscope") }
+                NavigationLink { GooglePhotosLinkTestView() } label: { Label(L10n.text("链接测试（临时）"), systemImage: "link") }.accessibilityIdentifier("settings.linkTests")
                 NavigationLink { AboutView() } label: { Label(L10n.text("关于 PicHarbor"), systemImage: "info.circle") }
             }
         }.navigationTitle(L10n.text("设置"))
         .alert(L10n.text("恢复默认设置？"), isPresented: $restore) {
             Button(L10n.text("恢复默认设置"), role: .destructive) { Task { await model.restorePreferenceDefaults() } }
             Button(L10n.text("取消"), role: .cancel) {}
-        } message: { Text(L10n.text("重置当前账号的备份、网络和清理偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。")) }
+        } message: { Text(L10n.text("重置当前账号的备份和网络偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。")) }
     }
 }
 
@@ -84,7 +84,7 @@ struct AdvancedBackupChecksView: View {
             Section {
                 Button(L10n.text("对等待确认的任务使用此设置")) { Task { await model.applyConfirmationPolicyToPending() } }
                     .disabled(!model.visibleJobs.contains { [.paired, .confirming].contains($0.state) && $0.confirmationOnly })
-            } footer: { Text(L10n.text("不会重新上传照片，也不影响已完成的任务。清理本地照片前仍需单独检查。")) }
+            } footer: { Text(L10n.text("不会重新上传照片，也不影响已完成的任务。需要释放本机空间时，请前往 Google 相册。")) }
         }.navigationTitle(L10n.text("高级备份检查")).navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -159,92 +159,6 @@ struct NetworkPreferencesView: View {
     }
 }
 
-struct CleanupPolicyView: View {
-    @ObservedObject private var language = LanguagePreferences.shared
-    @EnvironmentObject private var model: HarborModel
-    @State private var state = true
-    @State private var access = true
-    @State private var allowLive = false
-    @State private var liveConfirmation = false
-    @State private var confirmation = false
-    @State private var acknowledgment = ""
-    var body: some View {
-        Form {
-            Section {
-                Label(state && access && !allowLive ? L10n.text("完整核验") : L10n.text("已放宽清理检查"), systemImage: state && access && !allowLive ? "checkmark.shield" : "exclamationmark.triangle")
-                    .foregroundStyle(state && access && !allowLive ? .blue : .orange)
-                Text(L10n.text("清理前会核对账号和照片内容，最后由你确认删除。")).font(.subheadline).foregroundStyle(.secondary)
-            }
-            Section(L10n.text("额外核验")) {
-                Toggle(L10n.text("最新云端状态"), isOn: $state)
-                Text(L10n.text("确认云端照片正常保存，没有被删除。")).font(.caption).foregroundStyle(.secondary)
-                Toggle(L10n.text("云端原件访问"), isOn: $access)
-                Text(L10n.text("确认云端原件可以读取，文件大小正确。")).font(.caption).foregroundStyle(.secondary)
-            }
-            Section {
-                Toggle(L10n.text("允许清理尚未完整验证的 Live Photo"), isOn: Binding(get: { allowLive }, set: { value in
-                    if value { liveConfirmation = true }
-                    else { allowLive = false; applyLive() }
-                })).accessibilityIdentifier("cleanup.allowLive")
-                    .disabled(model.cleanupRunning)
-            } footer: {
-                Text(L10n.text("默认关闭。开启后，照片和动态视频均已保存即可继续清理检查；取回后可能需要重新配对，部分动态效果可能无法恢复。其他已开启的检查仍会执行。"))
-            }
-            Section {
-                Button(L10n.text("应用核验策略")) {
-                    if (!state && model.settings.cloudState) || (!access && model.settings.originalAccess) { acknowledgment = ""; confirmation = true }
-                    else { apply() }
-                }.disabled(model.cleanupRunning)
-                Button(L10n.text("恢复完整核验")) { state = true; access = true; allowLive = false; model.settings.allowUnverifiedLiveCleanup = false; apply() }.disabled(model.cleanupRunning)
-            } footer: { Text(L10n.text("修改设置后需重新检查。检查未通过的照片会保留。")) }
-        }.navigationTitle(L10n.text("空间清理核验")).navigationBarTitleDisplayMode(.inline)
-        .onAppear { state = model.settings.cloudState; access = model.settings.originalAccess; allowLive = model.settings.allowsUnverifiedLiveCleanup }
-        .sheet(isPresented: $liveConfirmation) {
-            LiveCleanupReminder {
-                allowLive = true; applyLive(); liveConfirmation = false
-            } wait: {
-                allowLive = false; liveConfirmation = false
-            }
-        }
-        .alert(L10n.text("降低核验强度"), isPresented: $confirmation) {
-            TextField(L10n.text("输入：我已了解风险"), text: $acknowledgment)
-            Button(L10n.text("确认降低"), role: .destructive) { if acknowledgment == L10n.text("我已了解风险") { apply() } else { model.notice = L10n.text("确认文字不匹配，策略未改变。") } }
-            Button(L10n.text("取消"), role: .cancel) { state = model.settings.cloudState; access = model.settings.originalAccess }
-        } message: { Text(L10n.text("将跳过{0}{1}{2}检查。请输入“我已了解风险”。", [String(describing: !state ? L10n.text("最新云端状态") : ""), String(describing: !state && !access ? L10n.text("及") : ""), String(describing: !access ? L10n.text("云端原件访问") : "")])) }
-    }
-    private func applyLive() { model.settings.allowUnverifiedLiveCleanup = allowLive; Task { await model.saveSettings() } }
-    private func apply() { model.settings.cloudState = state; model.settings.originalAccess = access; Task { await model.saveSettings() } }
-}
-
-private struct LiveCleanupReminder: View {
-    @ObservedObject private var language = LanguagePreferences.shared
-    let enable: () -> Void
-    let wait: () -> Void
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text(L10n.text("Live Photo 完整性验证提醒")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
-                    Text(L10n.text("照片和视频已上传，Google 相册的 Live Photo 验证通常需等待 10–20 分钟。"))
-                    Text(L10n.text("建议继续等待。超过 1 小时仍未通过，或验证异常时，再考虑开启。")).bold()
-                    Text(L10n.text("开启后，不再等待动态效果的完整验证，请先自行确认 Google 相册中的 Live Photo 正常。其他已开启的清理检查仍会执行。"))
-                    Text(L10n.text("清理后，动态效果可能无法完整恢复，保存回 iPhone 时也可能需要其他工具。目前实测暂未发现此问题。"))
-                    Text(L10n.text("开启不会立即删除文件，清理仍需你和系统确认。")).font(.footnote).foregroundStyle(.secondary)
-                }.frame(maxWidth: .infinity, alignment: .leading).padding()
-            }
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 12) {
-                    Button(role: .destructive, action: enable) { Text(L10n.text("了解风险，仍要开启")).frame(maxWidth: .infinity).padding(.vertical, 6) }
-                        .accessibilityIdentifier("cleanup.live.enable")
-                    Button(action: wait) { Text(L10n.text("继续等待完整验证")).frame(maxWidth: .infinity).padding(.vertical, 6) }
-                        .accessibilityIdentifier("cleanup.live.wait")
-                }.buttonStyle(.bordered).padding().background(.regularMaterial)
-            }
-            .navigationTitle("Live Photo").navigationBarTitleDisplayMode(.inline)
-        }.presentationDragIndicator(.visible)
-    }
-}
-
 struct AccountListView: View {
     @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
@@ -254,13 +168,12 @@ struct AccountListView: View {
             Section(L10n.text("本机账号")) {
                 ForEach(model.accounts, id: \.self) { account in
                     Button { Task { await model.switchAccount(account) } } label: { HStack { Label(account, systemImage: "person.crop.circle").foregroundStyle(.primary); Spacer(); if account == model.account { Image(systemName: "checkmark") } } }
-                        .disabled(model.engine.busy || model.cleanupRunning)
+                        .disabled(model.engine.busy)
                 }
                 NavigationLink { ConnectionView() } label: { Label(L10n.text("添加 Google 账号"), systemImage: "plus") }
                     .accessibilityIdentifier("account.add")
             }
             if model.engine.busy || model.switching { Section { ProgressView(L10n.text("正在连接或切换账号…")) } }
-            if model.cleanupRunning { Section { Text(L10n.text("正在核验或清理照片，完成后可连接账号。")).foregroundStyle(.secondary) } }
             if !model.account.isEmpty { Section { Button(L10n.text("退出当前账号"), role: .destructive) { logout = true } } footer: { Text(L10n.text("移除本机凭据并暂停任务；历史记录保留并按账号隔离。")) } }
         }.navigationTitle(L10n.text("账号")).navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(L10n.text("退出当前账号？"), isPresented: $logout, titleVisibility: .visible) { Button(L10n.text("退出"), role: .destructive) { Task { await model.logout() } } }
@@ -276,7 +189,7 @@ struct ConnectionView: View {
     @State private var connecting = false
     @State private var pendingCredential: String?
     @State private var loginError = ""
-    private var unavailable: Bool { connecting || model.engine.busy || model.switching || model.cleanupRunning || !model.initialized }
+    private var unavailable: Bool { connecting || model.engine.busy || model.switching || !model.initialized }
     var body: some View {
         List {
             Section {
@@ -294,7 +207,6 @@ struct ConnectionView: View {
             } header: { Text(L10n.text("已有 gpmc 凭据")) } footer: { Text(L10n.text("凭据仅保存在本机钥匙串，不导出到诊断报告。应用内网页登录受 Google 规则影响时，可导入已有凭据。")) }
             Section {
                 if connecting || model.engine.busy || model.switching { ProgressView(connecting ? L10n.text("正在连接 Google，请稍候…") : L10n.text("正在准备账号连接…")) }
-                else if model.cleanupRunning { Text(L10n.text("请等待照片核验或清理完成后连接账号。")) }
                 else if !model.initialized { Text(L10n.text("应用初始化尚未完成。请检查运行环境后重试。")) }
                 if !loginError.isEmpty { Text(loginError).foregroundStyle(.red).accessibilityIdentifier("connection.error") }
                 Text(L10n.message(model.engine.message)).font(.footnote).foregroundStyle(.secondary)

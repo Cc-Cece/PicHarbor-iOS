@@ -1,6 +1,38 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testExternalCleanupGuideHasNoDeletionControls() {
+        let app = localizedApp(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["备份"].tap()
+        let guide = app.buttons["释放 iPhone 空间"]
+        for _ in 0..<4 { if guide.isHittable { break }; app.swipeUp() }
+        guide.tap()
+        XCTAssertTrue(app.buttons["googlePhotos.open"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["点击首页右上角头像"].exists)
+        XCTAssertFalse(app.buttons["开始检查"].exists)
+        XCTAssertFalse(app.switches["cleanup.allowLive"].exists)
+        capture("google-photos-cleanup-guide")
+        app.buttons["googlePhotos.open"].tap()
+        XCTAssertTrue(app.alerts["暂时无法打开 Google 相册"].waitForExistence(timeout: 5))
+        app.alerts.buttons["好"].tap()
+    }
+    func testTemporaryLinkReviewPageIsAccessibleWithoutLaunchingCandidates() {
+        let app = localizedApp(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap()
+        XCTAssertFalse(app.buttons["空间清理核验"].exists)
+        let page = app.buttons["settings.linkTests"]
+        for _ in 0..<4 { if page.isHittable { break }; app.swipeUp() }
+        page.tap()
+        XCTAssertTrue(app.buttons["linkTest.open.launch"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["linkTest.result.launch"].isEnabled)
+        capture("google-photos-link-review-top")
+        let last = app.buttons["linkTest.open.settings-free-up-space"]
+        for _ in 0..<10 { if last.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(last.isHittable)
+        capture("google-photos-link-review-bottom")
+    }
     private func localizedApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -49,45 +81,6 @@ final class HarborFlowTests: XCTestCase {
         let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["关闭备份提示"])
         XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 35), .completed)
         XCTAssertTrue(app.navigationBars["活动"].exists)
-    }
-    func testCleanupReviewSelectsPassedItemsAndShowsOneLiveReminder() {
-        let app = localizedApp(); app.launchArguments += ["--task-review-fixture", "--cleanup-review-fixture"]; app.launch()
-        XCTAssertTrue(app.buttons["activity.batch"].firstMatch.waitForExistence(timeout: 30))
-        app.tabBars.buttons["备份"].tap()
-        let cleanup = app.buttons["释放 iPhone 空间"]
-        for _ in 0..<4 { if cleanup.isHittable { break }; app.swipeUp() }
-        cleanup.tap()
-        XCTAssertTrue(app.staticTexts["Live Photo 完整性验证提醒"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts.matching(identifier: "Live Photo 完整性验证提醒").count, 1)
-        capture("cleanup-review-shared-notice")
-        let all = app.buttons["取消全选"]
-        for _ in 0..<4 { if all.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(all.waitForExistence(timeout: 5))
-        all.tap()
-        XCTAssertFalse(app.buttons["取消全选"].exists)
-        app.buttons["全选已通过"].tap()
-        XCTAssertTrue(app.buttons["取消全选"].exists)
-        app.swipeUp(); capture("cleanup-review-selected")
-    }
-    func testLiveCleanupRequiresConsentAndPersistsIt() {
-        let app = localizedApp(); app.launch()
-        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
-        app.tabBars.buttons["设置"].tap(); app.buttons["空间清理核验"].tap()
-        let toggle = app.switches["cleanup.allowLive"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "0")
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        XCTAssertTrue(app.staticTexts["Live Photo 完整性验证提醒"].waitForExistence(timeout: 5))
-        capture("cleanup-live-reminder")
-        app.buttons["cleanup.live.wait"].tap(); XCTAssertEqual(toggle.value as? String, "0")
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        XCTAssertTrue(app.buttons["cleanup.live.enable"].waitForExistence(timeout: 5))
-        app.buttons["cleanup.live.enable"].tap(); XCTAssertEqual(toggle.value as? String, "1")
-        capture("cleanup-live-consent")
-        app.terminate(); app.launch()
-        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
-        app.tabBars.buttons["设置"].tap(); app.buttons["空间清理核验"].tap()
-        XCTAssertEqual(app.switches["cleanup.allowLive"].value as? String, "1")
-        setSwitch(app.switches["cleanup.allowLive"], on: false)
     }
     func testBatchNavigationTaskFlowAndAdvancedInformationSheet() {
         let app = localizedApp(); app.launchArguments.append("--task-review-fixture"); app.launch()

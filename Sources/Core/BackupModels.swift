@@ -32,6 +32,8 @@ struct BackupSettings: Codable, Equatable {
     var wifiOnly = true
     var syncAlbums = false
     var selectedAlbums: [String] = []
+    // Legacy cleanup preferences remain decodable for upgrades. No longer used
+    // by the native application; local removal is delegated to Google Photos.
     var cloudState = true
     var originalAccess = true
     var appearance = "system"

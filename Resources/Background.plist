@@ -2,6 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+  <key>LSApplicationQueriesSchemes</key><array><string>googlephotos</string></array>
   <key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string><string>zh-Hant-HK</string><string>yue-Hant-HK</string></array>
   <key>UIBackgroundModes</key><array><string>processing</string><string>fetch</string></array>
   <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>com.cccece.picharbor.processing</string></array>

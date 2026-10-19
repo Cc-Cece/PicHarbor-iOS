@@ -1,80 +1,34 @@
 import SwiftUI
 
+/// Local removal is performed exclusively by Google Photos.
 struct CleanupView: View {
     @ObservedObject private var language = LanguagePreferences.shared
-    @EnvironmentObject private var model: HarborModel
-    @State private var confirm = false
-    @State private var selection = CleanupSelection()
-    private var selected: Set<String> { selection.selected }
-    @State private var filter: CleanupOutcome = .all
-    var results: [BackupJob] { model.visibleJobs.filter {
-        model.cleanupResults[$0.id] != nil && (filter == .all || model.cleanupOutcomes[$0.id] == filter)
-    } }
-    private func awaitingLiveVerification(_ job: BackupJob) -> Bool {
-        job.isLive && L10n.message(model.cleanupResults[job.id] ?? "") == L10n.message(LiveCleanupPolicy.waitingMessage)
-    }
+    @State private var unavailable = false
     var body: some View {
         List {
             Section {
-                Label(L10n.text("确认保存，再释放空间"), systemImage: "checkmark.shield").font(.headline)
-                Text(L10n.text("当前账号有 {0} 张照片或视频可检查。同一照片只列一次，其他照片的备份可以继续。", [String(describing: model.cleanupCandidates.count)])).font(.subheadline).foregroundStyle(.secondary)
-                Text(model.settings.allowsUnverifiedLiveCleanup ? L10n.text("已允许清理尚未完整验证的 Live Photo，照片和视频仍需通过保存检查。") : L10n.text("尚未完整验证的 Live Photo 会保留。")).font(.footnote).foregroundStyle(.secondary)
-                NavigationLink(L10n.text("空间清理核验")) { CleanupPolicyView() }
-                if !model.settings.cloudState || !model.settings.originalAccess {
-                    Label(L10n.text("已降低清理核验强度"), systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
-                    if !model.settings.cloudState { Text(L10n.text("跳过最新云端状态检查")).font(.caption).foregroundStyle(.secondary) }
-                    if !model.settings.originalAccess { Text(L10n.text("跳过原件访问与大小检查")).font(.caption).foregroundStyle(.secondary) }
-                }
-                if model.cleanupRunning {
-                    ProgressView(value: Double(model.cleanupChecked), total: Double(max(1, model.cleanupTotal)))
-                    Text(model.cleanupDeleting ? L10n.text("正在核对所选项目并请求系统删除") : model.cleanupStopping ? L10n.text("正在停止，当前请求结束后保留检查结果") : L10n.text("已检查 {0} / {1} 项", [String(describing: model.cleanupChecked), String(describing: model.cleanupTotal)])).font(.caption).foregroundStyle(.secondary)
-                    if !model.cleanupDeleting && !model.cleanupStopping { Button(L10n.text("停止检查")) { model.cancelCleanupScan() } }
-                } else { Button(L10n.text("开始检查")) { Task { await model.verifyCleanup() } }.accessibilityIdentifier("cleanup.start") }
+                Label(L10n.text("通过 Google 相册释放空间"), systemImage: "externaldrive.badge.checkmark").font(.headline)
+                Text(L10n.text("备份完成后，使用 Google 相册的“释放空间”，由它识别并移除已备份的本机照片和视频。")).foregroundStyle(.secondary)
+                Button(L10n.text("打开 Google 相册")) {
+                    GooglePhotosLauncher.open(GooglePhotosLink.launch.url) { if !$0 { unavailable = true } }
+                }.accessibilityIdentifier("googlePhotos.open")
             }
-            if !model.cleanupResults.isEmpty {
-                if model.visibleJobs.contains(where: awaitingLiveVerification) {
-                    Section {
-                        Text(L10n.text("Live Photo 完整性验证提醒")).font(.headline)
-                        Text(L10n.text("Google 相册的 Live Photo 验证通常需等待 10–20 分钟，请稍后重新检查。超过 1 小时仍未通过，可前往设置了解其他选择。")).font(.subheadline).foregroundStyle(.secondary)
-                        NavigationLink(L10n.text("前往设置")) { CleanupPolicyView() }
-                    }.accessibilityIdentifier("cleanup.liveNotice")
-                }
-                Section {
-                    Picker(L10n.text("检查结果"), selection: $filter) { ForEach(CleanupOutcome.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
-                    Button(L10n.text("全选已通过")) { selection.selectAll(eligible: model.cleanupReady, jobs: model.visibleJobs) }.disabled(model.cleanupRunning || model.cleanupReady.isEmpty)
-                    if !selected.isEmpty { Button(L10n.text("取消全选")) { selection.deselectAll(jobs: model.visibleJobs) }.disabled(model.cleanupRunning) }
-                } footer: { Text(L10n.text("已通过项默认选中，取消勾选后本轮保留。")) }
-                Section(L10n.text("检查结果")) {
-                    ForEach(results) { job in
-                        HStack {
-                            AssetThumbnail(assetID: job.assetID)
-                            if model.cleanupReady.contains(job.id) {
-                                Button { selection.toggle(job) } label: {
-                                    Image(systemName: selected.contains(job.id) ? "checkmark.circle.fill" : "circle")
-                                }.buttonStyle(.borderless).accessibilityLabel(selected.contains(job.id) ? L10n.text("取消选择此项目") : L10n.text("选择此项目")).accessibilityIdentifier("cleanup.select.\(job.id)").disabled(model.cleanupRunning)
-                            }
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(job.sources.first?.name ?? L10n.text("备份照片")).lineLimit(1).truncationMode(.middle)
-                                Text(awaitingLiveVerification(job) ? L10n.text("等待 Live Photo 完整验证") : L10n.message(model.cleanupResults[job.id] ?? "")).font(.caption).foregroundStyle(model.cleanupReady.contains(job.id) ? .green : .secondary)
-                            }
-                            Spacer()
-                            if !model.cleanupRunning, let outcome = model.cleanupOutcomes[job.id], [.failed, .deferred].contains(outcome) { Button(L10n.text("重新检查")) { Task { await model.verifyCleanup(ids: [job.id]) } }.buttonStyle(.borderless).font(.caption) }
-                        }
-                    }
-                }
+            Section(L10n.text("在 Google 相册中操作")) {
+                Label(L10n.text("点击首页右上角头像"), systemImage: "1.circle")
+                Label(L10n.text("打开“Google 相册设定”"), systemImage: "2.circle")
+                Label(L10n.text("进入“应用程序与装置”"), systemImage: "3.circle")
+                Label(L10n.text("选择“释放空间”并确认"), systemImage: "4.circle")
+            } footer: { Text(L10n.text("以上路径来自关闭备份时的真机测试。菜单名称和位置可能随版本或语言变化，请确认 Google 相册当前使用的是备份账号。")) }
+            Section {
+                Text(L10n.text("请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。")).font(.footnote).foregroundStyle(.secondary)
             }
-            if !model.cleanupReady.isEmpty {
-                Section {
-                    Button(L10n.text("清理所选 {0} 项", [String(describing: selected.count)]), role: .destructive) { confirm = true }.disabled(model.cleanupRunning || selected.isEmpty)
-                } footer: { Text(L10n.text("启用 iCloud 照片时，删除会同步到同一图库的其他设备。系统删除授权由你决定。")) }
-            }
+            Section {
+                NavigationLink { GooglePhotosLinkTestView() } label: { Label(L10n.text("链接测试（临时）"), systemImage: "link") }.accessibilityIdentifier("googlePhotos.linkTests")
+            } footer: { Text(L10n.text("正在测试能否直接打开释放空间页面，目前仍需按上方步骤操作。")) }
         }.navigationTitle(L10n.text("释放空间")).navigationBarTitleDisplayMode(.inline)
-        .onAppear { selection.reconcile(eligible: model.cleanupReady, jobs: model.visibleJobs) }
-        .onChange(of: model.cleanupReady) { _, values in selection.reconcile(eligible: values, jobs: model.visibleJobs) }
-        .onChange(of: model.account) { _, _ in selection = CleanupSelection(); selection.reconcile(eligible: model.cleanupReady, jobs: model.visibleJobs) }
-        .alert(L10n.text("确认从 iPhone 相册删除？"), isPresented: $confirm) {
-            Button(L10n.text("核对并请求删除"), role: .destructive) { let ids = Array(selected); Task { await model.deleteVerified(ids: ids) } }
-            Button(L10n.text("取消"), role: .cancel) {}
-        } message: { Text(L10n.text("仅请求删除所选且再次核对通过的 {0} 项。iCloud 照片的删除会同步；谷歌相册中的内容保留。", [String(describing: selected.count)])) }
+        .alert(L10n.text("暂时无法打开 Google 相册"), isPresented: $unavailable) {
+            Button(L10n.text("在 App Store 查看")) { UIApplication.shared.open(GooglePhotosLauncher.appStore) }
+            Button(L10n.text("好"), role: .cancel) {}
+        } message: { Text(L10n.text("请确认已安装 Google 相册，也可以从主屏幕手动打开。")) }
     }
 }

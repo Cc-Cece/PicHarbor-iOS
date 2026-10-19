@@ -29,8 +29,8 @@ settings:
     CODE_SIGNING_REQUIRED: "NO"
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGN_IDENTITY: ""
-    MARKETING_VERSION: "0.2.10"
-    CURRENT_PROJECT_VERSION: "12"
+    MARKETING_VERSION: "0.2.11"
+    CURRENT_PROJECT_VERSION: "13"
 
 targets:
   PicHarbor:
@@ -53,7 +53,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cccece.picharbor
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Bridge/BridgingHeader.h
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "浏览并备份你授权的照片与视频；仅在你确认后清理核验通过的本地项目。"
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "浏览并备份你允许访问的照片与视频。"
         INFOPLIST_KEY_PHPhotoLibraryPreventAutomaticLimitedAccessAlert: "YES"
         INFOPLIST_FILE: Resources/Background.plist
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
