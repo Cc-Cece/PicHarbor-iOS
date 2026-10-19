@@ -19,7 +19,7 @@ struct HarborSettingsView: View {
                 NavigationLink { BackupPreferencesView() } label: { Label(L10n.text("备份偏好"), systemImage: "icloud.and.arrow.up") }
                 NavigationLink { BackupScopeView() } label: { Label(L10n.text("备份范围"), systemImage: "rectangle.stack") }
                 NavigationLink { NetworkPreferencesView() } label: { Label(L10n.text("网络与后台"), systemImage: "wifi") }
-                NavigationLink { ProxyPreferencesView() } label: { Label(L10n.text("应用内代理（验证）"), systemImage: "network") }.accessibilityIdentifier("settings.proxy")
+                NavigationLink { ProxyPreferencesView() } label: { Label(L10n.text("应用内代理"), systemImage: "network") }.accessibilityIdentifier("settings.proxy")
                 NavigationLink { ActivityArchiveSettingsView() } label: { Label(L10n.text("活动记录"), systemImage: "archivebox") }
             }
             Section(L10n.text("设备")) {
@@ -319,6 +319,10 @@ private struct AboutView: View {
             Section(L10n.text("开源组件")) {
                 Text(L10n.text("gpmc · GPL-3.0\nCPython · Python Software Foundation License\nblackboxprotobuf · MIT\nRequests 及依赖许可证随应用分发。"))
                 Link(L10n.text("项目源码与许可证"), destination: URL(string: "https://github.com/Cc-Cece/PicHarbor-iOS")!)
+                Text("Clash · GPL-3.0")
+                if let url = Bundle.main.url(forResource: "THIRD_PARTY_LICENSES", withExtension: "zip", subdirectory: "ProxyNotices") {
+                    ShareLink(item: url) { Text(L10n.text("代理组件开源许可")) }
+                }
             }
         }.navigationTitle(L10n.text("关于")).navigationBarTitleDisplayMode(.inline)
     }

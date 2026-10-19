@@ -74,6 +74,7 @@
 "仅导入节点，不使用文件中的规则、系统 VPN 或 DNS 设置。最多保存 20 份配置，每份最多 64 个节点。" = "Only nodes are imported. Rules, system VPN and DNS settings are not used. Save up to 20 configurations with 64 nodes each.";
 "仅显示已授权内容" = "Showing allowed photos only";
 "仅清理核验通过且由你确认的本地照片。后台任务由系统安排，打开应用可继续推进。" = "Only verified photos you select are removed. iPhone schedules background work; open the app to continue.";
+"仅用于 PicHarbor 连接 Google，不影响其他应用。" = "Used only for PicHarbor connections to Google. Other apps are unaffected.";
 "仅用于已有凭据的协议验证。导入不会证明本机网页登录成功；请勿将凭据发送到聊天或上传到仓库。" = "For testing existing credentials. Importing does not validate web sign-in. Never share credentials in chat or a repository.";
 "仅编辑后版本" = "Edited only";
 "仅请求删除所选且再次核对通过的 {0} 项。iCloud 照片的删除会同步；谷歌相册中的内容保留。" = "Only the selected and rechecked content ({0}) will be removed. Deletions sync through iCloud Photos. Google Photos copies are kept.";
@@ -82,6 +83,7 @@
 "仍要重新上传" = "Upload again anyway";
 "仍要重新上传？" = "Upload again anyway?";
 "从相册导出资源" = "Export from Photos";
+"从相册选择二维码" = "Choose QR Code from Photos";
 "从链接或文件导入，任选一种。一次使用一份配置，订阅需手动更新。" = "Import from a URL or file. Use one configuration at a time. Update subscriptions manually.";
 "代理不可用时" = "When the proxy is unavailable";
 "代理启动失败，请检查节点配置，或导入其他配置重试。" = "The proxy could not start. Check the nodes or import another configuration.";
@@ -98,6 +100,7 @@
 "任务详情" = "Task details";
 "任务连接策略" = "Task connection policy";
 "任务默认跟随全局，也可在任务详情单独设置。直连需要明确允许，失败后继续等待，不会标记完成。" = "Tasks follow the global policy unless overridden in task details. Direct access requires permission. Failed connections wait and do not mark a task complete.";
+"任务默认跟随此设置，也可单独调整。仅在你允许时使用直连。" = "Tasks follow this setting unless individually overridden. Direct connections require your permission.";
 "传输中" = "Uploading";
 "传输原始配对资源" = "Upload paired originals";
 "低电量模式" = "Low Power Mode";
@@ -152,6 +155,7 @@
 "删除未完成：{0} 请检查系统相册；备份记录会保留。" = "Removal was not completed: {0} Check Photos. Backup records are kept.";
 "到达释放空间页" = "Reached Free up space";
 "前往 Google 相册释放空间" = "Free up space with Google Photos";
+"前往系统设置" = "Open System Settings";
 "前往设置" = "Open Settings";
 "动态照片封装" = "Motion Photo package";
 "动态照片封装未完成，原件已保留。" = "Motion Photo packaging did not finish. Your original is kept.";
@@ -184,6 +188,7 @@
 "另有 {0} 个节点暂不可用，可在配置详情查看。" = "{0} more nodes are unavailable. See configuration details.";
 "只影响当前任务，随任务保存，不改变全局。修改会暂停当前传输并从文件边界重新连接，已提交内容仍先确认。" = "Applies only to this task and is saved with it. The global policy stays unchanged. Changing it reconnects the current transfer from the file boundary; submitted content is checked first.";
 "只打开首页" = "Opened Home only";
+"只用于此任务，不会改变全局设置。修改后会重新连接，并先检查已备份内容。" = "Applies only to this task. Changes reconnect and check existing backups first.";
 "可以离开此页面，进度会持续保存。" = "You can leave this page. Progress is saved.";
 "可清理" = "Eligible";
 "可用 {0} 个，暂不可用 {1} 个。未通过的节点已保留，可重新检查。" = "{0} available, {1} unavailable. Unavailable nodes are retained for rechecking.";
@@ -196,6 +201,7 @@
 "启动应用" = "Launch app";
 "启用 iCloud 照片时，删除会同步到同一图库的其他设备。系统删除授权由你决定。" = "With iCloud Photos, deletions sync to other devices in the same library. You decide whether to allow deletion.";
 "回忆有处安放" = "A home for your memories";
+"图片中未找到二维码，请选择清晰、完整的二维码图片。" = "No QR code found. Choose a clear image showing the entire code.";
 "在 App Store 查看" = "View in App Store";
 "在 Google 相册中操作" = "In Google Photos";
 "在 Google 页面完成登录；凭据仅保存于本机钥匙串。" = "Sign in on Google’s page. Credentials stay in this iPhone’s Keychain.";
@@ -246,6 +252,7 @@
 "将备份" = "To back up";
 "将本机相簿同步到 Google 相册。从本机相簿移除照片，不会删除云端内容。只对新任务生效。" = "Sync local albums to Google Photos. Removing an album member does not delete cloud content. Applies to new tasks only.";
 "将照片和动态视频合成一个文件备份。同机查看时可能出现两张。" = "Combine the photo and motion video into one backup file. Two copies may appear on the same device.";
+"将订阅二维码放入取景框" = "Place the subscription QR code in the camera view";
 "将跳过{0}{1}{2}检查。请输入“我已了解风险”。" = "Skip {0}{1}{2}. Enter “I understand the risk”.";
 "尚未完整验证的 Live Photo 会保留。" = "Incompletely verified Live Photos are kept.";
 "尚未提交关联" = "Pairing not submitted";
@@ -290,11 +297,13 @@
 "已通过项默认选中，取消勾选后本轮保留。" = "Verified items are selected by default. Deselect an item to keep it during this review.";
 "已重新查询云端，请查看记录状态。" = "Cloud checked again. See the record status.";
 "已降低清理核验强度" = "Cleanup verification reduced";
+"应用内代理" = "In-App Proxy";
 "应用内代理（验证）" = "In-app proxy (preview)";
 "应用初始化尚未完成。请检查运行环境后重试。" = "The app is still starting. Check the runtime and retry.";
 "应用尚未就绪，请等待初始化完成并检查诊断。" = "The app is not ready. Wait for startup and check diagnostics.";
 "应用尚未就绪，请等待账号连接完成后重试。" = "The app is not ready. Wait for the account connection and retry.";
 "应用核验策略" = "Apply check settings";
+"应用进入后台后，代理连接可能暂停；返回应用后可继续备份。" = "The proxy may pause in the background. Return to the app to continue backups.";
 "建议先在 Google 相册确认。继续后仍会查重，但未查询到时将上传，可能出现重复项目。" = "Check Google Photos first. If you continue, duplicates will still be checked, but a lookup miss will allow an upload and may create duplicates.";
 "建议分别测试 Google 相册不在后台、仍在后台，以及备份关闭时的表现。记录每个入口最近一次结果即可。" = "Try Google Photos both closed and in the app switcher, including with backup turned off. The latest result for each link is kept.";
 "建议继续等待。超过 1 小时仍未通过，或验证异常时，再考虑开启。" = "We recommend waiting. Consider enabling this only if verification fails or remains incomplete after an hour.";
@@ -337,6 +346,8 @@
 "打开“Google 相册设定”" = "Open Google Photos settings";
 "打开其他页面" = "Opened another page";
 "打开系统设置" = "Open iPhone Settings";
+"扫描 HTTP 或 HTTPS 订阅链接，确认后再添加。" = "Scan an HTTP or HTTPS subscription URL, then review before adding.";
+"扫码添加订阅" = "Scan Subscription QR Code";
 "批次" = " batch";
 "拍摄位置" = "Location";
 "拍摄信息" = "Camera information";
@@ -346,6 +357,7 @@
 "提交配对用原图" = "Save original photo for pairing";
 "操作完成，请查看记录。" = "Finished. Check the records.";
 "操作未完成（{0}），请重试或导出诊断报告。" = "Could not finish ({0}). Retry or export diagnostics.";
+"支持 Clash Meta 配置，最多保存 20 份，每份最多 64 个节点。" = "Supports Clash Meta configurations. Save up to 20 configurations with 64 nodes each.";
 "文件已传输，云端尚未确认为动态照片。稍后重试会重新检查，不重复上传。" = "Files uploaded. The cloud has not confirmed the motion photo yet. Retry checks again without uploading again.";
 "无法保存或读取上传响应文件。请检查本机空间，再重新准备此任务。" = "Could not read or save the upload response. Check free space and prepare this task again.";
 "无法取得同一版本的完整 Live Photo 资源。" = "The complete photo and video for this Live Photo version are unavailable.";
@@ -354,6 +366,7 @@
 "无法读写任务数据库，请检查剩余空间。" = "Task storage could not be read or written. Check free space.";
 "无法读取 Live Photo 关键帧，已保留原件。" = "The Live Photo key frame could not be read. Your original is kept.";
 "无法读取原件或写入暂存文件，请检查空间与照片权限。" = "Could not read the original or save a temporary file. Check storage and Photos access.";
+"无法读取图片，请选择另一张二维码图片。" = "Could not read the image. Choose another QR code image.";
 "无法读取这项照片，请检查相册访问权限。" = "This photo could not be read. Check Photos access.";
 "旧版记录" = "Earlier records";
 "旧配置未能重新启动，请重新测试连接。" = "The previous configuration could not restart. Test the connection again.";
@@ -362,6 +375,7 @@
 "暂不可用的节点" = "Unavailable Nodes";
 "暂不开启" = "Keep off";
 "暂不支持此媒体格式，原件会保留。" = "This format is not supported yet. Your original is kept.";
+"暂不支持此配置，请使用最多 64 个节点的 Clash Meta 完整配置。" = "This configuration is unsupported. Use a complete Clash Meta configuration with up to 64 nodes.";
 "暂不能" = "Not yet eligible";
 "暂停" = "Pause";
 "暂停任务" = "Pause tasks";
@@ -393,7 +407,9 @@
 "未确认" = "Not confirmed";
 "未能保存更新记录。" = "Could not save update history.";
 "未能打开应用" = "App did not open";
+"未能识别图片，请换一张清晰的二维码图片。" = "Could not recognize the image. Try a clearer QR code image.";
 "未能读取配置文件。" = "Could not read the configuration file.";
+"未获得相机权限，仍可从相册选择二维码。" = "Camera access is unavailable. You can still choose a QR code from Photos.";
 "未连接" = "Not connected";
 "本地文件" = "Local File";
 "本地配置" = "Local configuration";
@@ -444,6 +460,7 @@
 "正在独立查询云端确认" = "Checking cloud confirmation";
 "正在等待任务所允许的网络。" = "Waiting for an allowed connection.";
 "正在计算内容哈希" = "Checking file contents";
+"正在识别二维码…" = "Reading QR code…";
 "正在读取大小…" = "Reading size…";
 "正在读取照片原件（iCloud 原件可能需要下载）" = "Reading original photo (iCloud may need to download it)";
 "正在读取订阅…" = "Downloading subscription…";
@@ -451,6 +468,7 @@
 "正在连接 Google，请稍候…" = "Connecting to Google…";
 "正在连接或切换账号…" = "Connecting or switching account…";
 "正在连接或切换账号，请等待当前操作完成。" = "An account is connecting or switching. Please wait.";
+"此二维码不是有效的 HTTP 或 HTTPS 订阅链接。" = "This QR code does not contain a valid HTTP or HTTPS subscription URL.";
 "此任务已有固定的资源版本。请重新准备任务，已有云端结果会先查重。" = "This task already has a fixed version. Prepare it again; existing cloud content will be checked first.";
 "此任务正在处理，请等待本次检查结束。" = "This task is being processed. Wait for this check to finish.";
 "此处会将照片和配对视频作为两个文件分享。如需分享为一张动态照片，请前往 iPhone 自带的“照片”应用。" = "The photo and paired video will be shared as two files. To share a single Live Photo, use the Photos app on your iPhone.";
@@ -501,6 +519,7 @@
 "相册访问" = "Photos access";
 "相册资源多次变化，已暂停自动尝试。照片准备完成后点击继续／重试即可，无需重新选择。" = "The photo kept changing, so automatic retries paused. When ready, resume or retry without selecting it again.";
 "相册资源导出与读取校验通过" = "Photo export and read check passed";
+"相机暂不可用，可从相册选择二维码。" = "Camera unavailable. Choose a QR code from Photos instead.";
 "相簿" = "Albums";
 "确认云端内容" = "Confirm cloud content";
 "确认云端原件可以读取，文件大小正确。" = "Check that the cloud original is readable and has the correct size.";
@@ -551,6 +570,7 @@
 "继续任务" = "Resume tasks";
 "继续分享" = "Continue sharing";
 "继续当前结果" = "Resume filtered tasks";
+"继续扫描" = "Scan Again";
 "继续等待完整验证" = "Keep waiting for full verification";
 "编辑后版本" = "Edited version";
 "编辑过的照片与视频" = "Edited photos and videos";
@@ -570,6 +590,7 @@
 "视频" = "Videos";
 "计配额原画质" = "Original quality · uses quota";
 "订阅" = "Subscription";
+"订阅 {0} · {1}" = "Subscription {0} · {1}";
 "订阅信息" = "Subscription Information";
 "订阅已下载，正在导入…" = "Subscription downloaded. Importing…";
 "订阅已导入。" = "Subscription imported.";
@@ -601,6 +622,7 @@
 "请输入 1–90 的整数。" = "Enter a whole number from 1 to 90.";
 "请输入有效的 HTTP 或 HTTPS 订阅链接。" = "Enter a valid HTTP or HTTPS subscription URL.";
 "请输入有效的 HTTPS 订阅链接。" = "Enter a valid HTTPS subscription URL.";
+"请选择要添加的订阅。" = "Choose a subscription to add.";
 "请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。" = "Choose device cleanup rather than cloud storage cleanup. Removed items appear in Recently Deleted in Apple Photos; empty it yourself if you need the space immediately. With iCloud Photos enabled, local deletions also sync to other devices using the same library.";
 "请验证：关闭第三方 VPN 后登录并备份；两个任务使用不同兜底；断开节点后重试；锁屏后返回继续。应用被暂停时内置代理可能停止，后台持续上传尚未保证。" = "Test sign-in and backup with external VPN apps off, different task policies, node failures, and resuming after locking the screen. The embedded proxy may stop when iOS suspends the app; continuous background uploads are not guaranteed.";
 "读取响应并提交云端" = "Read response and save to cloud";
@@ -626,11 +648,14 @@
 "这些节点已保留，不会用于连接。更新应用或配置后，可重新检查。" = "These nodes are retained and are not used for connections. Recheck after updating the app or configuration.";
 "这些项目已有备份任务或已经完成，请到活动中查看或重试。" = "These photos already have tasks or backups. Check Activity to view or retry them.";
 "这张照片仍有备份任务，完成后可再次检查。" = "This photo still has a backup task. Check again when it finishes.";
+"这是单个节点链接，请使用订阅二维码或手动导入配置文件。" = "This is a single-node URL. Use a subscription QR code or import a configuration file.";
 "进入“应用程序与装置”" = "Go to Apps and devices";
 "连接 Google" = "Connect to Google";
 "连接 Google 账号" = "Connect Google account";
 "连接 Google 账号，开始备份你的照片与视频。" = "Connect a Google account to back up your photos and videos.";
+"连接失败时" = "When Connection Fails";
 "连接已有凭据" = "Connect with existing credentials";
+"连接测试" = "Connection Test";
 "连接账号后显示该账号的历史记录。" = "Connect an account to see its history.";
 "连接账号，选择一张原始照片，验证上传与云端查重。上传期间请保持应用在前台。" = "Connect an account and select an original photo to test upload and deduplication. Keep the app open during upload.";
 "连接验证" = "Connection test";

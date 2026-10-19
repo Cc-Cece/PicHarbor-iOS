@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+  <key>NSCameraUsageDescription</key><string>扫描二维码以添加代理订阅。</string>
   <!-- Subscription hosts are user supplied. Google requests retain HTTPS and certificate validation. -->
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
   <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>

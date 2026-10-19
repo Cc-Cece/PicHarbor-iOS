@@ -12,7 +12,7 @@ struct ProxyPreferencesView: View {
         Form {
             Section {
                 Toggle(L10n.text("仅代理 PicHarbor"), isOn: $proxy.preferences.enabled).disabled(!canChangeCore)
-                Text(L10n.text("不创建系统 VPN。其他应用不使用此代理。验证阶段请保持应用在前台。"))
+                Text(L10n.text("仅用于 PicHarbor 连接 Google，不影响其他应用。"))
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section {
@@ -48,8 +48,8 @@ struct ProxyPreferencesView: View {
                 Picker(L10n.text("代理不可用时"), selection: $proxy.preferences.fallback) {
                     ForEach(ProxyFallback.allCases) { Text($0.title).tag($0) }
                 }
-            } header: { Text(L10n.text("全局兜底策略")) } footer: { Text(L10n.text("任务默认跟随全局，也可在任务详情单独设置。直连需要明确允许，失败后继续等待，不会标记完成。")) }
-            Section(L10n.text("连接验证")) {
+            } header: { Text(L10n.text("连接失败时")) } footer: { Text(L10n.text("任务默认跟随此设置，也可单独调整。仅在你允许时使用直连。")) }
+            Section(L10n.text("连接测试")) {
                 Button(L10n.text("测试当前连接")) {
                     working = true; result = ""
                     Task {
@@ -63,13 +63,10 @@ struct ProxyPreferencesView: View {
                 if !proxy.message.isEmpty { Text(proxy.message).font(.footnote) }
             }
             Section {
-                Text(L10n.text("请验证：关闭第三方 VPN 后登录并备份；两个任务使用不同兜底；断开节点后重试；锁屏后返回继续。应用被暂停时内置代理可能停止，后台持续上传尚未保证。"))
+                Text(L10n.text("应用进入后台后，代理连接可能暂停；返回应用后可继续备份。"))
                     .font(.footnote).foregroundStyle(.secondary)
-                if let url = Bundle.main.url(forResource: "THIRD_PARTY_LICENSES", withExtension: "zip", subdirectory: "ProxyNotices") {
-                    ShareLink(item: url) { Text(L10n.text("代理组件开源许可")) }
-                }
             }
-        }.navigationTitle(L10n.text("应用内代理（验证）")).navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle(L10n.text("应用内代理")).navigationBarTitleDisplayMode(.inline)
         .onChange(of: proxy.preferences.enabled) { _, enabled in
             Task {
                 if !enabled { await proxy.stop() }
@@ -99,7 +96,7 @@ struct TaskProxyPreferencesView: View {
                     }.disabled(saving || job.state == .completed)
                     LabeledContent(L10n.text("生效策略"), value: (job.proxyFallback ?? proxy.preferences.fallback).title)
                     if let name = job.proxyLastNode { LabeledContent(L10n.text("最近连接"), value: name.isEmpty ? L10n.text("直连") : name) }
-                } footer: { Text(L10n.text("只影响当前任务，随任务保存，不改变全局。修改会暂停当前传输并从文件边界重新连接，已提交内容仍先确认。")) }
+                } footer: { Text(L10n.text("只用于此任务，不会改变全局设置。修改后会重新连接，并先检查已备份内容。")) }
             }
         }.navigationTitle(L10n.text("任务连接策略"))
     }

@@ -700,3 +700,28 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 这些节点已保留，不会用于连接。更新应用或配置后，可重新检查。|These nodes are retained and are not used for connections. Recheck after updating the app or configuration.
 重新检查兼容性|Recheck Compatibility
 正在检查节点…|Checking nodes…
+仅用于 PicHarbor 连接 Google，不影响其他应用。|Used only for PicHarbor connections to Google. Other apps are unaffected.
+从相册选择二维码|Choose QR Code from Photos
+任务默认跟随此设置，也可单独调整。仅在你允许时使用直连。|Tasks follow this setting unless individually overridden. Direct connections require your permission.
+前往系统设置|Open System Settings
+只用于此任务，不会改变全局设置。修改后会重新连接，并先检查已备份内容。|Applies only to this task. Changes reconnect and check existing backups first.
+图片中未找到二维码，请选择清晰、完整的二维码图片。|No QR code found. Choose a clear image showing the entire code.
+将订阅二维码放入取景框|Place the subscription QR code in the camera view
+应用内代理|In-App Proxy
+应用进入后台后，代理连接可能暂停；返回应用后可继续备份。|The proxy may pause in the background. Return to the app to continue backups.
+扫描 HTTP 或 HTTPS 订阅链接，确认后再添加。|Scan an HTTP or HTTPS subscription URL, then review before adding.
+扫码添加订阅|Scan Subscription QR Code
+支持 Clash Meta 配置，最多保存 20 份，每份最多 64 个节点。|Supports Clash Meta configurations. Save up to 20 configurations with 64 nodes each.
+无法读取图片，请选择另一张二维码图片。|Could not read the image. Choose another QR code image.
+暂不支持此配置，请使用最多 64 个节点的 Clash Meta 完整配置。|This configuration is unsupported. Use a complete Clash Meta configuration with up to 64 nodes.
+未能识别图片，请换一张清晰的二维码图片。|Could not recognize the image. Try a clearer QR code image.
+未获得相机权限，仍可从相册选择二维码。|Camera access is unavailable. You can still choose a QR code from Photos.
+正在识别二维码…|Reading QR code…
+此二维码不是有效的 HTTP 或 HTTPS 订阅链接。|This QR code does not contain a valid HTTP or HTTPS subscription URL.
+相机暂不可用，可从相册选择二维码。|Camera unavailable. Choose a QR code from Photos instead.
+继续扫描|Scan Again
+订阅 {0} · {1}|Subscription {0} · {1}
+请选择要添加的订阅。|Choose a subscription to add.
+这是单个节点链接，请使用订阅二维码或手动导入配置文件。|This is a single-node URL. Use a subscription QR code or import a configuration file.
+连接失败时|When Connection Fails
+连接测试|Connection Test

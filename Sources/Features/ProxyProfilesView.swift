@@ -7,12 +7,18 @@ struct ProxyProfilesView: View {
     @State private var importer = false
     @State private var working = false
     @State private var status = ""
+    @State private var scanner = false
+    @State private var reviewScan = false
+    @State private var scannedAddress = ""
     private var canChange: Bool { model.activeCount == 0 && !working && !proxy.busy }
     var body: some View {
         Form {
             Section {
                 NavigationLink { ProxyProfileEditor() } label: {
                     Label(L10n.text("添加订阅"), systemImage: "plus")
+                }.disabled(!canChange)
+                Button { scannedAddress = ""; scanner = true } label: {
+                    Label(L10n.text("扫码添加订阅"), systemImage: "qrcode.viewfinder")
                 }.disabled(!canChange)
                 Button { importer = true } label: {
                     Label(L10n.text("导入 Clash 配置文件"), systemImage: "doc.badge.plus")
@@ -41,11 +47,17 @@ struct ProxyProfilesView: View {
                 if proxy.library.profiles.isEmpty { Text(L10n.text("尚未添加配置。")) }
             }
             if model.activeCount > 0 { Text(L10n.text("请先暂停备份，再更新或切换配置。")) }
-            Text(L10n.text("仅导入节点，不使用文件中的规则、系统 VPN 或 DNS 设置。最多保存 20 份配置，每份最多 64 个节点。"))
+            Text(L10n.text("支持 Clash Meta 配置，最多保存 20 份，每份最多 64 个节点。"))
                 .font(.footnote).foregroundStyle(.secondary)
         }
         .navigationTitle(L10n.text("配置与订阅"))
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $scanner, onDismiss: {
+            if !scannedAddress.isEmpty { reviewScan = true }
+        }) {
+            SubscriptionScannerView { scannedAddress = $0 }
+        }
+        .navigationDestination(isPresented: $reviewScan) { ProxyProfileEditor(initialAddress: scannedAddress) }
         .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .plainText, .json]) { value in
             switch value {
             case .success(let url):
@@ -69,6 +81,7 @@ struct ProxyProfilesView: View {
 
 struct ProxyProfileEditor: View {
     var profileID: String? = nil
+    var initialAddress: String = ""
     @ObservedObject private var proxy = ProxyManager.shared
     @EnvironmentObject private var model: HarborModel
     @Environment(\.dismiss) private var dismiss
@@ -171,6 +184,7 @@ struct ProxyProfileEditor: View {
         .onAppear {
             guard !loaded else { return }; loaded = true
             if let profile { name = profile.name; address = profile.subscriptionURL ?? "" }
+            else { address = initialAddress }
         }
         .confirmationDialog(L10n.text("移除此配置？正在使用的配置被移除后，应用内代理将关闭。"), isPresented: $removal, titleVisibility: .visible) {
             Button(L10n.text("移除配置"), role: .destructive) {

@@ -1,1 +1,2 @@
 "NSPhotoLibraryUsageDescription" = "Browse and back up photos and videos you allow.";
+"NSCameraUsageDescription" = "Scan QR codes to add proxy subscriptions.";
