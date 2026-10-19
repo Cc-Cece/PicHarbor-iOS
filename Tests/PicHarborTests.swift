@@ -40,6 +40,6 @@ final class PicHarborTests: XCTestCase {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let record = try decoder.decode(BackupObservation.self, from: Data(raw.utf8))
         XCTAssertEqual(record.remoteKey, "submitted")
-        XCTAssertEqual(record.stateLabel, "待云端确认")
+        XCTAssertEqual(record.stateLabel, L10n.text("待云端确认"))
     }
 }
