@@ -71,6 +71,25 @@ final class HarborModel: ObservableObject {
             }
         }
     }
+    #if DEBUG
+    // In-memory presentation fixtures only: no credentials, repository writes,
+    // cloud calls or deletion authorization. Release builds omit this entry.
+    func installTaskPresentationFixture() -> Bool {
+        guard initialized, account.isEmpty, ProcessInfo.processInfo.arguments.contains("--task-review-fixture") else { return false }
+        var policy = BackupSettings(); policy.live = .applePair; policy.strictLiveConfirmation = true
+        var live = BackupJob(account: "", assetID: "ui-only-asset", assetRevision: "ui-only", settings: policy)
+        live.id = "ui-live"; live.origin = .manual; live.batchID = "ui-review-batch"; live.isLive = true
+        live.resources = [MediaResource(role: "original.photo", path: "ui-only", name: "界面样本 Live Photo", remoteKey: "ui-only", confirmed: true),
+                          MediaResource(role: "original.pairedVideo", path: "ui-only", name: "界面样本视频", remoteKey: "ui-only", confirmed: true)]
+        live.sources = live.resources; live.livePairs = try? LivePairRecord.make(live.resources)
+        live.livePairs?[0].confirmed = true; live.livePairs?[0].remoteKey = "ui-only"; live.livePairs?[0].route = "joint"
+        live.beginConfirmation(); live.error = "REMOTE_MOTION_NOT_DYNAMIC"
+        var done = BackupJob(account: "", assetID: "ui-only-second", assetRevision: "ui-only", settings: BackupSettings())
+        done.id = "ui-done"; done.origin = .manual; done.batchID = live.batchID; done.state = .completed; done.verificationLevel = "standard"
+        jobs = [live, done]; updateAssetStates(jobs)
+        return true
+    }
+    #endif
     func backgroundWake() async {
         await boot(); await library.refresh(); await automaticScan(); await pump()
         while !workers.isEmpty && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(100)) }

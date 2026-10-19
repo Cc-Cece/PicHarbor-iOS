@@ -21,7 +21,7 @@ struct ActivityView: View {
             if batches.isEmpty { ContentUnavailableView("暂无符合条件的任务", systemImage: "clock", description: Text("调整来源或状态筛选，查看其他备份活动。")) }
             ForEach(batches) { batch in
                 if batch.isBatch {
-                    NavigationLink { ActivityBatchView(id: batch.id, source: source, status: status) } label: { ActivityBatchCard(batch: batch) }
+                    NavigationLink { ActivityBatchView(id: batch.id, source: source, status: status) } label: { ActivityBatchCard(batch: batch) }.accessibilityIdentifier("activity.batch")
                 } else if let job = batch.matching.first { ActivityTaskRow(job: job) }
             }
             if source == .all && status == .all && !model.engine.records.isEmpty {
@@ -70,6 +70,7 @@ struct ActivityTaskRow: View {
     @State private var removing = false
     var body: some View {
         NavigationLink { JobDetailView(id: job.id) } label: { JobRow(job: job) }
+            .accessibilityIdentifier("activity.task.\(job.id)")
             .swipeActions { if job.unfinished { Button("移除", role: .destructive) { removing = true } } }
             .confirmationDialog("移除此任务？", isPresented: $removing, titleVisibility: .visible) {
                 Button("停止并移除任务", role: .destructive) { Task { await model.removeUnfinished([job.id]) } }

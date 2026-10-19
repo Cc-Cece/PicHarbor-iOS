@@ -1,6 +1,25 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testBatchNavigationTaskFlowAndAdvancedInformationSheet() {
+        let app = XCUIApplication(); app.launchArguments.append("--task-review-fixture"); app.launch()
+        let batch = app.buttons["activity.batch"].firstMatch
+        XCTAssertTrue(batch.waitForExistence(timeout: 30)); capture("activity-batch-card")
+        batch.tap()
+        XCTAssertTrue(app.navigationBars["备份批次"].waitForExistence(timeout: 5)); capture("activity-batch-list")
+        app.buttons["activity.task.ui-live"].tap()
+        XCTAssertTrue(app.navigationBars["任务详情"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["备份流程"].exists)
+        XCTAssertFalse(app.staticTexts["REMOTE_MOTION_NOT_DYNAMIC"].exists)
+        capture("task-main-flow")
+        let advanced = app.buttons["task.advanced"]
+        for _ in 0..<3 { if advanced.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(advanced.isHittable); advanced.tap()
+        XCTAssertTrue(app.navigationBars["高级信息"].waitForExistence(timeout: 5))
+        app.swipeUp(); capture("task-advanced-sheet")
+        app.navigationBars["高级信息"].buttons["完成"].tap()
+        XCTAssertTrue(app.navigationBars["任务详情"].exists)
+    }
     func testAdvancedBackupChecksDefaultOffAndPersist() {
         let app = XCUIApplication(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }

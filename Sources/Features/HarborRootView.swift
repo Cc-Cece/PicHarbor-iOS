@@ -27,7 +27,13 @@ struct HarborRootView: View {
                 }.padding().background(.regularMaterial)
             }
         }
-        .task { await model.boot(); welcome = model.initialized && model.account.isEmpty && selectedTab == 0 }
+        .task {
+            await model.boot()
+            #if DEBUG
+            if model.installTaskPresentationFixture() { selectedTab = 2; return }
+            #endif
+            welcome = model.initialized && model.account.isEmpty && selectedTab == 0
+        }
         .sheet(isPresented: $welcome) { NavigationStack { ConnectionView() }.environmentObject(model) }
         .alert("PicHarbor", isPresented: Binding(get: { !model.notice.isEmpty && model.notice != "已加入备份队列。" }, set: { if !$0 { model.notice = "" } })) {
             Button("好") { model.notice = "" }

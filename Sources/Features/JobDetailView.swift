@@ -144,6 +144,8 @@ private struct TaskThumbnail: View {
             else { Image(systemName: "photo").font(.title).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
         }.frame(width: 64, height: 64).background(Color(uiColor: .secondarySystemBackground)).clipShape(RoundedRectangle(cornerRadius: 12))
         .onAppear {
+            let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            guard authorization == .authorized || authorization == .limited else { return }
             guard request == nil, let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject else { return }
             let options = PHImageRequestOptions(); options.isNetworkAccessAllowed = false
             request = PHImageManager.default().requestImage(for: asset, targetSize: CGSize(width: 160, height: 160), contentMode: .aspectFill, options: options) { value, _ in DispatchQueue.main.async { image = value } }
