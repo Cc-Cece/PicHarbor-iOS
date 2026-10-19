@@ -6,7 +6,7 @@ SwiftUI 原生界面 + 内嵌 Python + gpmc，面向 iOS 17+ iPhone。开发者�
 
 开发版产物、自动测试证据与剩余事项见 [开发版验收说明](docs/DEVELOPMENT-ACCEPTANCE.md)。当前 0.2.5 修复新拍照片准备与旧任务重试，见[修复说明](docs/FRESH-PHOTO-FIXES.md)；两种原始配对的[测试步骤](docs/LIVE-PAIR-TESTING.md)继续适用。原始关联已获得初步真机反馈，完整矩阵仍待验收，不将整个计划标为完成。
 
-最新本机安装包：`dist/PicHarbor-0.2.5-fresh-photo-final.ipa`。设备构建和包检查通过；47 Python、30 原生、6 界面测试全部通过。使用原 Sideloadly 配置覆盖安装后，优先直接继续资源数为 0 的旧失败任务，再验证拍摄后立即备份。
+最新本机安装包：`dist/PicHarbor-0.2.6-confirmation-verified.ipa`。设备构建和包检查通过；51 Python、34 原生、6 界面测试全部通过。新增原始配对蓝色状态、增量云端确认、独立确认名额及确认进度；详见[确认优化与复测](docs/CONFIRMATION-OPTIMIZATION.md)。使用原 Sideloadly 配置覆盖安装后，可继续旧待确认任务，无需重传；蓝色尚未完成且不进入清理列表。
 
 2026-10-19：旧 A/B 版本已通过云端检查和用户真机验证，三种上传模式符合预期。完整实施已获批准，新版增加原生图库、任务持久化、后台文件传输、Motion Photo 封装与四入口界面；这些新增能力需要独立验收。
 

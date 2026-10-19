@@ -27,4 +27,4 @@
 
 真机优先继续旧的原始配对待确认任务：观察蓝色对勾和核验进度，最终变绿后再计入已备份；确认等待期间创建普通上传，检查其可推进。使用同等网络、图库和新拍样本比较配对到完成的耗时，不只比较创建到完成。蓝色任务须始终不出现在清理候选。
 
-构建、完整回归与包校验结果在完成后记录到开发版验收台账。
+生产提交 `84601fb`。[设备构建与包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39209281714)及[完整回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39209286283)通过：51 Python、34 原生、6 界面，共 91 项，零失败、零跳过。最终本机包 `dist/PicHarbor-0.2.6-confirmation-verified.ipa`，大小与校验值见[开发版验收台账](DEVELOPMENT-ACCEPTANCE.md)。仍待用户真机比较实际确认耗时。
