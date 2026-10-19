@@ -29,8 +29,8 @@ struct ActivityView: View {
                     }
                 } else if let job = batch.matching.first { ActivityTaskRow(job: job) }
             }
-            if !archived && source == .all && status == .all && !model.engine.records.isEmpty {
-                Section { NavigationLink(L10n.text("历史备份记录")) { LegacyBackupRecordsView() } }
+            if archived && !model.engine.records.isEmpty {
+                Section { NavigationLink { LegacyBackupRecordsView() } label: { Label(L10n.text("旧版记录"), systemImage: "clock.arrow.circlepath") } }
             }
         }.navigationTitle(archived ? L10n.text("归档记录") : L10n.text("活动"))
         .task { await model.autoArchive(force: true) }
@@ -106,18 +106,22 @@ struct ActivityActionsMenu: View {
     @State private var selecting = false
     var body: some View {
         Menu {
-            if !archived { Button(L10n.text("归档记录")) { archives = true } }
-            Button(archived ? L10n.text("选择记录取消归档") : L10n.text("选择记录归档")) { selecting = true }.disabled(!jobs.contains { $0.state == .completed })
-            Button(archived ? L10n.text("取消归档当前已完成记录") : L10n.text("归档当前已完成记录"), systemImage: "archivebox") {
+            if !archived { Section {
+                Button(L10n.text("暂停任务"), systemImage: "pause") { let ids = jobs.filter { $0.state.active || [.queued, .waiting].contains($0.state) }.map(\.id); Task { for id in ids { await model.pause(id) } } }.disabled(!jobs.contains { $0.state.active || [.queued, .waiting].contains($0.state) })
+                Button(L10n.text("继续任务"), systemImage: "play") { let ids = jobs.filter { [.paused, .failed, .attention].contains($0.state) }.map(\.id); Task { for id in ids { await model.resume(id) } } }.disabled(!jobs.contains { [.paused, .failed, .attention].contains($0.state) })
+            } }
+            Section {
+            Button(archived ? L10n.text("选择取消归档") : L10n.text("选择归档"), systemImage: "checkmark.circle") { selecting = true }.disabled(!jobs.contains { $0.state == .completed })
+            Button(archived ? L10n.text("取消归档全部") : L10n.text("归档已完成"), systemImage: "archivebox") {
                 let ids = Set(jobs.filter { $0.state == .completed }.map(\.id))
                 Task { await model.archive(ids, restoring: archived) }
             }.disabled(!jobs.contains { $0.state == .completed })
+            }
+            if !archived { Section { Button(L10n.text("已归档"), systemImage: "archivebox.fill") { archives = true } } }
             if !archived {
-            Button(L10n.text("暂停当前结果"), systemImage: "pause") { let ids = jobs.filter { $0.state.active || [.queued, .waiting].contains($0.state) }.map(\.id); Task { for id in ids { await model.pause(id) } } }
-            Button(L10n.text("继续当前结果"), systemImage: "play") { let ids = jobs.filter { [.paused, .failed, .attention].contains($0.state) }.map(\.id); Task { for id in ids { await model.resume(id) } } }
-            Button(L10n.text("移除当前结果中的未完成任务"), systemImage: "trash", role: .destructive) {
+            Section { Button(L10n.text("移除未完成"), systemImage: "trash", role: .destructive) {
                 removal = Set(jobs.filter(\.unfinished).map(\.id)); removing = true
-            }.disabled(!jobs.contains(where: \.unfinished))
+            }.disabled(!jobs.contains(where: \.unfinished)) }
             }
         } label: { Image(systemName: "ellipsis.circle") }.accessibilityIdentifier("activity.menu")
         .sheet(isPresented: $archives) {
@@ -171,6 +175,6 @@ private struct LegacyBackupRecordsView: View {
             Section { ForEach(model.engine.records) { record in
                 HStack { AssetThumbnail(assetID: ""); VStack(alignment: .leading, spacing: 5) { Text(record.name).lineLimit(1).truncationMode(.middle); Text(record.stateLabel).font(.caption).foregroundStyle(.secondary) } }
             } } footer: { Text(L10n.text("历史记录未关联本机照片，不用于空间清理。")) }
-        }.navigationTitle(L10n.text("历史备份记录"))
+        }.navigationTitle(L10n.text("旧版记录"))
     }
 }

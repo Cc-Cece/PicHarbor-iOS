@@ -9,6 +9,7 @@ struct JobDetailView: View {
     @State private var advanced = false
     @State private var reprepare = false
     @State private var remove = false
+    @State private var reupload = false
     var job: BackupJob? { model.jobs.first { $0.id == id } }
     var body: some View {
         List {
@@ -40,6 +41,7 @@ struct JobDetailView: View {
                         Button(L10n.text("取消任务"), role: .destructive) { Task { await model.cancel(id) } }
                     }
                     if [.failed, .attention, .paused].contains(job.state) { Button(L10n.text("重新准备此任务")) { reprepare = true } }
+                    if job.state == .attention && job.error == "PREVIOUS_BACKUP_NOT_VISIBLE" { Button(L10n.text("仍要重新上传")) { reupload = true } }
                     if job.unfinished { Button(L10n.text("移除未完成任务"), role: .destructive) { remove = true } }
                 }
                 Section { Button(L10n.text("高级信息"), systemImage: "info.circle") { advanced = true }.accessibilityIdentifier("task.advanced") }
@@ -55,6 +57,10 @@ struct JobDetailView: View {
         .confirmationDialog(L10n.text("移除此任务？"), isPresented: $remove, titleVisibility: .visible) {
             Button(L10n.text("停止并移除任务"), role: .destructive) { Task { await model.removeUnfinished([id]); dismiss() } }
         } message: { Text(L10n.text("本机及云端照片保留。仍可手动重新备份。")) }
+        .confirmationDialog(L10n.text("仍要重新上传？"), isPresented: $reupload, titleVisibility: .visible) {
+            Button(L10n.text("重新上传")) { Task { await model.allowReuploadAfterMissingHistory(id) } }
+            Button(L10n.text("取消"), role: .cancel) {}
+        } message: { Text(L10n.text("建议先在 Google 相册确认。继续后仍会查重，但未查询到时将上传，可能出现重复项目。")) }
     }
 }
 

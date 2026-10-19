@@ -323,7 +323,7 @@ final class HarborModel: ObservableObject {
                 job.isLive = asset.mediaSubtypes.contains(.photoLive)
                 job.mediaKind = asset.mediaType == .video ? "video" : "photo"
                 job.albumIDs = membership[asset.localIdentifier] ?? []
-                job.forceUpload = force
+                job.forceUpload = false
                 job.assetCreated = asset.creationDate; job.assetModified = asset.modificationDate
                 job.origin = origin; job.batchID = batch
                 // PhotoKit may publish several revisions while a fresh capture
@@ -331,7 +331,7 @@ final class HarborModel: ObservableObject {
                 if jobs.contains(where: { $0.account == targetAccount && $0.assetID == job.assetID &&
                     $0.settings.mediaPolicy == job.settings.mediaPolicy && $0.canRefreshSource &&
                     [.queued, .preparing, .waiting, .paused].contains($0.state) }) { continue }
-                if !force && !recreate && known.contains(job.discoveryKey(origin: origin)) { continue }
+                if origin == .automatic && !force && !recreate && known.contains(job.discoveryKey(origin: origin)) { continue }
                 if active.contains(job.dedupKey) || planned.contains(job.dedupKey) { continue }
                 known.insert(job.discoveryKey(origin: origin))
                 planned.insert(job.dedupKey); job.generation = 1; additions.append(job)
@@ -489,6 +489,8 @@ final class HarborModel: ObservableObject {
                 } catch { await PreparationGate.shared.release(); throw error }
                 await PreparationGate.shared.release()
             }
+            let prior = ResourceReuse.evidence(for: job, history: jobs)
+            if job.priorResourceKeys != prior { job.priorResourceKeys = prior; try await persist(job) }
             if job.isLive && job.settings.live != .motion {
                 stage = "pair_commit"
                 if !job.hasConfirmedPairs {
@@ -535,7 +537,17 @@ final class HarborModel: ObservableObject {
                     } else {
                         stage = "prepare_upload"
                         job.state = .confirming; job.failureStage = stage; try await persist(job)
-                        request["force"] = job.forceUpload
+                        // Older task snapshots may contain forceUpload=true.
+                        // Every ordinary retry now honors remote deduplication.
+                        request["force"] = false
+                        if job.priorResourceKeys?[resource.id] != nil && job.allowMissingPriorUpload != true {
+                            let prior = try await engine.invoke("confirm_resource", request)
+                            try checkpoint(job)
+                            guard prior["confirmed"] as? Bool == true,
+                                  let key = prior["remote_key"] as? String, !key.isEmpty else { throw HarborError("PREVIOUS_BACKUP_NOT_VISIBLE") }
+                            job.resources[index].remoteKey = key; job.resources[index].confirmed = true
+                            job.resources[index].reused = true; try await persist(job); continue
+                        }
                         let plan = try await engine.invoke("prepare_upload", request)
                         try checkpoint(job)
                         if plan["exists"] as? Bool == true {
@@ -618,6 +630,10 @@ final class HarborModel: ObservableObject {
             else if (code.hasPrefix("REMOTE_MOTION_") && code != "REMOTE_MOTION_TRASHED") || code == "PAIR_CONFIRMATION_PENDING" {
                 job.waitForConfirmation()
             }
+            else if code == "PREVIOUS_BACKUP_NOT_VISIBLE" {
+                job.state = job.attempts <= 3 ? .confirming : .attention
+                job.retryAt = job.attempts <= 3 ? Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5) : nil
+            }
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE"].contains(code) && job.attempts <= 3 {
                 job.state = code == "REMOTE_NOT_VISIBLE" ? (job.hasConfirmedPairs ? .paired : .confirming) : .waiting
                 job.retryAt = Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5)
@@ -668,6 +684,11 @@ final class HarborModel: ObservableObject {
             // A timeout/termination after submission cannot authorize another
             // commit. Retry here means query-only until association is visible.
             if pair.queryOnly { throw HarborError("PAIR_CONFIRMATION_PENDING") }
+            if job.allowMissingPriorUpload != true &&
+                (job.priorResourceKeys?[job.resources[videoIndex].id] != nil ||
+                 (job.priorResourceKeys?[job.resources[photoIndex].id] != nil && (presence["photo_key"] as? String ?? "").isEmpty)) {
+                throw HarborError("PREVIOUS_BACKUP_NOT_VISIBLE")
+            }
             if job.livePairs?[pairIndex].route == nil {
                 let photoExists = !(presence["photo_key"] as? String ?? "").isEmpty
                 job.livePairs?[pairIndex].route = photoExists || job.settings.live == .appleReconcile ? "reconcile" : "joint"
@@ -860,6 +881,13 @@ final class HarborModel: ObservableObject {
             job.state = .queued; try? await persist(job)
         }
         await pump()
+    }
+    func allowReuploadAfterMissingHistory(_ id: String) async {
+        guard !workers.contains(id), !switching, !storageFailed,
+              var job = jobs.first(where: { $0.id == id }), job.account == account,
+              job.state == .attention, job.error == "PREVIOUS_BACKUP_NOT_VISIBLE" else { return }
+        job.allowMissingPriorUpload = true
+        do { try await persist(job); await resume(id) } catch { return }
     }
     func applyConfirmationPolicyToPending() async {
         let ids = visibleJobs.filter { [.paired, .confirming].contains($0.state) && $0.confirmationOnly }.map(\.id)

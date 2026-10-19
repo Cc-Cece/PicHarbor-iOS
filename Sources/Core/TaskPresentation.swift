@@ -44,6 +44,7 @@ extension BackupJob {
         if standardConfirmationPassed { return isLive && settings.requiresStrictConfirmation ? 4 : 3 }
         if state == .committing { return 3 }
         if state == .transferring || resources.contains(where: { $0.transportID != nil }) { return 2 }
+        if error == "PREVIOUS_BACKUP_NOT_VISIBLE" { return 1 }
         if failureStage == "pair_lookup" { return livePairs?.contains(where: { $0.queryOnly }) == true ? 3 : 1 }
         if failureStage == "prepare_upload" { return 1 }
         if failureStage == "pair_transfer" { return 2 }

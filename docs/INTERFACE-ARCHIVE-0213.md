@@ -14,3 +14,8 @@
 - 大批量归档使用带版本号的 SQLite 事务，保留历史记录；旧版可选字段迁移兼容，未完成、失败和暂停记录不会自动归档。
 
 本机 58 项 Python 回归及多语言覆盖检查通过；新增原生测试覆盖归档期限、输入校验、持久化版本、旧记录兼容及复用判定。云端编译、模拟器结果及 IPA 指纹将在完成后补充。
+
+## 构建验证
+
+- 首轮源码 `ee4ce10` 因新增分支后的 getter 缺少 `return` 编译失败，已在 `4de1272` 修复。
+- `4de1272` 的[设备构建](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39248854314)及 IPA 检查通过；[模拟器回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39248860121)正在运行。

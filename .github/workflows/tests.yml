@@ -6,6 +6,12 @@ name: Unit Tests (Simulator)
 
 on:
   workflow_dispatch:
+    inputs:
+      test_scope:
+        description: Test scope
+        type: choice
+        options: [all, live-share]
+        default: all
   pull_request:
     branches: [main]
     paths-ignore:
@@ -84,14 +90,19 @@ jobs:
       - name: Run tests
         env:
           SCHEME: ${{ steps.app.outputs.name }}
+          TEST_SCOPE: ${{ inputs.test_scope || 'all' }}
         run: |
           set -euo pipefail
+          FILTER=("-parallel-testing-enabled" "NO")
+          if [ "$TEST_SCOPE" = "live-share" ]; then
+            FILTER+=("-only-testing:${SCHEME}Tests/LivePhotoShareTests")
+          fi
           xcodebuild test \
             -project "${SCHEME}.xcodeproj" \
             -scheme "$SCHEME" \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
-            -parallel-testing-enabled NO \
             -resultBundlePath build/TestResults.xcresult \
+            "${FILTER[@]}" \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Export native screenshots

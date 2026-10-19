@@ -119,6 +119,8 @@ struct BackupJob: Codable, Identifiable {
     var isLive = false
     var mediaKind: String?
     var forceUpload = false
+    var priorResourceKeys: [String: String]?
+    var allowMissingPriorUpload: Bool?
     var error = ""
     var failureStage: String?
     var failureSystemCode: String?

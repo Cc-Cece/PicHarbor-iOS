@@ -11,6 +11,7 @@ struct HarborError: LocalizedError {
         case "ACCOUNT_BUSY": return L10n.text("正在连接或切换账号，请等待当前操作完成。")
         case "CLEANUP_BUSY": return L10n.text("正在核验或清理照片，请等待完成后再操作账号。")
         case "NETWORK_ERROR": return L10n.text("网络请求失败，请检查网络后重试。")
+        case "PREVIOUS_BACKUP_NOT_VISIBLE": return L10n.text("已有备份记录，但暂未查询到对应云端内容。会先重新检查，避免重复上传。")
         case "RUNTIME_UNAVAILABLE": return L10n.text("Python 运行环境不可用，请导出诊断报告。")
         case "KEYCHAIN_ERROR": return L10n.text("无法访问安全凭据存储。")
         case "PHOTO_PERMISSION": return L10n.text("请允许访问所选照片，然后重新选择。")

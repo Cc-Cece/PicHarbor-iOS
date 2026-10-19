@@ -14,7 +14,7 @@
 
 ## 构建记录
 
-- 源码：`bfb4412`；[设备构建](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39243423443)通过；[完整模拟器回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39243380304)正在执行。
+- 源码：`bfb4412`；[设备构建](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39243423443)通过；[模拟器回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39243380304)未全部通过：折叠说明按钮的标识被子控件继承，导致展开后测试定位不唯一。0.2.13 改为独立展开按钮，随新版重新回归。
 - 本机 IPA：`dist/PicHarbor-0.2.12-google-photos-direct.ipa`，下载大小 12,436,967 字节，解压大小 42,739,085 字节。
 - SHA-256：`b1d8db612a6e51997df9f15dfff85e7088e443e9c9c43acd7f9e602703383bd0`。
 - 包检查通过：0.2.12 / 14、iOS 17+、`com.cccece.picharbor`，嵌入运行环境及上游快照完整；主程序含真实链接、不含临时测试页类型或资产删除 selector。

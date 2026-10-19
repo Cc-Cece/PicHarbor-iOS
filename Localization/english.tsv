@@ -595,3 +595,18 @@ Google 相册备份|Google Photos backup
 选择记录归档|Select records to archive
 镜头|Lens
 默认收起 14 天前已完成的记录，照片和备份状态会保留。取消归档后，会重新等待设定天数。此设置适用于本机所有账号。|By default, completed records are archived after 14 days. Photos and backup status are kept. Unarchiving restarts the waiting period. This setting applies to all accounts on this device.
+已有备份记录，但暂未查询到对应云端内容。会先重新检查，避免重复上传。|A previous backup exists, but the cloud lookup has not found it yet. It will be checked again before uploading.
+仍要重新上传|Upload again anyway
+仍要重新上传？|Upload again anyway?
+重新上传|Upload again
+建议先在 Google 相册确认。继续后仍会查重，但未查询到时将上传，可能出现重复项目。|Check Google Photos first. If you continue, duplicates will still be checked, but a lookup miss will allow an upload and may create duplicates.
+旧版记录|Earlier records
+暂停任务|Pause tasks
+继续任务|Resume tasks
+选择取消归档|Select to unarchive
+选择归档|Select to archive
+取消归档全部|Unarchive all in view
+归档已完成|Archive completed
+已归档|Archived
+移除未完成|Remove unfinished
+系统暂时无法提供动态照片分享，请从苹果相册分享此项目。|Live Photo sharing is unavailable. Share this item from Apple Photos instead.
