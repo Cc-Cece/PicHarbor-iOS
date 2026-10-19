@@ -691,3 +691,12 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 移除此配置？正在使用的配置被移除后，应用内代理将关闭。|Remove this configuration? Removing the active configuration turns off the in-app proxy.
 订阅服务器未返回有效内容，请检查链接后重试。|The subscription server returned an invalid response. Check the URL and try again.
 最多保存 20 份配置，请先移除不用的配置。|You can save up to 20 configurations. Remove an unused configuration first.
+代理启动失败：{0}|Proxy startup failed: {0}
+可用 {0} 个，暂不可用 {1} 个。未通过的节点已保留，可重新检查。|{0} available, {1} unavailable. Unavailable nodes are retained for rechecking.
+订阅未提供可用节点，请确认链接支持 Clash Meta 格式。|The subscription returned no usable nodes. Check that it supports Clash Meta format.
+另有 {0} 个节点暂不可用，可在配置详情查看。|{0} more nodes are unavailable. See configuration details.
+订阅信息|Subscription Information
+暂不可用的节点|Unavailable Nodes
+这些节点已保留，不会用于连接。更新应用或配置后，可重新检查。|These nodes are retained and are not used for connections. Recheck after updating the app or configuration.
+重新检查兼容性|Recheck Compatibility
+正在检查节点…|Checking nodes…

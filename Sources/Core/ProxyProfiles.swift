@@ -10,7 +10,36 @@ struct ProxyProfile: Codable, Identifiable {
     var updatedAt: Date
     var lastResult: String = ""
     var lastError: String?
+    var sourceNodes: Data?
+    var issues: [ProxyNodeIssue]?
+    var information: [String]?
     var nodeCount: Int { (try? JSONSerialization.jsonObject(with: nodes) as? [[String: Any]])?.count ?? 0 }
+}
+
+struct ProxyNodeIssue: Codable, Identifiable {
+    var name: String
+    var kind: String
+    var reason: String
+    var id: String { name }
+}
+
+enum ProxyNodePreparation {
+    static func splitInformation(_ nodes: [[String: Any]]) throws -> (nodes: [[String: Any]], information: [String]) {
+        // Subscription labels are protocol patterns, not localizable UI strings.
+        let prefixes = ["\u{5269}\u{4f59}\u{6d41}\u{91cf}", "\u{5269}\u{9918}\u{6d41}\u{91cf}", "\u{8ddd}\u{79bb}\u{4e0b}\u{6b21}\u{91cd}\u{7f6e}", "\u{8ddd}\u{96e2}\u{4e0b}\u{6b21}\u{91cd}\u{7f6e}", "\u{5957}\u{9910}\u{5230}\u{671f}", "\u{5230}\u{671f}\u{65f6}\u{95f4}", "\u{5230}\u{671f}\u{6642}\u{9593}"]
+        func informational(_ name: String) -> Bool { prefixes.contains { name.hasPrefix($0) } }
+        func identity(_ node: [String: Any]) throws -> Data {
+            try JSONSerialization.data(withJSONObject: node.filter { $0.key != "name" }, options: [.sortedKeys])
+        }
+        let ordinary = try Set(nodes.filter { !informational($0["name"] as? String ?? "") }.map(identity))
+        var kept: [[String: Any]] = [], information: [String] = []
+        for node in nodes {
+            let name = node["name"] as? String ?? ""
+            if informational(name), ordinary.contains(try identity(node)) { information.append(name) }
+            else { kept.append(node) }
+        }
+        return (kept, information)
+    }
 }
 
 struct ProxyProfileLibrary: Codable {
@@ -57,7 +86,7 @@ enum ProxySubscription {
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url)
-        request.setValue("Clash/PicHarbor", forHTTPHeaderField: "User-Agent")
+        request.setValue("clash.meta", forHTTPHeaderField: "User-Agent")
         request.setValue("application/yaml, text/yaml, application/json, text/plain, */*", forHTTPHeaderField: "Accept")
         let (bytes, response) = try await session.bytes(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw HarborError("PROXY_SUBSCRIPTION_DOWNLOAD") }

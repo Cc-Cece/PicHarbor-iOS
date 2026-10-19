@@ -3,8 +3,10 @@ import SwiftUI
 
 struct HarborError: LocalizedError {
     let code: String
-    init(_ code: String) { self.code = code }
+    let detail: String?
+    init(_ code: String, detail: String? = nil) { self.code = code; self.detail = detail }
     var errorDescription: String? {
+        if code == "PROXY_START_FAILED", let detail, !detail.isEmpty { return L10n.text("代理启动失败：{0}", [detail]) }
         switch code {
         case "LOGIN_REQUIRED": return L10n.text("需要重新登录 Google，或服务端要求额外验证。")
         case "INVALID_CREDENTIAL": return L10n.text("登录凭据无效。")
@@ -13,6 +15,7 @@ struct HarborError: LocalizedError {
         case "NETWORK_ERROR": return L10n.text("网络请求失败，请检查网络后重试。")
         case "PROXY_CONFIG_REQUIRED": return L10n.text("请先导入代理配置。")
         case "PROXY_SUBSCRIPTION_URL": return L10n.text("请输入有效的 HTTP 或 HTTPS 订阅链接。")
+        case "PROXY_EMPTY_SUBSCRIPTION": return L10n.text("订阅未提供可用节点，请确认链接支持 Clash Meta 格式。")
         case "PROXY_SUBSCRIPTION_DOWNLOAD": return L10n.text("订阅服务器未返回有效内容，请检查链接后重试。")
         case "PROXY_TASKS_ACTIVE": return L10n.text("请先暂停备份，再更新或切换配置。")
         case "PROXY_PROFILE_LIMIT": return L10n.text("最多保存 20 份配置，请先移除不用的配置。")

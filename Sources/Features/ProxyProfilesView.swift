@@ -122,6 +122,39 @@ struct ProxyProfileEditor: View {
                 if !status.isEmpty { Text(status).font(.footnote).textSelection(.enabled) }
             }
             if let profile {
+                if let information = profile.information, !information.isEmpty {
+                    Section(L10n.text("订阅信息")) {
+                        ForEach(information, id: \.self) { Text($0) }
+                    }
+                }
+                if let issues = profile.issues, !issues.isEmpty {
+                    Section(L10n.text("暂不可用的节点")) {
+                        ForEach(issues) { issue in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(issue.name).lineLimit(1).truncationMode(.middle)
+                                Text(issue.kind).font(.caption).foregroundStyle(.secondary)
+                                Text(issue.reason).font(.footnote).textSelection(.enabled)
+                            }
+                        }
+                        Text(L10n.text("这些节点已保留，不会用于连接。更新应用或配置后，可重新检查。"))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    Button(L10n.text("重新检查兼容性")) {
+                        working = true; status = L10n.text("正在检查节点…")
+                        Task { @MainActor in
+                            defer { working = false }
+                            do {
+                                guard model.activeCount == 0 else { throw HarborError("PROXY_TASKS_ACTIVE") }
+                                let nodes = try JSONSerialization.jsonObject(with: profile.sourceNodes ?? profile.nodes)
+                                let data = try JSONSerialization.data(withJSONObject: ["proxies": nodes])
+                                try await proxy.importText(String(decoding: data, as: UTF8.self), profileID: profile.id, name: profile.name)
+                                status = proxy.message
+                            } catch { status = error.localizedDescription }
+                        }
+                    }.disabled(!canChange)
+                }
                 Section(L10n.text("更新记录")) {
                     LabeledContent(L10n.text("节点数"), value: String(profile.nodeCount))
                     LabeledContent { Text(profile.updatedAt, format: .dateTime.year().month().day().hour().minute()) } label: { Text(L10n.text("上次成功更新")) }

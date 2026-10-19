@@ -24,6 +24,11 @@ struct ProxyPreferencesView: View {
                 if let profile = proxy.library.profiles.first(where: { $0.id == proxy.library.activeID }) {
                     Text(L10n.text("正在使用：{0} · {1} 个节点", [profile.name, String(profile.nodeCount)]))
                         .font(.footnote).foregroundStyle(.secondary)
+                    ForEach(profile.information ?? [], id: \.self) { Text($0).font(.footnote).foregroundStyle(.secondary) }
+                    if let issues = profile.issues, !issues.isEmpty {
+                        Text(L10n.text("另有 {0} 个节点暂不可用，可在配置详情查看。", [String(issues.count)]))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
             }
             if !proxy.names.isEmpty {

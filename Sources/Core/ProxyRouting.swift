@@ -48,7 +48,9 @@ enum ProxyConfiguration {
             "external-controller": "", "external-controller-unix": "", "tun": ["enable": false],
             "dns": ["enable": false], "profile": ["store-selected": false, "store-fake-ip": false],
             "proxies": nodes, "listeners": listeners, "rules": ["MATCH,REJECT"]]
-        return (String(decoding: try JSONSerialization.data(withJSONObject: document), as: UTF8.self), ports)
+        // The SDK reads this JSON through its YAML decoder, which rejects JSON's
+        // optional escaped slash (e.g. ALPN "http\/1.1"). Preserve plain slashes.
+        return (String(decoding: try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self), ports)
     }
     static func candidates(_ preferences: ProxyPreferences, override: ProxyFallback?, failures: [String]) -> [String] {
         guard preferences.enabled else { return [""] }
@@ -140,6 +142,32 @@ final class ProxyManager: ObservableObject {
         if let testStop { testStop(); return }
         await withCheckedContinuation { continuation in queue.async { ProxyCoreBridge.stop(); continuation.resume() } }
     }
+    private func startupError() -> HarborError {
+        HarborError("PROXY_START_FAILED", detail: testStart == nil ? ProxyCoreBridge.failureMessage() : nil)
+    }
+    private func compatibleNodes(_ nodes: [[String: Any]]) async throws -> ([[String: Any]], [ProxyNodeIssue]) {
+        if let starting { try await starting.value }
+        let previous = capturedLibrary(), wasRunning = running
+        let oldNodes = try previous.profiles.first(where: { $0.id == previous.activeID }).map { try JSONSerialization.jsonObject(with: $0.nodes) as? [[String: Any]] ?? [] } ?? []
+        var accepted: [[String: Any]] = [], issues: [ProxyNodeIssue] = []
+        if await startCore(try ProxyConfiguration.runtime(nodes).0) { accepted = nodes }
+        else {
+            for node in nodes {
+                if await startCore(try ProxyConfiguration.runtime([node]).0) { accepted.append(node) }
+                else {
+                    issues.append(ProxyNodeIssue(name: node["name"] as? String ?? "", kind: node["type"] as? String ?? "", reason: startupError().localizedDescription))
+                }
+            }
+        }
+        if wasRunning, !oldNodes.isEmpty {
+            running = await startCore(try ProxyConfiguration.runtime(oldNodes).0)
+            guard running else { message = L10n.text("旧配置未能重新启动，请重新测试连接。"); throw startupError() }
+        } else { await stopCore(); running = false }
+        guard !accepted.isEmpty else {
+            throw HarborError("PROXY_START_FAILED", detail: issues.first?.reason)
+        }
+        return (accepted, issues)
+    }
     // Validate the candidate before committing a single Keychain envelope. Restore the
     // previous runtime on every failure; never publish stale names as a working core.
     private func commit(_ proposed: ProxyProfileLibrary, validating nodes: [[String: Any]]) async throws {
@@ -149,14 +177,14 @@ final class ProxyManager: ObservableObject {
         let oldConfiguration = previousNodes.isEmpty ? nil : try ProxyConfiguration.runtime(previousNodes).0
         let candidate = try ProxyConfiguration.runtime(nodes).0
         do {
-            guard await startCore(candidate) else { throw HarborError("PROXY_START_FAILED") }
+            guard await startCore(candidate) else { throw startupError() }
             let active = proposed.profiles.first { $0.id == proposed.activeID }
             let activeNodes = try active.map { try JSONSerialization.jsonObject(with: $0.nodes) as? [[String: Any]] ?? [] } ?? []
             var activePorts: [String: Int] = [:]
             if !activeNodes.isEmpty {
                 let (configuration, mapping) = try ProxyConfiguration.runtime(activeNodes); activePorts = mapping
                 if configuration != candidate, preferences.enabled {
-                    guard await startCore(configuration) else { throw HarborError("PROXY_START_FAILED") }
+                    guard await startCore(configuration) else { throw startupError() }
                 }
             }
             if !preferences.enabled || activeNodes.isEmpty { await stopCore() }
@@ -175,20 +203,33 @@ final class ProxyManager: ObservableObject {
     func importText(_ text: String, profileID: String? = nil, name: String = "", subscriptionURL: String? = nil) async throws {
         guard !busy, text.utf8.count <= 4 * 1024 * 1024 else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
         busy = true; defer { busy = false }
-        let path = home
-        let json: String? = await withCheckedContinuation { continuation in queue.async { continuation.resume(returning: ProxyCoreBridge.parse(text, home: path)) } }
-        guard let json, let object = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
-              (object["proxy-providers"] as? [String: Any] ?? [:]).isEmpty else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
-        let nodes = try ProxyConfiguration.nodes(object)
+        let object: [String: Any]
+        if let json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] { object = json }
+        else {
+            let path = home
+            let json: String? = await withCheckedContinuation { continuation in queue.async { continuation.resume(returning: ProxyCoreBridge.parse(text, home: path)) } }
+            guard let json, let parsed = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
+            object = parsed
+        }
+        guard (object["proxy-providers"] as? [String: Any] ?? [:]).isEmpty else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
+        if (object["proxies"] as? [Any])?.isEmpty == true { throw HarborError("PROXY_EMPTY_SUBSCRIPTION") }
+        let originalNodes = try ProxyConfiguration.nodes(object)
+        let prepared = try ProxyNodePreparation.splitInformation(originalNodes)
+        let (nodes, issues) = try await compatibleNodes(prepared.nodes)
         var proposed = capturedLibrary()
         let existing = proposed.profiles.first { $0.id == profileID }
         let data = try JSONSerialization.data(withJSONObject: nodes)
+        let source = try JSONSerialization.data(withJSONObject: originalNodes)
         let changes = try ProxyNodeChanges.compare(old: existing?.nodes, new: data)
         let summary = L10n.text("{0} 个节点 · 新增 {1}，修改 {2}，移除 {3}", [String(nodes.count), String(changes.added), String(changes.modified), String(changes.removed)])
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var profile = existing ?? ProxyProfile(name: trimmedName.isEmpty ? L10n.text("本地配置") : trimmedName, nodes: data, primary: "", backups: [], updatedAt: Date())
         if !trimmedName.isEmpty { profile.name = trimmedName }
         profile.nodes = data; profile.updatedAt = Date(); profile.lastResult = summary; profile.lastError = nil
+        profile.sourceNodes = source; profile.issues = issues; profile.information = prepared.information
+        if !issues.isEmpty {
+            profile.lastResult = L10n.text("可用 {0} 个，暂不可用 {1} 个。未通过的节点已保留，可重新检查。", [String(nodes.count), String(issues.count)]) + "\n" + summary
+        }
         if let subscriptionURL { profile.subscriptionURL = try ProxySubscription.url(subscriptionURL).absoluteString }
         if let index = proposed.profiles.firstIndex(where: { $0.id == profile.id }) { proposed.profiles[index] = profile }
         else {
@@ -196,7 +237,7 @@ final class ProxyManager: ObservableObject {
             proposed.profiles.append(profile); proposed.activeID = profile.id
         }
         try await commit(proposed, validating: nodes)
-        message = L10n.text("更新成功：{0}", [summary])
+        message = L10n.text("更新成功：{0}", [profile.lastResult])
     }
     func activateProfile(_ id: String) async throws {
         guard !busy, let profile = library.profiles.first(where: { $0.id == id }) else { throw HarborError("PROXY_UNAVAILABLE") }
@@ -249,7 +290,7 @@ final class ProxyManager: ObservableObject {
             let nodes = try ProxyConfiguration.nodes(object)
             let (configuration, newPorts) = try ProxyConfiguration.runtime(nodes)
             let succeeded = await startCore(configuration)
-            guard succeeded else { throw HarborError("PROXY_START_FAILED") }
+            guard succeeded else { throw startupError() }
             ports = newPorts; running = true
         }
         starting = operation; defer { starting = nil }

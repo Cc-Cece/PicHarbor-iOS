@@ -85,6 +85,7 @@
 "从链接或文件导入，任选一种。一次使用一份配置，订阅需手动更新。" = "Import from a URL or file. Use one configuration at a time. Update subscriptions manually.";
 "代理不可用时" = "When the proxy is unavailable";
 "代理启动失败，请检查节点配置，或导入其他配置重试。" = "The proxy could not start. Check the nodes or import another configuration.";
+"代理启动失败：{0}" = "Proxy startup failed: {0}";
 "代理组件开源许可" = "Proxy component licenses";
 "代理连接测试通过。" = "The proxy connection test passed.";
 "以上路径来自关闭备份时的真机测试。菜单名称和位置可能随版本或语言变化，请确认 Google 相册当前使用的是备份账号。" = "This path was tested with backup turned off. Menu names and locations may vary by version or language. Make sure Google Photos uses the account you backed up to.";
@@ -180,10 +181,12 @@
 "取消归档所选" = "Unarchive selected";
 "取消选择此项目" = "Deselect this item";
 "受系统限制" = "Restricted by iPhone";
+"另有 {0} 个节点暂不可用，可在配置详情查看。" = "{0} more nodes are unavailable. See configuration details.";
 "只影响当前任务，随任务保存，不改变全局。修改会暂停当前传输并从文件边界重新连接，已提交内容仍先确认。" = "Applies only to this task and is saved with it. The global policy stays unchanged. Changing it reconnects the current transfer from the file boundary; submitted content is checked first.";
 "只打开首页" = "Opened Home only";
 "可以离开此页面，进度会持续保存。" = "You can leave this page. Progress is saved.";
 "可清理" = "Eligible";
+"可用 {0} 个，暂不可用 {1} 个。未通过的节点已保留，可重新检查。" = "{0} available, {1} unavailable. Unavailable nodes are retained for rechecking.";
 "可能影响动态照片的完整取回" = "Live Photos may not restore fully";
 "可访问" = "Accessible";
 "可重试" = "Retry available";
@@ -356,6 +359,7 @@
 "旧配置未能重新启动，请重新测试连接。" = "The previous configuration could not restart. Test the connection again.";
 "时长" = "Duration";
 "是否占用空间，以 Google 相册显示为准。" = "Storage use is determined by Google Photos.";
+"暂不可用的节点" = "Unavailable Nodes";
 "暂不开启" = "Keep off";
 "暂不支持此媒体格式，原件会保留。" = "This format is not supported yet. Your original is kept.";
 "暂不能" = "Not yet eligible";
@@ -434,6 +438,7 @@
 "正在核对所选项目并请求系统删除" = "Checking selection and requesting deletion";
 "正在核验或清理照片，完成后可连接账号。" = "Photos are being checked or removed. Connect an account when finished.";
 "正在核验或清理照片，请等待完成后再操作账号。" = "Photos are being checked or removed. Wait before changing accounts.";
+"正在检查节点…" = "Checking nodes…";
 "正在检查运行环境" = "Checking runtime";
 "正在测试能否直接打开释放空间页面，目前仍需按上方步骤操作。" = "Direct access to Free up space is being tested. For now, follow the steps above.";
 "正在独立查询云端确认" = "Checking cloud confirmation";
@@ -565,9 +570,11 @@
 "视频" = "Videos";
 "计配额原画质" = "Original quality · uses quota";
 "订阅" = "Subscription";
+"订阅信息" = "Subscription Information";
 "订阅已下载，正在导入…" = "Subscription downloaded. Importing…";
 "订阅已导入。" = "Subscription imported.";
 "订阅服务器未返回有效内容，请检查链接后重试。" = "The subscription server returned an invalid response. Check the URL and try again.";
+"订阅未提供可用节点，请确认链接支持 Clash Meta 格式。" = "The subscription returned no usable nodes. Check that it supports Clash Meta format.";
 "订阅读取失败，请检查网络或改用文件导入。" = "The subscription could not be loaded. Check your connection or import a file.";
 "让回忆安心留存" = "Keep your memories safe";
 "设备" = "Device";
@@ -616,6 +623,7 @@
 "输入：我已了解风险" = "Enter: I understand the risk";
 "运行环境检查通过，请连接 Google 账号。" = "Runtime check passed. Connect a Google account.";
 "返回活动页可查看其他状态。" = "Go back to Activity to see other statuses.";
+"这些节点已保留，不会用于连接。更新应用或配置后，可重新检查。" = "These nodes are retained and are not used for connections. Recheck after updating the app or configuration.";
 "这些项目已有备份任务或已经完成，请到活动中查看或重试。" = "These photos already have tasks or backups. Check Activity to view or retry them.";
 "这张照片仍有备份任务，完成后可再次检查。" = "This photo still has a backup task. Check again when it finishes.";
 "进入“应用程序与装置”" = "Go to Apps and devices";
@@ -663,6 +671,7 @@
 "重新加载" = "Reload";
 "重新按内容核验" = "Check content again";
 "重新检查" = "Check again";
+"重新检查兼容性" = "Recheck Compatibility";
 "重新检查运行环境" = "Check runtime again";
 "重新读取原件并查重" = "Read original and check backup again";
 "重置当前账号的备份、网络和清理偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。" = "Reset backup, connection, and cleanup preferences for this account. Automatic backup turns off and the scope needs confirmation. Accounts, photos, existing tasks, language, and appearance are kept. Photos will not be uploaded again.";

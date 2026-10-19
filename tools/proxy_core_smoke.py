@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 import os
 import subprocess
+import shutil
 import zipfile
 from prepare_proxy import prepare
 
@@ -51,6 +52,44 @@ def run():
                     '-framework', 'Security', '-framework', 'SystemConfiguration', '-framework', 'CoreFoundation', '-lresolv',
                     str(ROOT / 'Sources/Bridge/ProxyCoreBridge.m'), str(ROOT / 'tools/proxy_core_smoke.m'), '-o', str(executable)], check=True)
     subprocess.run([str(executable), str(fixtures)], check=True)
+    # Test the actual Swift proxy model without bootstrapping the Python iOS app
+    # host. Only localization/error display is stubbed; routing/storage logic is copied verbatim.
+    package = output / 'package'
+    for folder in ['Bridge/include', 'Sources', 'Tests']:
+        (package / folder).mkdir(parents=True, exist_ok=True)
+    shutil.copy(ROOT / 'Sources/Bridge/ProxyCoreBridge.h', package / 'Bridge/include')
+    shutil.copy(ROOT / 'Sources/Bridge/ProxyCoreBridge.m', package / 'Bridge')
+    for name in ['ProxyRouting.swift', 'ProxyProfiles.swift']:
+        text = (ROOT / 'Sources/Core' / name).read_text()
+        (package / 'Sources' / name).write_text('import ProxyBridgeHarness\nimport Combine\n' + text)
+    for name in ['ProxyProfileTests.swift', 'ProxyCompatibilityTests.swift']:
+        (package / 'Tests' / name).write_text('import ProxyBridgeHarness\n' + (ROOT / 'Tests' / name).read_text())
+    (package / 'Sources/Support.swift').write_text('''import Foundation
+struct HarborError: LocalizedError {
+    let code: String; let detail: String?
+    init(_ code: String, detail: String? = nil) { self.code = code; self.detail = detail }
+    var errorDescription: String? { detail ?? code }
+}
+enum L10n {
+    static func text(_ key: String, _ values: [String] = []) -> String {
+        var result = key
+        for (i, value) in values.enumerated() { result = result.replacingOccurrences(of: "{\\(i)}", with: value) }
+        return result
+    }
+}
+''')
+    framework_path = json.dumps(str(output))
+    (package / 'Package.swift').write_text('''// swift-tools-version: 5.9
+import PackageDescription
+let package = Package(name: "PicHarbor", platforms: [.macOS(.v14)], targets: [
+    .target(name: "ProxyBridgeHarness", path: "Bridge", publicHeadersPath: "include",
+            cSettings: [.unsafeFlags(["-fobjc-arc", "-F", FRAMEWORK])],
+            linkerSettings: [.unsafeFlags(["-F", FRAMEWORK, "-framework", "Clash", "-framework", "Foundation", "-framework", "Network", "-framework", "Security", "-framework", "SystemConfiguration", "-lresolv", "-ObjC"])]),
+    .target(name: "PicHarbor", dependencies: ["ProxyBridgeHarness"], path: "Sources"),
+    .testTarget(name: "ProxyTests", dependencies: ["PicHarbor", "ProxyBridgeHarness"], path: "Tests")
+])
+'''.replace('FRAMEWORK', framework_path))
+    subprocess.run(['swift', 'test', '--package-path', str(package)], check=True)
 
 if __name__ == '__main__':
     run()
