@@ -63,6 +63,12 @@ struct ProxyPreferencesView: View {
                 }
             }
         }.navigationTitle(L10n.text("应用内代理（验证）")).navigationBarTitleDisplayMode(.inline)
+        .onChange(of: proxy.preferences.enabled) { _, enabled in
+            Task {
+                if !enabled { await proxy.stop() }
+                else { do { try await proxy.ensureRunning() } catch { result = error.localizedDescription } }
+            }
+        }
         .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .plainText, .json]) { value in
             switch value {
             case .success(let url):

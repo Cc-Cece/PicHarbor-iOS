@@ -76,6 +76,13 @@ final class HarborModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 for control in self.exports.values where !connected || (self.settings.wifiOnly && !wifi) { control.cancel("WAITING_NETWORK") }
+                for id in self.jobs.filter({ ($0.proxyPort ?? 0) > 0 && $0.state == .transferring && (!connected || ($0.settings.wifiOnly && !wifi)) }).map(\.id) {
+                    await self.pause(id)
+                    guard var job = self.jobs.first(where: { $0.id == id }) else { continue }
+                    for index in job.resources.indices { job.resources[index].transportID = nil }
+                    job.state = .waiting; job.error = "WAITING_NETWORK"; job.retryAt = nil
+                    try? await self.persist(job); await self.transfer.cancel(jobID: id)
+                }
                 await self.pump()
             }
         }.store(in: &subscriptions)

@@ -1,6 +1,18 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testProxyPreviewSettingsAreOffByDefaultAndHavePolicyControls() {
+        let app = localizedApp(); app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["设置"].tap()
+        let entry = app.buttons["settings.proxy"]
+        for _ in 0..<3 { if entry.isHittable { break }; app.swipeUp() }
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["应用内代理（验证）"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.switches["仅代理 PicHarbor"].value as? String, "0")
+        XCTAssertTrue(app.buttons["导入 Clash 配置文件"].exists)
+        capture("proxy-preview-settings")
+    }
     func testExternalCleanupGuideHasNoDeletionControls() {
         let app = localizedApp(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }

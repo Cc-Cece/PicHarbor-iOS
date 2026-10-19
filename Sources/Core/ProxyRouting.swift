@@ -113,11 +113,18 @@ final class ProxyManager: ObservableObject {
         running = succeeded
         guard succeeded else { throw HarborError("PROXY_START_FAILED") }
         // Persist only the validated node list, never the imported system routing.
-        try ProxySecretStore.save(try JSONSerialization.data(withJSONObject: ["proxies": nodes]))
+        do { try ProxySecretStore.save(try JSONSerialization.data(withJSONObject: ["proxies": nodes])) }
+        catch { await stop(); throw error }
         ports = newPorts; names = nodes.compactMap { $0["name"] as? String }
         if !names.contains(preferences.primary) { preferences.primary = names.first ?? "" }
         preferences.backups = preferences.backups.filter { names.contains($0) }
         message = L10n.text("配置已导入，节点已就绪。")
+        if !preferences.enabled { await stop() }
+    }
+    func stop() async {
+        if let starting { _ = try? await starting.value }
+        await withCheckedContinuation { continuation in queue.async { ProxyCoreBridge.stop(); continuation.resume() } }
+        running = false
     }
     func ensureRunning() async throws {
         if running { return }
@@ -135,6 +142,7 @@ final class ProxyManager: ObservableObject {
     }
     func route(override: ProxyFallback? = nil, failures: [String] = []) async throws -> (Int, String) {
         guard preferences.enabled else { return (-1, "") }
+        guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
         try await ensureRunning()
         for name in ProxyConfiguration.candidates(preferences, override: override, failures: failures) {
             if name.isEmpty { return (-1, "") }
