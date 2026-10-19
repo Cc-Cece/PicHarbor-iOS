@@ -121,7 +121,7 @@ oauth_token 或 gpmc auth_data|oauth_token or gpmc auth_data
 原始照片配对|Original photo pairing
 原始照片配对（分步上传）|Original photo pairing (separate uploads)
 原始版本|Original version
-及| and 
+及|\u0020and\u0020
 取消|Cancel
 取消任务|Cancel task
 取消全选|Deselect all

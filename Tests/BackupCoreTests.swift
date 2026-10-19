@@ -513,7 +513,7 @@ final class BackupCoreTests: XCTestCase {
         let media = settings.mediaPolicy
         settings.wifiOnly = false
         XCTAssertEqual(media, settings.mediaPolicy)
-        settings.live = .applePair
+        settings.live = .motion
         XCTAssertNotEqual(media, settings.mediaPolicy)
     }
     func testNativeJPEGContainerHasMetadataAndExactVideoTail() throws {

@@ -20,7 +20,7 @@ def pairs(path):
     return values
 
 def decode(value):
-    return value.replace('\\n', '\n').replace('\\"', '"')
+    return value.replace('\\n', '\n').replace('\\"', '"').replace('\\u0020', ' ')
 
 def build():
     english = pairs(ROOT / 'Localization/english.tsv')
