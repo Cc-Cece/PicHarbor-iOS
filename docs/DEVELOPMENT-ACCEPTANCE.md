@@ -2,6 +2,17 @@
 
 日期：2026-10-19。此版本供阶段验收，**不是完整计划已完成的声明**。
 
+## 0.2.2 上传响应与重试修复版
+
+- 生产代码：`56048cc`（上传修复核心为 `f0c3502`）；0.2.2，构建号 4。[设备编译与包检查](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39188507063)通过，本机再次包检查通过。
+- 最终本机包：`dist/PicHarbor-0.2.2-dev-verified.ipa`，12,139,917 字节，解压 41,713,669 字节。
+- SHA-256：`193c3f2c790b9f0d8df6f4981e1befd35cb9f4c015a0a6c5154828b2c3df519b`。
+- 先前在测试进行期间提供的 `dist/PicHarbor-0.2.2-dev.ipa` 保留原文件，上传修复相同；不在用户可能使用文件时覆盖它。
+- [修复、诊断证据与复测步骤](UPLOAD-RESPONSE-FIXES.md)。[最终回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39188501094)通过：33 项 Python、18 项原生单元、4 项界面测试，零失败、零跳过；测试与最终包均为 `56048cc`。
+- 实际完成系统相册授权后，在应用进程调用生产 ResourceExporter，导出测试照片、保留版本去重后的资源，再次读取并比对哈希与大小。报告及截图保存在 GitHub 产物及本机 `build/upload-fix-final-tests/simulator-test-results/`。专项测试入口仅在 Debug 且显式测试启动参数启用，Release 返回原页面，不显示测试入口。
+- 保持代理可访问 Google，按原 Sideloadly 配置覆盖安装。先保留暂停队列，仅选择一条旧 FILE_ACCESS 失败任务执行“重新准备此任务 → 重新读取原件并查重”，核对新任务和 Google Photos 后再继续其余任务。
+- 当前尚未获得这一修复版的真实 Google 上传验收；不将编译或离线回归通过等同为真机问题已完全解决。
+
 ## 0.2.1 账号入口修复版
 
 - 生产代码提交：`22f5e48`；版本 0.2.1，构建号 3，最低 iOS 17.0。
