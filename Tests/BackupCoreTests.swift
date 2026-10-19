@@ -8,6 +8,63 @@ import Photos
 @testable import PicHarbor
 
 final class BackupCoreTests: XCTestCase {
+    func testNetworkPolicyRebuildsTransportWithoutChangingMediaOrCommitEvidence() {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: BackupSettings())
+        job.state = .transferring; job.error = "WAITING_NETWORK"; job.attempts = 2; job.retryAt = .distantFuture
+        var resource = MediaResource(role: "original.motion", path: "source", name: "motion.heic")
+        resource.transportID = 7; resource.responsePath = "response"; resource.remoteKey = "cloud"; resource.submitted = true
+        job.resources = [resource]
+        let identity = job.dedupKey
+        XCTAssertEqual(job.updateNetwork(wifiOnly: false), [7])
+        XCTAssertEqual(job.dedupKey, identity)
+        XCTAssertEqual(job.state, .queued)
+        XCTAssertFalse(job.settings.wifiOnly)
+        XCTAssertNil(job.resources[0].transportID)
+        XCTAssertEqual(job.resources[0].responsePath, "response")
+        XCTAssertEqual(job.resources[0].remoteKey, "cloud")
+        XCTAssertTrue(job.resources[0].submitted)
+        XCTAssertNil(job.retryAt); XCTAssertEqual(job.error, "")
+        job.state = .paused
+        job.updateNetwork(wifiOnly: true)
+        XCTAssertEqual(job.state, .paused)
+        job.state = .completed
+        job.updateNetwork(wifiOnly: false)
+        XCTAssertTrue(job.settings.wifiOnly, "Completed history retains its settings")
+    }
+
+    func testLegacyJobsDecodeWithoutInventingBatchOrOrigin() throws {
+        let job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: BackupSettings())
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(job)) as? [String: Any])
+        for key in ["origin", "batchID", "activityHidden"] { json.removeValue(forKey: key) }
+        let decoded = try JSONDecoder().decode(BackupJob.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(decoded.origin); XCTAssertNil(decoded.batchID); XCTAssertNil(decoded.activityHidden)
+        XCTAssertEqual(decoded.dedupKey, job.dedupKey)
+    }
+
+    func testActivityBatchAndOriginGroupingPreserveMembershipAndExcludeRemovedTasks() throws {
+        var first = BackupJob(account: "a", assetID: "1", assetRevision: "1", settings: BackupSettings())
+        first.origin = .manual; first.batchID = "batch1"; first.created = Date(timeIntervalSince1970: 1)
+        var second = first; second.id = "2"; second.assetID = "2"; second.state = .completed
+        var automatic = first; automatic.id = "3"; automatic.origin = .automatic; automatic.batchID = "batch2"; automatic.created = Date(timeIntervalSince1970: 2)
+        let legacy = BackupJob(account: "a", assetID: "4", assetRevision: "1", settings: BackupSettings())
+        var hidden = first; hidden.id = "5"; hidden.removeFromActivity()
+        let jobs = [first, second, automatic, legacy, hidden]
+        let batches = ActivityGroup.groups(jobs, byBatch: true)
+        XCTAssertEqual(batches.count, 3)
+        XCTAssertEqual(batches.first { $0.jobs.contains { $0.id == first.id } }?.jobs.count, 2)
+        XCTAssertEqual(ActivityGroup.groups(jobs, byBatch: false).count, 3)
+        XCTAssertEqual(batches.flatMap(\.jobs).count, 4)
+        XCTAssertEqual(hidden.transferDisposition(activeAccount: "a"), .cancel)
+        XCTAssertFalse(hidden.unfinished)
+        second.removeFromActivity()
+        XCTAssertNil(second.activityHidden)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try JSONEncoder().encode(hidden).write(to: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let reopened = try JSONDecoder().decode(BackupJob.self, from: Data(contentsOf: root))
+        XCTAssertTrue(reopened.activityHidden == true)
+        XCTAssertEqual(reopened.state, .cancelled)
+    }
     func testUploadResponseDataWithoutHeadersSurvivesHeaderCallbackAndRelaunch() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

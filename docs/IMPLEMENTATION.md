@@ -21,7 +21,7 @@ Swift `BackupStore` actor 是 backup-v2.sqlite 唯一写入者。Python observat
 
 桥接 v2 使用 protocol_version、request_id 与结构化 failure。prepare_upload 返回内存传输计划，后台 URLSession 负责文件上传；响应落入受保护 Staging 文件，原生持久化后再调用 commit_resource、confirm_resource。传输凭据由系统 URLSession 管理，不放入业务数据库或诊断。
 
-任务保留设置快照；状态覆盖排队、准备、传输、提交、确认、完成、暂停、等待、失败、需处理、取消。提交不明先查远端，启动协调系统任务和磁盘回执，不清空仍在使用的文件。
+任务保留画质、Live Photo、编辑版本等内容设置快照；网络是账号调度偏好，修改后应用于已有未完成任务，暂停保持暂停，系统文件传输按需重建。状态覆盖排队、准备、传输、提交、确认、完成、暂停、等待、失败、需处理、取消。提交不明先查远端，启动协调系统任务和磁盘回执，不清空仍在使用的文件。
 
 gpmc Vendor 文件保持固定快照。本轮适配在 Python/harbor_protocol.py 和原生代码，不覆盖 Android、MotionPhoto2 或上游文件。
 
@@ -39,7 +39,7 @@ gpmc Vendor 文件保持固定快照。本轮适配在 Python/harbor_protocol.py
 Live Photo 的具体协议线索和逐项验收表见 `LIVE-PHOTO-VALIDATION.md`。
 
 - 苹果原始资源在 Google Photos 的真实云端关联协议。当前 capability apple_pair=false，任务明确报 PAIR_PROTOCOL_UNVERIFIED；不会发送猜测 RPC 或分别上传两个独立文件冒充支持。
-- 两种方式的官方 Google Photos iOS 客户端保存回相册后，动态、声音、关键帧、HDR、编辑版本正确性。
+- Motion Photo 已获得一个 HEIC 样本的官方客户端动态往返反馈，任务最终确认仍待复测；声音、关键帧、HDR、编辑版本及苹果原始资源配对未完成整体验收。
 - Live Photo 清理资格：没有完整配对/取回证据前，一律保留原件。
 - 真机后台、权限变化、iCloud、安装升级及规模测试，需安装新 IPA 后逐项记录。
 - 旧云端网页撤销仍未证实完成，与本轮原生构建无关。

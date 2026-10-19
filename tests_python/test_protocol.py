@@ -170,6 +170,37 @@ class ProtocolTests(unittest.TestCase):
         self.assertTrue(self.service.protocol.snapshot["motion"]["motion"])
         self.assertGreater(self.service.protocol.snapshot_at, 0)
 
+    def test_motion_optional_trash_marker_does_not_block_confirmation_or_weaken_cleanup(self):
+        self.service.api.get_library_state = lambda _: {"1": {"6": "final", "2": {
+            "1": "motion", "2": {"10": 6, "11": "100", "35": {"3": 2}},
+            "5": {"5": {"2": {"4": {"1": 3}}}}}}}
+        self.service.protocol.synchronize()
+        result = self.service.dispatch("motion_status", {"account": self.service.account, "keys": ["motion"]})
+        self.assertTrue(result["recognized"])
+        self.service.api.lookups = ["motion"]
+        self.assertFalse(self.service.dispatch("check_cleanup", self.value)["eligible"], "Cleanup still requires explicit non-trash evidence")
+
+    def test_motion_diagnostics_distinguish_missing_processing_static_and_trashed(self):
+        protocol = self.service.protocol
+        protocol.snapshot_at = time.monotonic()
+        good = {"motion": True, "status": 100, "trash": 0}
+        for item, reason in [(None, "NOT_INDEXED"), ({**good, "status": 99}, "PROCESSING"),
+                             ({**good, "motion": False}, "NOT_DYNAMIC"),
+                             ({**good, "trash": 1}, "TRASHED"),
+                             ({**good, "trash": None}, "TRASH_UNKNOWN")]:
+            protocol.snapshot = {} if item is None else {"motion": item}
+            result = self.service.dispatch("motion_status", {"account": self.service.account, "keys": ["motion"]})
+            self.assertFalse(result["recognized"])
+            self.assertEqual(result["reason"], "REMOTE_MOTION_" + reason)
+
+    def test_commit_invalidates_cached_cloud_snapshot(self):
+        path = self.service.staging / "response.bin"
+        path.write_bytes(encode_message({"1": 7}, {"1": {"type": "int"}}))
+        self.service.api.commit_upload = lambda *a, **k: "submitted"
+        self.service.protocol.snapshot_at = time.monotonic()
+        self.service.dispatch("commit_resource", {**self.value, "response_path": str(path), "name": "motion.heic"})
+        self.assertEqual(self.service.protocol.snapshot_at, 0)
+
     def test_cyclic_pagination_never_publishes_partial_snapshot(self):
         response = {"1": {"1": "repeat", "6": "token"}}
         self.service.api.get_library_state = lambda _: response

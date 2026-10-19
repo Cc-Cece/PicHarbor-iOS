@@ -32,10 +32,11 @@ final class HarborModel: ObservableObject {
     private var timer: Task<Void, Never>?
     private var starting = false
     @Published private(set) var switching = false
+    @Published private(set) var updatingNetwork = false
     @Published private(set) var connectionError = ""
     private let transfer = BackgroundTransfer.shared
     var account: String { engine.account }
-    var visibleJobs: [BackupJob] { jobs.filter { $0.account == account }.sorted { $0.created > $1.created } }
+    var visibleJobs: [BackupJob] { jobs.filter { $0.account == account && $0.activityHidden != true }.sorted { $0.created > $1.created } }
     var activeCount: Int { visibleJobs.filter { $0.state.active || $0.state == .queued }.count }
     var completedCount: Int { visibleJobs.filter { $0.state == .completed }.count }
     var stagedBytes: Int64 { jobs.filter { $0.state != .completed && $0.state != .cancelled }.flatMap(\.resources).reduce(0) { $0 + $1.size } }
@@ -47,7 +48,7 @@ final class HarborModel: ObservableObject {
         network.$connected.combineLatest(network.$wifi).dropFirst().sink { [weak self] connected, wifi in
             Task { @MainActor in
                 guard let self else { return }
-                for control in self.exports.values where !connected || (control.wifiOnly && !wifi) { control.cancel("WAITING_NETWORK") }
+                for control in self.exports.values where !connected || (self.settings.wifiOnly && !wifi) { control.cancel("WAITING_NETWORK") }
                 await self.pump()
             }
         }.store(in: &subscriptions)
@@ -91,7 +92,9 @@ final class HarborModel: ObservableObject {
                 switch job.transferDisposition(activeAccount: account) {
                 case .cancel: task.cancel()
                 case .pause: task.suspend()
-                case .run: if task.state == .suspended { task.resume() }
+                case .run:
+                    if job.settings.wifiOnly != settings.wifiOnly { task.suspend() }
+                    else if task.state == .suspended { task.resume() }
                 }
             }
             for var job in jobs where job.state.active {
@@ -109,6 +112,7 @@ final class HarborModel: ObservableObject {
             }
             initialized = true
             for receipt in receipts { await receive(receipt) }
+            await applyNetworkSettings()
             await library.refresh()
             await pump()
             timer = Task { [weak self] in
@@ -124,6 +128,7 @@ final class HarborModel: ObservableObject {
     }
     private func persist(_ value: BackupJob) async throws {
         guard let store else { throw HarborError("DATABASE_ERROR") }
+        if jobs.first(where: { $0.id == value.id })?.activityHidden == true && value.activityHidden != true { return }
         var value = value; value.updated = Date()
         value.generation = (jobs.first(where: { $0.id == value.id })?.generation ?? 0) + 1
         // Publish intent before yielding: pause/cancel must see the latest transport ID.
@@ -141,7 +146,7 @@ final class HarborModel: ObservableObject {
     }
     private func updateAssetStates(_ values: [BackupJob]) {
         var updated = assetStates
-        for job in values where job.account == account {
+        for job in values where job.account == account && job.activityHidden != true {
             if updated[job.assetID] == nil || job.created >= updated[job.assetID]!.created {
                 updated[job.assetID] = AssetBackupState(account: job.account, revision: job.assetRevision, state: job.state, created: job.created)
             }
@@ -159,14 +164,39 @@ final class HarborModel: ObservableObject {
             settingsGeneration[targetAccount] = generation
             try await store.save(AccountSettings(account: targetAccount, settings: snapshot, generation: generation), kind: "settings", id: targetAccount, revision: generation)
             cleanupReady = []
+            await applyNetworkSettings()
             await automaticScan(); await pump()
             return true
         } catch { fatalStorage(error); return false }
     }
+    private func applyNetworkSettings() async {
+        guard initialized, !updatingNetwork, !switching, !cleanupRunning,
+              jobs.contains(where: { $0.account == account && $0.unfinished && $0.state != .cancelled && $0.settings.wifiOnly != settings.wifiOnly }) else { return }
+        updatingNetwork = true
+        for control in exports.values { control.cancel("WAITING_NETWORK") }
+        let changedJobs = Set(jobs.filter { $0.account == account && $0.unfinished && $0.settings.wifiOnly != settings.wifiOnly }.map(\.id))
+        for task in await transfer.tasks() where changedJobs.contains(task.taskDescription?.components(separatedBy: ":").first ?? "") { task.suspend() }
+        // Checkpoints stop workers before another commit/transfer can start.
+        while !workers.isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
+        let targetAccount = account
+        do {
+            while let id = jobs.first(where: { $0.account == targetAccount && $0.unfinished && $0.state != .cancelled && $0.settings.wifiOnly != settings.wifiOnly })?.id {
+                guard var job = jobs.first(where: { $0.id == id }) else { continue }
+                // URLRequest's cellular policy cannot be changed on a running task.
+                // Retain source/commit evidence and restart only the file transport.
+                let oldIDs = job.updateNetwork(wifiOnly: settings.wifiOnly)
+                try await persist(job)
+                for task in await transfer.tasks() where oldIDs.contains(task.taskIdentifier) { task.cancel() }
+            }
+        } catch { fatalStorage(error) }
+        updatingNetwork = false
+        await replayReceipts()
+        await pump()
+    }
     @discardableResult
     func connect(_ credential: String) async -> Bool {
         connectionError = ""
-        guard !switching && !engine.busy else { connectionError = HarborError("ACCOUNT_BUSY").localizedDescription; return false }
+        guard !switching && !updatingNetwork && !engine.busy else { connectionError = HarborError("ACCOUNT_BUSY").localizedDescription; return false }
         guard !cleanupRunning else { connectionError = HarborError("CLEANUP_BUSY").localizedDescription; return false }
         guard initialized, !storageFailed else { connectionError = "应用尚未就绪，请等待初始化完成并检查诊断。"; return false }
         switching = true
@@ -184,6 +214,7 @@ final class HarborModel: ObservableObject {
         do { try await loadSettings() }
         catch { connectionError = error.localizedDescription; fatalStorage(error) }
         cleanupReady = []; switching = false
+        await applyNetworkSettings()
         await replayReceipts(); await automaticScan(); await pump()
         return connected && connectionError.isEmpty
     }
@@ -194,7 +225,7 @@ final class HarborModel: ObservableObject {
         } catch { notice = error.localizedDescription }
     }
     func logout() async {
-        guard !switching && !engine.busy else { notice = HarborError("ACCOUNT_BUSY").localizedDescription; return }
+        guard !switching && !updatingNetwork && !engine.busy else { notice = HarborError("ACCOUNT_BUSY").localizedDescription; return }
         guard !cleanupRunning else { notice = HarborError("CLEANUP_BUSY").localizedDescription; return }
         switching = true
         await pauseAll()
@@ -204,14 +235,16 @@ final class HarborModel: ObservableObject {
         do { accounts = try KeychainStore.accounts(); try await loadSettings() } catch { notice = error.localizedDescription }
         cleanupReady = []; switching = false
     }
-    func enqueue(_ assets: [PHAsset], force: Bool = false, feedback: Bool = true, policy: BackupSettings? = nil) async {
+    func enqueue(_ assets: [PHAsset], force: Bool = false, feedback: Bool = true, policy: BackupSettings? = nil, origin: BackupOrigin = .manual, batchID: String? = nil) async {
         guard initialized, !account.isEmpty, !storageFailed, !switching, let store else { notice = "请先连接 Google 账号。"; return }
         guard !assets.isEmpty else { if feedback { notice = "当前范围没有可备份的照片或视频，请检查范围和相册权限。" }; return }
-        let snapshot = policy ?? settings
+        var snapshot = policy ?? settings
+        snapshot.wifiOnly = settings.wifiOnly
+        let batch = batchID ?? UUID().uuidString
         let targetAccount = account
         let membership = snapshot.syncAlbums ? library.memberships(for: Set(assets.map(\.localIdentifier))) : [:]
         do {
-            var known = Set(jobs.filter { $0.state != .cancelled }.map(\.dedupKey))
+            var known = Set(jobs.filter { $0.state != .cancelled || (origin == .automatic && $0.activityHidden == true) }.map(\.dedupKey))
             let active = Set(jobs.filter { $0.state.active || $0.state == .queued || $0.state == .paused }.map(\.dedupKey))
             var additions: [BackupJob] = []
             var planned = Set<String>()
@@ -220,6 +253,7 @@ final class HarborModel: ObservableObject {
                 job.isLive = asset.mediaSubtypes.contains(.photoLive)
                 job.albumIDs = membership[asset.localIdentifier] ?? []
                 job.forceUpload = force
+                job.origin = origin; job.batchID = batch
                 if !force && known.contains(job.dedupKey) { continue }
                 if active.contains(job.dedupKey) || planned.contains(job.dedupKey) { continue }
                 known.insert(job.dedupKey)
@@ -239,7 +273,7 @@ final class HarborModel: ObservableObject {
         guard initialized, !storageFailed else { return }
         do { try await indexLibrary() } catch { fatalStorage(error); return }
         guard settings.automatic, settings.scopeConfirmed == true, !account.isEmpty, !switching, !cleanupRunning else { return }
-        await enqueue(library.scope(settings), feedback: false)
+        await enqueue(library.scope(settings), feedback: false, origin: .automatic)
     }
     private func indexLibrary() async throws {
         guard let store, !library.refreshing else { return }
@@ -266,12 +300,15 @@ final class HarborModel: ObservableObject {
         (job.retryAt == nil || job.retryAt! <= Date()) && !workers.contains(job.id)
     }
     func pump() async {
-        guard initialized, !account.isEmpty, engine.ready, !storageFailed, !switching, !cleanupRunning else { return }
+        guard initialized, !account.isEmpty, engine.ready, !storageFailed, !switching, !updatingNetwork, !cleanupRunning else { return }
+        if jobs.contains(where: { $0.account == account && $0.unfinished && $0.state != .cancelled && $0.settings.wifiOnly != settings.wifiOnly }) {
+            await applyNetworkSettings(); return
+        }
         await collectFinishedStaging()
         let candidates = jobs.filter(runnable).sorted { $0.created < $1.created }
         for var job in candidates {
             // persist() can yield to another pump; recheck occupancy and identity each iteration.
-            guard !switching, !cleanupRunning, !storageFailed, runnable(job) else { continue }
+            guard !switching, !updatingNetwork, !cleanupRunning, !storageFailed, runnable(job) else { continue }
             let occupying = Set(jobs.filter { $0.account == account && $0.state == .transferring }.map(\.id)).union(workers)
             if occupying.count >= 2 { break }
             guard network.connected && (!job.settings.wifiOnly || network.wifi) else {
@@ -307,7 +344,7 @@ final class HarborModel: ObservableObject {
     private func checkpoint(_ job: BackupJob) throws {
         guard !switching, job.account == account else { throw HarborError("ACCOUNT_CHANGED") }
         guard let current = jobs.first(where: { $0.id == job.id }), current.state != .paused, current.state != .cancelled else { throw HarborError("JOB_PAUSED") }
-        guard network.connected && (!job.settings.wifiOnly || network.wifi) else { throw HarborError("WAITING_NETWORK") }
+        guard !updatingNetwork, network.connected && (!settings.wifiOnly || network.wifi) else { throw HarborError("WAITING_NETWORK") }
     }
     private func payload(_ resource: MediaResource, account: String) -> [String: Any] {
         ["account": account, "sha1": resource.sha1, "sha256": resource.sha256, "size": resource.size]
@@ -382,6 +419,7 @@ final class HarborModel: ObservableObject {
                     let confirmation = try await engine.invoke("confirm_resource", request)
                     try checkpoint(job)
                     guard confirmation["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
+                    job.resources[index].remoteKey = confirmation["remote_key"] as? String ?? ""
                     job.resources[index].confirmed = true; try await persist(job)
                 } else {
                     stage = "prepare_upload"
@@ -409,10 +447,11 @@ final class HarborModel: ObservableObject {
             }
             try checkpoint(job)
             if job.isLive {
+                stage = "confirmation"
                 job.state = .confirming; try await persist(job)
                 let dynamic = try await engine.invoke("motion_status", ["account": job.account, "keys": job.resources.map(\.remoteKey)])
                 try checkpoint(job)
-                guard dynamic["recognized"] as? Bool == true else { throw HarborError("REMOTE_MOTION_PENDING") }
+                guard dynamic["recognized"] as? Bool == true else { throw HarborError(dynamic["reason"] as? String ?? "REMOTE_MOTION_PENDING") }
             }
             if job.settings.syncAlbums && !job.albumIDs.isEmpty {
                 job.albumsPending = true; try await persist(job)
@@ -433,8 +472,12 @@ final class HarborModel: ObservableObject {
             let system = error as NSError
             job.failureSystemCode = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain, "PHPhotosErrorDomain"].contains(system.domain) ? "\(system.domain):\(system.code)" : nil
             if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
-            else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) && job.attempts <= 3 {
-                job.state = ["REMOTE_NOT_VISIBLE", "REMOTE_MOTION_PENDING"].contains(code) ? .confirming : .waiting
+            else if code.hasPrefix("REMOTE_MOTION_") && code != "REMOTE_MOTION_TRASHED" {
+                job.state = .confirming
+                job.retryAt = Date(timeIntervalSinceNow: min(300, pow(2, Double(min(job.attempts, 6))) * 5))
+            }
+            else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE"].contains(code) && job.attempts <= 3 {
+                job.state = code == "REMOTE_NOT_VISIBLE" ? .confirming : .waiting
                 job.retryAt = Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5)
             } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "SOURCE_CHANGED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
             try? await persist(job)
@@ -465,11 +508,19 @@ final class HarborModel: ObservableObject {
         catch { notice = error.localizedDescription }
     }
     private func receive(_ receipt: TransferReceipt) async {
-        guard initialized, !switching, var job = jobs.first(where: { $0.id == receipt.jobID }), job.account == account,
-              let index = job.resources.firstIndex(where: { $0.id == receipt.resourceID }), job.resources[index].transportID == receipt.id else { return }
+        guard initialized, !switching, !updatingNetwork else { return }
+        guard var job = jobs.first(where: { $0.id == receipt.jobID }) else { transfer.acknowledge(receipt); return }
+        guard job.account == account else { return }
+        guard let index = job.resources.firstIndex(where: { $0.id == receipt.resourceID }), job.resources[index].transportID == receipt.id else {
+            try? FileManager.default.removeItem(atPath: receipt.responsePath)
+            transfer.acknowledge(receipt); return
+        }
         do {
             let paused = job.state == .paused
-            if job.state == .cancelled { transfer.acknowledge(receipt); return }
+            if job.state == .cancelled {
+                try? FileManager.default.removeItem(atPath: receipt.responsePath)
+                transfer.acknowledge(receipt); return
+            }
             job.resources[index].transportID = nil
             if receipt.error.isEmpty {
                 job.resources[index].responsePath = receipt.responsePath
@@ -485,12 +536,18 @@ final class HarborModel: ObservableObject {
         } catch { notice = error.localizedDescription }
     }
     func pause(_ id: String) async {
-        guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed else { return }
+        guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed, job.state != .cancelled else { return }
         exports[id]?.cancel("JOB_PAUSED")
         job.state = .paused; try? await persist(job); await transfer.pause(jobID: id)
     }
     func pauseAll() async { for job in visibleJobs where job.state.active || job.state == .queued || job.state == .waiting { await pause(job.id) } }
     func resume(_ id: String) async {
+        guard !updatingNetwork else { notice = "正在应用网络设置，请稍后继续任务。"; return }
+        if workers.contains(id) {
+            if jobs.first(where: { $0.id == id })?.state != .paused { notice = "此任务正在处理，请等待本次检查结束。"; return }
+            while workers.contains(id) { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        guard !updatingNetwork, !switching else { return }
         guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.state != .completed, job.state != .cancelled else { return }
         job.error = ""; job.retryAt = nil; job.attempts = 0
         let liveTasks = await transfer.tasks()
@@ -509,19 +566,30 @@ final class HarborModel: ObservableObject {
         exports[id]?.cancel("JOB_PAUSED")
         job.state = .cancelled; job.evidence = nil; try? await persist(job); await transfer.cancel(jobID: id)
     }
+    func removeUnfinished(_ ids: Set<String>) async {
+        for id in ids {
+            guard var job = jobs.first(where: { $0.id == id }), job.account == account, job.unfinished else { continue }
+            exports[id]?.cancel("JOB_PAUSED")
+            job.removeFromActivity()
+            do { try await persist(job) } catch { return }
+            await transfer.cancel(jobID: id)
+        }
+        assetStates = [:]; updateAssetStates(jobs)
+        await collectFinishedStaging()
+    }
     func reprepare(_ id: String) async {
-        guard initialized, !storageFailed, engine.ready, !engine.busy else { notice = "应用尚未就绪，请等待账号连接完成后重试。"; return }
+        guard initialized, !storageFailed, !updatingNetwork, engine.ready, !engine.busy else { notice = "应用尚未就绪，请等待账号连接完成后重试。"; return }
         guard let job = jobs.first(where: { $0.id == id }), job.account == account,
               [.failed, .attention, .paused].contains(job.state), !cleanupRunning, !switching else { return }
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { notice = HarborError("PHOTO_PERMISSION").localizedDescription; return }
         await cancel(id)
         // Preserve the original task policy, and check the cloud hash before
         // uploading again. A settings change must not silently change this task.
-        await enqueue([asset], force: job.forceUpload, policy: job.settings)
+        await enqueue([asset], force: job.forceUpload, policy: job.settings, origin: job.origin ?? .manual, batchID: job.batchID)
     }
     func verifyCleanup() async {
         guard !account.isEmpty else { notice = "请先在设置中连接 Google 账号。"; return }
-        guard !cleanupRunning, workers.isEmpty, !visibleJobs.contains(where: { $0.state.active }), !account.isEmpty else { notice = "请先暂停或完成正在运行的备份。"; return }
+        guard !cleanupRunning, !updatingNetwork, workers.isEmpty, !visibleJobs.contains(where: { $0.state.active }), !account.isEmpty else { notice = "请先暂停或完成正在运行的备份。"; return }
         guard visibleJobs.contains(where: { $0.state == .completed }) else { notice = "当前账号还没有可核验的已完成备份。请先完成备份，再检查空间清理。"; return }
         cleanupRunning = true; cleanupReady = []; cleanupResults = [:]
         defer { cleanupRunning = false }

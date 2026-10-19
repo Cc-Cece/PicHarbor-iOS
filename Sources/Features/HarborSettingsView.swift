@@ -108,7 +108,8 @@ struct NetworkPreferencesView: View {
                 Toggle("仅通过 Wi-Fi 备份", isOn: $model.settings.wifiOnly)
                 Toggle("自动备份", isOn: Binding(get: { model.settings.automatic }, set: { value in if value { scope = true } else { model.settings.automatic = false } }))
                 NavigationLink("检查备份范围") { BackupScopeView() }
-            } footer: { Text("网络设置对新建任务生效；已创建任务保留原设置。关闭自动备份不会取消手动任务，可在活动中暂停任务。") }
+                if model.updatingNetwork { ProgressView("正在为未完成任务应用网络设置…") }
+            } footer: { Text("网络设置立即应用于当前账号的未完成任务，手动暂停的任务保持暂停。已开始的文件传输可能从文件开头重新发送；画质与 Live Photo 等内容设置仍保留任务创建时的选择。关闭自动备份不会取消已有任务。") }
             Section("后台执行") {
                 Text("大文件由系统后台传输。图库扫描、封装与提交由系统尽力安排，前台打开时可靠继续。系统强制结束、低电量或网络限制可能延后任务。").foregroundStyle(.secondary)
                 LabeledContent("当前网络", value: !model.network.connected ? "未连接" : model.network.wifi ? "Wi-Fi" : "蜂窝网络")

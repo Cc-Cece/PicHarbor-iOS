@@ -93,15 +93,33 @@ struct BackupDashboard: View {
 struct ActivityView: View {
     @EnvironmentObject private var model: HarborModel
     @State private var filter = "all"
-    var filtered: [BackupJob] { model.visibleJobs.filter { filter == "all" || (filter == "done" ? $0.state == .completed : $0.state != .completed) } }
+    @AppStorage("activity.grouping") private var grouping = "batch"
+    @State private var removal = Set<String>()
+    @State private var confirmRemoval = false
+    var filtered: [BackupJob] { model.visibleJobs.filter { filter == "all" || (filter == "done" ? $0.state == .completed : $0.unfinished && $0.state != .cancelled) } }
     var body: some View {
         List {
             Section {
                 Picker("任务", selection: $filter) { Text("全部").tag("all"); Text("进行中").tag("active"); Text("已完成").tag("done") }.pickerStyle(.segmented)
             }
             if filtered.isEmpty { ContentUnavailableView("暂无备份活动", systemImage: "clock", description: Text("备份任务和处理结果会显示在这里。")) }
-            ForEach(filtered) { job in
-                NavigationLink { JobDetailView(id: job.id) } label: { JobRow(job: job) }
+            if grouping == "none" {
+                ForEach(filtered) { job in activityRow(job) }
+            } else {
+                ForEach(ActivityGroup.groups(filtered, byBatch: grouping == "batch")) { group in
+                    Section {
+                        ForEach(group.jobs) { job in activityRow(job) }
+                    } header: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(group.origin?.title ?? "历史任务（未记录来源）")
+                            if grouping == "batch" {
+                                if group.jobs.first?.batchID != nil { Text(group.date, format: .dateTime.month().day().hour().minute().second()) }
+                                else { Text("未记录批次") }
+                            }
+                            Text("\(group.jobs.count) 项 · 已完成 \(group.jobs.filter { $0.state == .completed }.count) 项")
+                        }
+                    }
+                }
             }
             if !model.engine.records.isEmpty {
                 Section("验证版历史记录") {
@@ -117,10 +135,24 @@ struct ActivityView: View {
         }.navigationTitle("活动")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { Menu {
+                Picker("分组方式", selection: $grouping) { Text("按批次").tag("batch"); Text("按备份类型").tag("origin"); Text("不分组").tag("none") }
                 Button("暂停全部", systemImage: "pause") { Task { await model.pauseAll() } }
                 Button("继续未完成任务", systemImage: "play") { Task { for job in model.visibleJobs where [.paused, .failed, .attention].contains(job.state) { await model.resume(job.id) } } }
-            } label: { Image(systemName: "ellipsis.circle") } }
+                Button("移除当前筛选中的未完成任务", systemImage: "trash", role: .destructive) {
+                    removal = Set(filtered.filter(\.unfinished).map(\.id)); confirmRemoval = true
+                }.disabled(!filtered.contains(where: \.unfinished))
+            } label: { Image(systemName: "ellipsis.circle") }.accessibilityIdentifier("activity.menu") }
         }
+        .confirmationDialog("移除 \(removal.count) 项未完成任务？", isPresented: $confirmRemoval, titleVisibility: .visible) {
+            Button("停止并移除任务", role: .destructive) { let ids = removal; Task { await model.removeUnfinished(ids) } }
+            Button("取消", role: .cancel) {}
+        } message: { Text("停止这些任务并从活动中移除，释放不再使用的暂存文件。不会删除 iPhone 或谷歌相册中的照片；已经提交的云端内容会保留。自动备份不会重新加入这些项目的同一版本，仍可手动重新备份。") }
+    }
+    private func activityRow(_ job: BackupJob) -> some View {
+        NavigationLink { JobDetailView(id: job.id) } label: { JobRow(job: job) }
+            .swipeActions { if job.unfinished {
+                Button("移除", role: .destructive) { removal = [job.id]; confirmRemoval = true }
+            } }
     }
 }
 
@@ -145,6 +177,8 @@ struct JobDetailView: View {
     @EnvironmentObject private var model: HarborModel
     let id: String
     @State private var reprepare = false
+    @State private var remove = false
+    @Environment(\.dismiss) private var dismiss
     var job: BackupJob? { model.jobs.first { $0.id == id } }
     var body: some View {
         List {
@@ -154,6 +188,8 @@ struct JobDetailView: View {
                     LabeledContent("画质", value: job.settings.quality.title)
                     if job.isLive { LabeledContent("Live Photo", value: job.settings.live.title) }
                     LabeledContent("编辑版本", value: job.settings.edits.title)
+                    LabeledContent("网络", value: job.state == .completed ? (job.settings.wifiOnly ? "仅 Wi-Fi" : "Wi-Fi 与蜂窝") : (model.settings.wifiOnly ? "仅 Wi-Fi" : "Wi-Fi 与蜂窝"))
+                    LabeledContent("来源", value: job.origin?.title ?? "历史任务（未记录）")
                     LabeledContent("资源数", value: String(job.resources.count))
                     LabeledContent("创建时间") { Text(job.created, style: .time) }
                 }
@@ -162,7 +198,10 @@ struct JobDetailView: View {
                     if let stage = job.failureStageTitle { LabeledContent("失败步骤", value: stage) }
                     if let code = job.failureSystemCode { Text(code).font(.caption).foregroundStyle(.secondary) }
                 } }
-                if job.isLive && job.state == .completed { Section { Text("云端动态标记已确认。官方客户端取回仍需真机验证，本地资源暂不参与清理。").font(.footnote).foregroundStyle(.secondary) } }
+                if job.isLive { Section("动态照片确认") {
+                    Text(job.state == .completed ? "文件与云端动态标记均已确认。当前 Live Photo 本地清理仍未开放。" : job.resources.allSatisfy(\.confirmed) && !job.resources.isEmpty ? "封装文件已在云端找到，正在确认动态标记和处理状态；确认阶段不会重新上传文件。" : "将本机照片与配对视频封装为动态文件，再分别确认文件存在与云端动态识别。")
+                    Text("任务标题使用本机原名；下方资源名为实际上传文件。Motion Photo 封装会改变文件内容，谷歌相册可能同时显示本机原件与云端封装文件，仅改文件名不能保证合并。")
+                }.font(.footnote).foregroundStyle(.secondary) }
                 Section("资源") {
                     ForEach(job.resources) { resource in
                         VStack(alignment: .leading, spacing: 5) {
@@ -179,6 +218,7 @@ struct JobDetailView: View {
                             else { model.notice = "无法读取这项照片，请检查相册权限或确认照片仍在本机图库中。" }
                         } }
                     } else if job.state != .cancelled {
+                        if job.state == .confirming { Button("立即重新确认云端", systemImage: "arrow.clockwise") { Task { await model.resume(id) } }.disabled(model.engine.busy) }
                         if job.state.active || job.state == .queued || job.state == .waiting { Button("暂停", systemImage: "pause") { Task { await model.pause(id) } } }
                         else { Button("继续 / 重试", systemImage: "play") { Task { await model.resume(id) } } }
                         Button("取消任务", role: .destructive) { Task { await model.cancel(id) } }
@@ -186,6 +226,7 @@ struct JobDetailView: View {
                     if [.failed, .attention, .paused].contains(job.state) {
                         Button("重新准备此任务") { reprepare = true }
                     }
+                    if job.unfinished { Button("移除未完成任务", role: .destructive) { remove = true } }
                 }
             }
         }.navigationTitle("任务详情").navigationBarTitleDisplayMode(.inline)
@@ -193,6 +234,10 @@ struct JobDetailView: View {
             Button("重新读取原件并查重") { Task { await model.reprepare(id) } }
             Button("取消", role: .cancel) {}
         } message: { Text("旧任务保留为已取消，按原任务设置重新读取相册原件并查重。原任务若为强制重新备份，会保留该选择。不删除相册或云端照片。") }
+        .confirmationDialog("移除此任务？", isPresented: $remove, titleVisibility: .visible) {
+            Button("停止并移除任务", role: .destructive) { Task { await model.removeUnfinished([id]); dismiss() } }
+            Button("取消", role: .cancel) {}
+        } message: { Text("停止并从活动中移除，不删除本机或云端照片。自动备份不会重新加入该项目的同一版本，仍可手动重新备份。") }
     }
 }
 

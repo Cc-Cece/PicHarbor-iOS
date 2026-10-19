@@ -1,6 +1,23 @@
 import XCTest
 
 final class HarborFlowTests: XCTestCase {
+    func testActivityGroupingOptions() {
+        let app = XCUIApplication()
+        app.launch()
+        if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
+        app.tabBars.buttons["活动"].tap()
+        let menu = app.buttons["activity.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        XCTAssertTrue(app.buttons["按批次"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["按备份类型"].exists)
+        XCTAssertTrue(app.buttons["不分组"].exists)
+        capture("activity-grouping-options")
+        app.buttons["按备份类型"].tap()
+        menu.tap()
+        app.buttons["按批次"].tap()
+        XCTAssertTrue(app.navigationBars["活动"].exists)
+    }
     func testPhotoKitExportAfterSystemAuthorization() {
         let app = XCUIApplication()
         app.launchArguments.append("--verify-photo-export")

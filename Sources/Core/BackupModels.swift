@@ -53,6 +53,10 @@ enum JobState: String, Codable {
     var active: Bool { [.preparing, .transferring, .committing, .confirming].contains(self) }
 }
 enum TransferDisposition: Equatable { case run, pause, cancel }
+enum BackupOrigin: String, Codable, CaseIterable {
+    case manual, automatic
+    var title: String { self == .manual ? "手动备份" : "自动备份" }
+}
 struct AssetBackupState {
     var account: String
     var revision: String
@@ -76,6 +80,9 @@ struct MediaResource: Codable, Identifiable, Equatable {
 struct BackupJob: Codable, Identifiable {
     var id = UUID().uuidString
     var generation: Int64?
+    var origin: BackupOrigin?
+    var batchID: String?
+    var activityHidden: Bool?
     var account: String
     var assetID: String
     var assetRevision: String
@@ -98,6 +105,21 @@ struct BackupJob: Codable, Identifiable {
     var progress: Double = 0
     var evidence: CleanupEvidence?
     var dedupKey: String { "\(account)|\(assetID)|\(assetRevision)|\(settings.mediaPolicy)" }
+    var unfinished: Bool { state != .completed && activityHidden != true }
+    @discardableResult
+    mutating func updateNetwork(wifiOnly: Bool) -> Set<Int> {
+        guard state != .completed, state != .cancelled else { return [] }
+        settings.wifiOnly = wifiOnly
+        if error == "WAITING_NETWORK" { error = ""; retryAt = nil; attempts = 0 }
+        let oldIDs = Set(resources.compactMap(\.transportID))
+        for index in resources.indices { resources[index].transportID = nil }
+        if state == .transferring { state = .queued; progress = 0 }
+        return oldIDs
+    }
+    mutating func removeFromActivity() {
+        guard state != .completed else { return }
+        state = .cancelled; activityHidden = true; evidence = nil; retryAt = nil
+    }
     var failureStageTitle: String? {
         guard let failureStage else { return nil }
         return ["preparation": "准备暂存目录", "export": "从相册导出资源", "motion_package": "封装动态照片",
@@ -115,6 +137,21 @@ struct BackupJob: Codable, Identifiable {
         if state == .cancelled || state == .completed { return .cancel }
         if activeAccount.isEmpty || account != activeAccount || state != .transferring { return .pause }
         return .run
+    }
+}
+
+struct ActivityGroup: Identifiable {
+    var id: String
+    var origin: BackupOrigin?
+    var jobs: [BackupJob]
+    var date: Date { jobs.map(\.created).min() ?? .distantPast }
+    static func groups(_ jobs: [BackupJob], byBatch: Bool) -> [ActivityGroup] {
+        let grouped = Dictionary(grouping: jobs.filter { $0.activityHidden != true }) { job in
+            byBatch ? (job.batchID.map { job.account + ":" + $0 } ?? job.account + ":legacy") : job.account + ":" + (job.origin?.rawValue ?? "legacy")
+        }
+        return grouped.map { key, values in
+            ActivityGroup(id: key, origin: values.first?.origin, jobs: values.sorted { $0.created > $1.created })
+        }.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
     }
 }
 struct CleanupEvidence: Codable {

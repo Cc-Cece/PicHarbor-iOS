@@ -82,6 +82,7 @@ class Protocol:
                 model={"original": "Pixel XL", "quota": "Pixel 8", "saver": "Pixel 2"}[quality])
             if not isinstance(key, str) or not key:
                 raise Failure("COMMIT_UNCONFIRMED")
+            self.snapshot_at = 0
             return {"remote_key": key}
         if action == "confirm_resource":
             key = self.api.find_remote_media_by_hash(self.digest(value))
@@ -103,9 +104,16 @@ class Protocol:
                 raise Failure("INVALID_REMOTE_KEYS")
             if not 0 <= time.monotonic() - self.snapshot_at < 30:
                 self.synchronize()
-            return {"recognized": all(self.snapshot.get(key, {}).get("motion") is True and
-                                      self.snapshot.get(key, {}).get("status") == 100 and
-                                      self.snapshot.get(key, {}).get("trash") == 0 for key in keys)}
+            checks = []
+            for key in keys:
+                item = self.snapshot.get(key)
+                reason = ("REMOTE_MOTION_NOT_INDEXED" if item is None else
+                          "REMOTE_MOTION_TRASHED" if item.get("motion_trash", item.get("trash")) not in (0, None) else
+                          "REMOTE_MOTION_TRASH_UNKNOWN" if item.get("motion_trash", item.get("trash")) is None else
+                          "REMOTE_MOTION_PROCESSING" if item.get("status") != 100 else
+                          "REMOTE_MOTION_NOT_DYNAMIC" if item.get("motion") is not True else "")
+                checks.append(reason)
+            return {"recognized": not any(checks), "reason": next((reason for reason in checks if reason), "")}
         if action == "check_cleanup":
             key = self.api.find_remote_media_by_hash(self.digest(value))
             if not key:
@@ -146,8 +154,11 @@ class Protocol:
                         marker = details.get("16")
                         trash = _get_nested(details, "16", "3")
                         empty = (isinstance(marker, (bytes, str)) and not marker) or (isinstance(marker, dict) and "3" not in marker)
-                        values[item.media_key] = {"size": details.get("10"), "status": details.get("11"),
+                        values[item.media_key] = {"size": details.get("10"), "status": item.upload_status,
                             "motion": item.is_micro_video,
+                            # Upstream treats an omitted optional trash marker as not trashed.
+                            # Keep cleanup's stronger explicit-marker evidence separate.
+                            "motion_trash": 0 if marker is None or empty else (trash if type(trash) is int else None),
                             "original": item.is_original_quality if _get_nested(details, "35", "3") is not None else None,
                             "trash": 0 if trash is None and empty else trash}
                     except (TypeError, ValueError, KeyError, RuntimeError):
