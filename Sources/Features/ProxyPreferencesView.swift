@@ -5,11 +5,8 @@ struct ProxyPreferencesView: View {
     @ObservedObject private var language = LanguagePreferences.shared
     @ObservedObject private var proxy = ProxyManager.shared
     @EnvironmentObject private var model: HarborModel
-    @State private var importer = false
-    @State private var subscription = ""
     @State private var working = false
     @State private var result = ""
-    @State private var subscriptionFeedback = false
     var canChangeCore: Bool { model.activeCount == 0 && !working && !proxy.busy }
     var body: some View {
         Form {
@@ -18,16 +15,16 @@ struct ProxyPreferencesView: View {
                 Text(L10n.text("不创建系统 VPN。其他应用不使用此代理。验证阶段请保持应用在前台。"))
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            Section(L10n.text("配置")) {
-                Button(L10n.text("导入 Clash 配置文件")) { importer = true }.disabled(!canChangeCore)
-                TextField(L10n.text("HTTP 或 HTTPS 订阅链接"), text: $subscription).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button(L10n.text("读取订阅")) { fetchSubscription() }.disabled(!canChangeCore || subscription.isEmpty)
-                if subscriptionFeedback {
-                    if working { ProgressView() }
-                    if !result.isEmpty { Text(result).font(.footnote) }
+            Section {
+                NavigationLink {
+                    ProxyProfilesView()
+                } label: {
+                    Label(L10n.text("配置与订阅"), systemImage: "list.bullet.rectangle")
                 }
-                Text(L10n.text("验证版支持包含 proxies 的 YAML，最多 64 个节点。暂不支持 proxy-providers、链式代理或规则导入。首次订阅下载需要网络可达，也可从文件导入。"))
-                    .font(.footnote).foregroundStyle(.secondary)
+                if let profile = proxy.library.profiles.first(where: { $0.id == proxy.library.activeID }) {
+                    Text(L10n.text("正在使用：{0} · {1} 个节点", [profile.name, String(profile.nodeCount)]))
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             if !proxy.names.isEmpty {
                 Section {
@@ -49,15 +46,15 @@ struct ProxyPreferencesView: View {
             } header: { Text(L10n.text("全局兜底策略")) } footer: { Text(L10n.text("任务默认跟随全局，也可在任务详情单独设置。直连需要明确允许，失败后继续等待，不会标记完成。")) }
             Section(L10n.text("连接验证")) {
                 Button(L10n.text("测试当前连接")) {
-                    working = true; result = ""; subscriptionFeedback = false
+                    working = true; result = ""
                     Task {
                         defer { working = false }
                         do { let (name, milliseconds) = try await proxy.testPrimaryLatency(); result = L10n.text("首选节点 {0}：{1} 毫秒", [name, String(milliseconds)]) }
                         catch { result = error.localizedDescription }
                     }
                 }.disabled(working || proxy.busy)
-                if working && !subscriptionFeedback { ProgressView(L10n.text("正在处理，请稍候…")) }
-                if !result.isEmpty && !subscriptionFeedback { Text(result).font(.footnote) }
+                if working { ProgressView(L10n.text("正在处理，请稍候…")) }
+                if !result.isEmpty { Text(result).font(.footnote) }
                 if !proxy.message.isEmpty { Text(proxy.message).font(.footnote) }
             }
             Section {
@@ -73,48 +70,6 @@ struct ProxyPreferencesView: View {
                 if !enabled { await proxy.stop() }
                 else { do { try await proxy.ensureRunning() } catch { result = error.localizedDescription } }
             }
-        }
-        .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .plainText, .json]) { value in
-            switch value {
-            case .success(let url):
-                working = true
-                Task {
-                    defer { working = false }
-                    let scope = url.startAccessingSecurityScopedResource(); defer { if scope { url.stopAccessingSecurityScopedResource() } }
-                    do {
-                        guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 4 * 1024 * 1024 else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
-                        try await proxy.importText(String(contentsOf: url, encoding: .utf8)); result = ""
-                    } catch { result = error.localizedDescription }
-                }
-            case .failure: result = L10n.text("未能读取配置文件。")
-            }
-        }
-    }
-    private func fetchSubscription() {
-        subscriptionFeedback = true
-        let address = subscription.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: address), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let host = url.host, !host.isEmpty else { result = L10n.text("请输入有效的 HTTP 或 HTTPS 订阅链接。"); return }
-        working = true
-        result = L10n.text("正在读取订阅…")
-        Task {
-            defer { working = false }
-            do {
-                // Bootstrap a first subscription without requiring an existing proxy.
-                let route = proxy.preferences.enabled && !proxy.names.isEmpty ? try await proxy.route() : (-1, "")
-                let configuration = URLSessionConfiguration.ephemeral; ProxyManager.apply(port: route.0, to: configuration)
-                configuration.timeoutIntervalForRequest = 30
-                configuration.timeoutIntervalForResource = 45
-                let session = URLSession(configuration: configuration); defer { session.invalidateAndCancel() }
-                let (bytes, response) = try await session.bytes(from: url)
-                guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw HarborError("NETWORK_ERROR") }
-                var data = Data()
-                for try await byte in bytes {
-                    guard data.count < 4 * 1024 * 1024 else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }; data.append(byte)
-                }
-                guard let text = String(data: data, encoding: .utf8) else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
-                result = L10n.text("订阅已下载，正在导入…")
-                try await proxy.importText(text); subscription = ""; result = L10n.text("订阅已导入。")
-            } catch { result = (error as? HarborError)?.localizedDescription ?? L10n.text("订阅读取失败，请检查网络或改用文件导入。") }
         }
     }
 }

@@ -84,23 +84,95 @@ enum ProxySecretStore {
 final class ProxyManager: ObservableObject {
     static let shared = ProxyManager()
     @Published var preferences: ProxyPreferences {
-        didSet { if let data = try? JSONEncoder().encode(preferences) { UserDefaults.standard.set(data, forKey: "picharbor.proxy.preferences.v1") } }
+        didSet { if let data = try? JSONEncoder().encode(preferences) { defaults.set(data, forKey: "picharbor.proxy.preferences.v1") } }
     }
     @Published private(set) var names: [String] = []
     @Published private(set) var running = false
     @Published private(set) var busy = false
     @Published var message = ""
+    @Published private(set) var library = ProxyProfileLibrary()
     private var ports: [String: Int] = [:]
     private let queue = DispatchQueue(label: "io.picharbor.proxy-core", qos: .utility)
     private var starting: Task<Void, Error>?
+    private let readStore: () throws -> Data?
+    private let writeStore: (Data) throws -> Void
+    private let testStart: ((String) -> Bool)?
+    private let testStop: (() -> Void)?
+    private let defaults: UserDefaults
     private var home: String {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PicHarbor/Proxy").path
     }
-    init() {
-        preferences = UserDefaults.standard.data(forKey: "picharbor.proxy.preferences.v1").flatMap { try? JSONDecoder().decode(ProxyPreferences.self, from: $0) } ?? ProxyPreferences()
-        if let data = try? ProxySecretStore.read(), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let nodes = try? ProxyConfiguration.nodes(object) { names = nodes.compactMap { $0["name"] as? String } }
+    init(read: @escaping () throws -> Data? = ProxySecretStore.read,
+         save: @escaping (Data) throws -> Void = ProxySecretStore.save,
+         start: ((String) -> Bool)? = nil, stop: (() -> Void)? = nil, defaults: UserDefaults = .standard) {
+        readStore = read; writeStore = save; testStart = start; testStop = stop
+        self.defaults = defaults
+        preferences = defaults.data(forKey: "picharbor.proxy.preferences.v1").flatMap { try? JSONDecoder().decode(ProxyPreferences.self, from: $0) } ?? ProxyPreferences()
+        if let data = try? readStore(), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let stored = object["library"], let encoded = try? JSONSerialization.data(withJSONObject: stored),
+               let decoded = try? JSONDecoder().decode(ProxyProfileLibrary.self, from: encoded) { library = decoded }
+            if let nodes = try? ProxyConfiguration.nodes(object) {
+                names = nodes.compactMap { $0["name"] as? String }
+                if library.profiles.isEmpty, let encoded = try? JSONSerialization.data(withJSONObject: nodes) {
+                    let legacy = ProxyProfile(name: L10n.text("原有配置"), nodes: encoded, primary: preferences.primary, backups: preferences.backups, updatedAt: Date())
+                    library = ProxyProfileLibrary(profiles: [legacy], activeID: legacy.id)
+                }
+            }
+        }
     }
-    func importText(_ text: String) async throws {
+    private func capturedLibrary() -> ProxyProfileLibrary {
+        var copy = library
+        if let index = copy.profiles.firstIndex(where: { $0.id == copy.activeID }) {
+            copy.profiles[index].primary = preferences.primary; copy.profiles[index].backups = preferences.backups
+        }
+        return copy
+    }
+    private func encodedLibrary(_ value: ProxyProfileLibrary) throws -> Data {
+        let nodes = try value.profiles.first(where: { $0.id == value.activeID }).map { try JSONSerialization.jsonObject(with: $0.nodes) } ?? []
+        return try JSONSerialization.data(withJSONObject: ["proxies": nodes, "library": JSONSerialization.jsonObject(with: JSONEncoder().encode(value))])
+    }
+    private func startCore(_ configuration: String) async -> Bool {
+        if let testStart { return testStart(configuration) }
+        let path = home
+        return await withCheckedContinuation { continuation in queue.async { continuation.resume(returning: ProxyCoreBridge.start(configuration, home: path)) } }
+    }
+    private func stopCore() async {
+        if let testStop { testStop(); return }
+        await withCheckedContinuation { continuation in queue.async { ProxyCoreBridge.stop(); continuation.resume() } }
+    }
+    // Validate the candidate before committing a single Keychain envelope. Restore the
+    // previous runtime on every failure; never publish stale names as a working core.
+    private func commit(_ proposed: ProxyProfileLibrary, validating nodes: [[String: Any]]) async throws {
+        if let starting { try await starting.value }
+        let previous = capturedLibrary(), wasRunning = running
+        let previousNodes = try previous.profiles.first(where: { $0.id == previous.activeID }).map { try JSONSerialization.jsonObject(with: $0.nodes) as? [[String: Any]] ?? [] } ?? []
+        let oldConfiguration = previousNodes.isEmpty ? nil : try ProxyConfiguration.runtime(previousNodes).0
+        let candidate = try ProxyConfiguration.runtime(nodes).0
+        do {
+            guard await startCore(candidate) else { throw HarborError("PROXY_START_FAILED") }
+            let active = proposed.profiles.first { $0.id == proposed.activeID }
+            let activeNodes = try active.map { try JSONSerialization.jsonObject(with: $0.nodes) as? [[String: Any]] ?? [] } ?? []
+            var activePorts: [String: Int] = [:]
+            if !activeNodes.isEmpty {
+                let (configuration, mapping) = try ProxyConfiguration.runtime(activeNodes); activePorts = mapping
+                if configuration != candidate, preferences.enabled {
+                    guard await startCore(configuration) else { throw HarborError("PROXY_START_FAILED") }
+                }
+            }
+            if !preferences.enabled || activeNodes.isEmpty { await stopCore() }
+            try writeStore(encodedLibrary(proposed))
+            library = proposed; ports = activePorts; names = activeNodes.compactMap { $0["name"] as? String }
+            preferences.primary = active.flatMap { names.contains($0.primary) ? $0.primary : nil } ?? names.first ?? ""
+            preferences.backups = active?.backups.filter { names.contains($0) && $0 != preferences.primary } ?? []
+            running = preferences.enabled && !activeNodes.isEmpty
+        } catch {
+            if wasRunning, let oldConfiguration { running = await startCore(oldConfiguration) }
+            else { await stopCore(); running = false }
+            if wasRunning && !running { message = L10n.text("旧配置未能重新启动，请重新测试连接。") }
+            throw error
+        }
+    }
+    func importText(_ text: String, profileID: String? = nil, name: String = "", subscriptionURL: String? = nil) async throws {
         guard !busy, text.utf8.count <= 4 * 1024 * 1024 else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
         busy = true; defer { busy = false }
         let path = home
@@ -108,32 +180,75 @@ final class ProxyManager: ObservableObject {
         guard let json, let object = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
               (object["proxy-providers"] as? [String: Any] ?? [:]).isEmpty else { throw HarborError("PROXY_CONFIG_UNSUPPORTED") }
         let nodes = try ProxyConfiguration.nodes(object)
-        let (configuration, newPorts) = try ProxyConfiguration.runtime(nodes)
-        let succeeded = await withCheckedContinuation { continuation in queue.async { continuation.resume(returning: ProxyCoreBridge.start(configuration, home: path)) } }
-        running = succeeded
-        guard succeeded else { throw HarborError("PROXY_START_FAILED") }
-        // Persist only the validated node list, never the imported system routing.
-        do { try ProxySecretStore.save(try JSONSerialization.data(withJSONObject: ["proxies": nodes])) }
-        catch { await stop(); throw error }
-        ports = newPorts; names = nodes.compactMap { $0["name"] as? String }
-        if !names.contains(preferences.primary) { preferences.primary = names.first ?? "" }
-        preferences.backups = preferences.backups.filter { names.contains($0) }
-        message = L10n.text("配置已导入，节点已就绪。")
-        if !preferences.enabled { await stop() }
+        var proposed = capturedLibrary()
+        let existing = proposed.profiles.first { $0.id == profileID }
+        let data = try JSONSerialization.data(withJSONObject: nodes)
+        let changes = try ProxyNodeChanges.compare(old: existing?.nodes, new: data)
+        let summary = L10n.text("{0} 个节点 · 新增 {1}，修改 {2}，移除 {3}", [String(nodes.count), String(changes.added), String(changes.modified), String(changes.removed)])
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var profile = existing ?? ProxyProfile(name: trimmedName.isEmpty ? L10n.text("本地配置") : trimmedName, nodes: data, primary: "", backups: [], updatedAt: Date())
+        if !trimmedName.isEmpty { profile.name = trimmedName }
+        profile.nodes = data; profile.updatedAt = Date(); profile.lastResult = summary; profile.lastError = nil
+        if let subscriptionURL { profile.subscriptionURL = try ProxySubscription.url(subscriptionURL).absoluteString }
+        if let index = proposed.profiles.firstIndex(where: { $0.id == profile.id }) { proposed.profiles[index] = profile }
+        else {
+            guard proposed.profiles.count < 20 else { throw HarborError("PROXY_PROFILE_LIMIT") }
+            proposed.profiles.append(profile); proposed.activeID = profile.id
+        }
+        try await commit(proposed, validating: nodes)
+        message = L10n.text("更新成功：{0}", [summary])
+    }
+    func activateProfile(_ id: String) async throws {
+        guard !busy, let profile = library.profiles.first(where: { $0.id == id }) else { throw HarborError("PROXY_UNAVAILABLE") }
+        busy = true; defer { busy = false }
+        var proposed = capturedLibrary(); proposed.activeID = id
+        let nodes = try JSONSerialization.jsonObject(with: profile.nodes) as? [[String: Any]] ?? []
+        try await commit(proposed, validating: nodes)
+        message = L10n.text("配置已切换。")
+    }
+    func editProfile(_ id: String, name: String, address: String?) throws {
+        guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
+        var proposed = capturedLibrary()
+        guard let index = proposed.profiles.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { proposed.profiles[index].name = trimmed }
+        if let address { proposed.profiles[index].subscriptionURL = try ProxySubscription.url(address).absoluteString }
+        try writeStore(encodedLibrary(proposed)); library = proposed
+    }
+    func recordProfileFailure(_ id: String, message: String) {
+        guard !busy else { return }
+        var proposed = capturedLibrary()
+        guard let index = proposed.profiles.firstIndex(where: { $0.id == id }) else { return }
+        proposed.profiles[index].lastError = message
+        do { try writeStore(encodedLibrary(proposed)); library = proposed }
+        catch { self.message = L10n.text("未能保存更新记录。") }
+    }
+    func removeProfile(_ id: String) async throws {
+        guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
+        busy = true; defer { busy = false }
+        var proposed = capturedLibrary(); proposed.profiles.removeAll { $0.id == id }
+        if proposed.activeID == id {
+            // Never switch silently to a different subscription.
+            proposed.activeID = nil
+            try writeStore(encodedLibrary(proposed))
+            await stopCore(); running = false; ports = [:]; names = []
+            preferences.primary = ""; preferences.backups = []; preferences.enabled = false
+        } else { try writeStore(encodedLibrary(proposed)) }
+        library = proposed; message = L10n.text("配置已移除。")
     }
     func stop() async {
         if let starting { _ = try? await starting.value }
-        await withCheckedContinuation { continuation in queue.async { ProxyCoreBridge.stop(); continuation.resume() } }
+        await stopCore()
         running = false
     }
     func ensureRunning() async throws {
         if running { return }
         if let starting { return try await starting.value }
         let operation = Task { @MainActor in
-            guard let data = try ProxySecretStore.read(), let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw HarborError("PROXY_CONFIG_REQUIRED") }
+            guard let data = try readStore(), let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw HarborError("PROXY_CONFIG_REQUIRED") }
             let nodes = try ProxyConfiguration.nodes(object)
-            let (configuration, newPorts) = try ProxyConfiguration.runtime(nodes); let path = home
-            let succeeded = await withCheckedContinuation { continuation in queue.async { continuation.resume(returning: ProxyCoreBridge.start(configuration, home: path)) } }
+            let (configuration, newPorts) = try ProxyConfiguration.runtime(nodes)
+            let succeeded = await startCore(configuration)
             guard succeeded else { throw HarborError("PROXY_START_FAILED") }
             ports = newPorts; running = true
         }

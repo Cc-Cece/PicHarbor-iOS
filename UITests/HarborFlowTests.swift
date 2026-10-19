@@ -10,7 +10,9 @@ final class HarborFlowTests: XCTestCase {
         entry.tap()
         XCTAssertTrue(app.navigationBars["应用内代理（验证）"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.switches["仅代理 PicHarbor"].value as? String, "0")
+        app.buttons["配置与订阅"].tap()
         XCTAssertTrue(app.buttons["导入 Clash 配置文件"].exists)
+        XCTAssertTrue(app.buttons["添加订阅"].exists)
         capture("proxy-preview-settings")
     }
     func testExternalCleanupGuideHasNoDeletionControls() {

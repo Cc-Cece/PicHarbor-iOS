@@ -655,3 +655,39 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 正在读取订阅…|Downloading subscription…
 订阅已下载，正在导入…|Subscription downloaded. Importing…
 订阅已导入。|Subscription imported.
+原有配置|Existing configuration
+本地配置|Local configuration
+旧配置未能重新启动，请重新测试连接。|The previous configuration could not restart. Test the connection again.
+{0} 个节点 · 新增 {1}，修改 {2}，移除 {3}|{0} nodes: {1} added, {2} changed, {3} removed
+更新成功：{0}|Updated: {0}
+配置已切换。|Configuration switched.
+配置已移除。|Configuration removed.
+未能保存更新记录。|Could not save update history.
+配置与订阅|Configurations & Subscriptions
+正在使用：{0} · {1} 个节点|In use: {0} · {1} nodes
+添加订阅|Add Subscription
+从链接或文件导入，任选一种。一次使用一份配置，订阅需手动更新。|Import from a URL or file. Use one configuration at a time. Update subscriptions manually.
+正在导入…|Importing…
+已保存的配置|Saved Configurations
+{0} · {1} 个节点|{0} · {1} nodes
+本地文件|Local File
+订阅|Subscription
+尚未添加配置。|No configurations yet.
+请先暂停备份，再更新或切换配置。|Pause backups before updating or switching configurations.
+仅导入节点，不使用文件中的规则、系统 VPN 或 DNS 设置。最多保存 20 份配置，每份最多 64 个节点。|Only nodes are imported. Rules, system VPN and DNS settings are not used. Save up to 20 configurations with 64 nodes each.
+配置名称|Configuration Name
+链接仅保存在本机，不加入诊断报告。|The URL stays on this device and is excluded from diagnostics.
+下载并添加|Download & Add
+更新订阅|Update Subscription
+保存修改|Save Changes
+修改已保存，节点内容需更新后生效。|Changes saved. Update the subscription to refresh its nodes.
+正在使用|In Use
+使用此配置|Use This Configuration
+更新记录|Update History
+节点数|Node Count
+上次成功更新|Last Successful Update
+移除配置|Remove Configuration
+配置详情|Configuration Details
+移除此配置？正在使用的配置被移除后，应用内代理将关闭。|Remove this configuration? Removing the active configuration turns off the in-app proxy.
+订阅服务器未返回有效内容，请检查链接后重试。|The subscription server returned an invalid response. Check the URL and try again.
+最多保存 20 份配置，请先移除不用的配置。|You can save up to 20 configurations. Remove an unused configuration first.
