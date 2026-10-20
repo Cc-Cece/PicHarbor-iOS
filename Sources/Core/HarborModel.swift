@@ -10,11 +10,19 @@ final class HarborModel: ObservableObject {
     let network = NetworkStatus()
     @Published private(set) var jobs: [BackupJob] = [] {
         didSet {
-            if jobs.count != oldValue.count { jobPositions = Dictionary(uniqueKeysWithValues: jobs.enumerated().map { ($0.element.id, $0.offset) }) }
+            if jobs.count != jobPositions.count { rebuildJobPositions() }
             visibleCache = nil; activityCache.removeAll(keepingCapacity: true)
         }
     }
     private var jobPositions: [String: Int] = [:]
+    private func rebuildJobPositions() {
+        jobPositions = Dictionary(uniqueKeysWithValues: jobs.enumerated().map { ($0.element.id, $0.offset) })
+    }
+    private func appendJobs(_ values: [BackupJob]) {
+        let start = jobs.count
+        for (offset, value) in values.enumerated() { jobPositions[value.id] = start + offset }
+        jobs.append(contentsOf: values)
+    }
     private var visibleCache: (account: String, jobs: [BackupJob])?
     private var activityCache: [String: [ActivityBatch]] = [:]
     private var pumping = false
@@ -167,7 +175,7 @@ final class HarborModel: ObservableObject {
         live.beginConfirmation(); live.error = "REMOTE_MOTION_NOT_DYNAMIC"
         var done = BackupJob(account: "", assetID: "ui-only-second", assetRevision: "ui-only", settings: BackupSettings())
         done.id = "ui-done"; done.origin = .manual; done.batchID = live.batchID; done.state = .completed; done.verificationLevel = "standard"
-        jobs = [live, done]; updateAssetStates(jobs)
+        jobs = [live, done]; rebuildJobPositions(); updateAssetStates(jobs)
         if ProcessInfo.processInfo.arguments.contains("--queue-notice-fixture") {
             queueNoticeCount = 2; queueNoticeID = UUID(); notice = L10n.text("已加入备份队列。")
         }
@@ -189,6 +197,7 @@ final class HarborModel: ObservableObject {
             let repository = try BackupStore(url: engine.home.appendingPathComponent("backup-v2.sqlite"))
             store = repository
             jobs = try await repository.load(BackupJob.self, kind: "job")
+            rebuildJobPositions()
             updateAssetStates(jobs)
             mappings = try await repository.load(AlbumMapping.self, kind: "album")
             assetIndex = Dictionary(uniqueKeysWithValues: try await repository.load(AssetSnapshot.self, kind: "asset").map { ($0.id, $0) })
@@ -261,7 +270,7 @@ final class HarborModel: ObservableObject {
         var value = value; value.updated = Date()
         value.generation = (lookupJob(value.id)?.generation ?? 0) + 1
         // Publish intent before yielding: pause/cancel must see the latest transport ID.
-        if let index = jobPositions[value.id] { jobs[index] = value } else { jobs.append(value) }
+        if let index = jobPositions[value.id] { jobs[index] = value } else { appendJobs([value]) }
         updateAssetStates([value])
         do { try await store.save(value, kind: "job", id: value.id, revision: value.generation ?? 0) }
         catch { fatalStorage(error); throw error }
@@ -442,7 +451,7 @@ final class HarborModel: ObservableObject {
                 if (offset + 1) % QueueScaling.chunkSize == 0 || offset == assets.count - 1 {
                     if !chunk.isEmpty {
                         try await store.saveJobs(chunk)
-                        jobs.append(contentsOf: chunk); updateAssetStates(chunk)
+                        appendJobs(chunk); updateAssetStates(chunk)
                         added += chunk.count; chunk.removeAll(keepingCapacity: true)
                     }
                     enqueueProcessed = offset + 1
