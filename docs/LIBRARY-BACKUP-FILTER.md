@@ -18,6 +18,10 @@
 
 原生回归新增覆盖账号与编辑版本隔离、各未完成状态、归档／跳过记录、重复尝试不覆盖已有完成证据、缓存失效及筛选互补关系。界面及大图库真机测试仍需验收。
 
+Apple 原生核心回归：68 项测试全部通过。
+
+IPA 构建、72 项 Python 回归及本地包检查通过。安装包 `dist/PicHarbor-0.2.29.ipa`，版本 0.2.29、build 31，37,147,479 字节；SHA-256：`f0f1648276da93beee0a94e05bf32fb4fbb25180f59dd54460e343a3144ca7d6`。四个 Python 适配模块与源代码一致（忽略 Git 换行差异）。安装及界面效果仍需真机验收。
+
 构建源：`3aafa109777fd314db2d78dce9c4d78c7dd601a1`。
 
 - [原生回归](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39445262373)
