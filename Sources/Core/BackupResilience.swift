@@ -1,5 +1,46 @@
 import Foundation
 
+enum StagingRecovery {
+    static func candidate(_ path: String, home: URL, jobID: String) -> URL? {
+        guard let marker = path.range(of: "/Staging/"), !jobID.contains("/"), !jobID.contains("..") else { return nil }
+        let tail = String(path[marker.upperBound...])
+        guard tail.hasPrefix(jobID + "/"), !tail.split(separator: "/").contains("..") else { return nil }
+        let root = home.appendingPathComponent("Staging/" + jobID, isDirectory: true).standardizedFileURL
+        let url = home.appendingPathComponent("Staging/" + tail).standardizedFileURL
+        return url.path.hasPrefix(root.path + "/") ? url : nil
+    }
+    static func matching(_ resource: MediaResource, in candidates: [MediaResource]) -> MediaResource? {
+        guard !resource.sha1.isEmpty, !resource.sha256.isEmpty, resource.size > 0 else { return nil }
+        return candidates.first { $0.role == resource.role && $0.sha1 == resource.sha1 && $0.sha256 == resource.sha256 && $0.size == resource.size }
+    }
+    static func reconnect(_ initial: BackupJob, ids: Set<String>, candidates: [MediaResource]) throws -> BackupJob {
+        var job = initial
+        for index in job.resources.indices where ids.contains(job.resources[index].id) {
+            guard let replacement = matching(job.resources[index], in: candidates) else { throw HarborError("SOURCE_RECOVERY_MISMATCH") }
+            job.resources[index].path = replacement.path
+        }
+        return job
+    }
+}
+
+extension BackupJob {
+    var retryEligible: Bool { [.failed, .attention].contains(state) && activityHidden != true }
+    var localRecoveryIDs: Set<String> {
+        if isLive && settings.live != .motion {
+            guard let pairs = livePairs else { return Set(resources.map(\.id)) }
+            return Set(pairs.filter { !$0.queryOnly && !$0.isConfirmed(in: resources) }.flatMap { [$0.photoID, $0.videoID] })
+        }
+        return Set(resources.filter { !$0.confirmed && !$0.submitted }.map(\.id))
+    }
+    mutating func requestStagingRecovery() {
+        let ids = localRecoveryIDs
+        if resources.contains(where: { ids.contains($0.id) && !FileManager.default.fileExists(atPath: $0.path) }) ||
+            ["SOURCE_FILE_MISSING", "SOURCE_CHANGED", "FILE_ACCESS"].contains(error) && !ids.isEmpty {
+            repairStaging = true
+        }
+    }
+}
+
 struct BackupExecutionPolicy: Codable, Equatable {
     var retries = 3
     var querySeconds = 60

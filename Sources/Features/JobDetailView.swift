@@ -7,7 +7,6 @@ struct JobDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let id: String
     @State private var advanced = false
-    @State private var reprepare = false
     @State private var remove = false
     @State private var reupload = false
     var job: BackupJob? { model.jobs.first { $0.id == id } }
@@ -38,10 +37,9 @@ struct JobDetailView: View {
                         }
                         if job.state.active || [.queued, .waiting].contains(job.state) {
                             Button(L10n.text("暂停"), systemImage: "pause") { Task { await model.pause(id) } }
-                        } else { Button(L10n.text("继续 / 重试"), systemImage: "play") { Task { await model.resume(id) } } }
+                        } else { Button(job.state == .paused ? L10n.text("继续") : L10n.text("重试"), systemImage: job.state == .paused ? "play" : "arrow.clockwise") { Task { await model.resume(id) } } }
                         Button(L10n.text("取消任务"), role: .destructive) { Task { await model.cancel(id) } }
                     }
-                    if [.failed, .attention, .paused].contains(job.state) { Button(L10n.text("重新准备此任务")) { reprepare = true } }
                     if job.state == .attention && job.error == "PREVIOUS_BACKUP_NOT_VISIBLE" { Button(L10n.text("仍要重新上传")) { reupload = true } }
                     if job.unfinished { Button(L10n.text("移除未完成任务"), role: .destructive) { remove = true } }
                 }
@@ -52,9 +50,6 @@ struct JobDetailView: View {
             NavigationStack { if let job { TaskAdvancedInformation(job: job) } }
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
-        .confirmationDialog(L10n.text("重新准备此任务？"), isPresented: $reprepare, titleVisibility: .visible) {
-            Button(L10n.text("重新读取原件并查重")) { Task { await model.reprepare(id) } }
-        } message: { Text(L10n.text("保留原任务设置及批次，重新读取照片并查重。旧任务保留为已取消，本机及云端照片均保留。")) }
         .confirmationDialog(L10n.text("移除此任务？"), isPresented: $remove, titleVisibility: .visible) {
             Button(L10n.text("停止并移除任务"), role: .destructive) { Task { await model.removeUnfinished([id]); dismiss() } }
         } message: { Text(L10n.text("本机及云端照片保留。仍可手动重新备份。")) }

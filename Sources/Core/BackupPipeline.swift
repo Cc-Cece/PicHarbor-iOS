@@ -86,7 +86,7 @@ struct PipelineCandidate {
 }
 enum PipelineScheduler {
     static func stage(_ job: BackupJob, hasPlan: Bool) -> PipelineStage {
-        if job.resources.isEmpty { return .preparation }
+        if job.resources.isEmpty || job.repairStaging == true { return .preparation }
         if hasPlan { return .upload }
         if job.confirmationOnly { return .confirmation }
         if job.isLive && job.settings.live != .motion {
@@ -123,7 +123,7 @@ enum PipelineScheduler {
         return [.upload, .commit, .lookup, .confirmation, .preparation].flatMap { selected[$0] ?? [] }
     }
     static func bufferedBytes(_ jobs: [BackupJob], account: String) -> Int64 {
-        jobs.lazy.filter { $0.account == account && $0.unfinished && $0.state != .cancelled && $0.state != .transferring }
+        jobs.lazy.filter { $0.account == account && $0.unfinished && $0.state != .cancelled && $0.state != .transferring && $0.repairStaging != true }
             .flatMap(\.resources).filter { !$0.confirmed && !$0.submitted && $0.responsePath == nil }.reduce(0) { $0 + $1.size }
     }
 }

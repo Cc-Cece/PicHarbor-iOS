@@ -116,7 +116,8 @@ struct ActivityActionsMenu: View {
         Menu {
             if !archived { Section {
                 Button(L10n.text("暂停任务"), systemImage: "pause") { let ids = Set(jobs.filter { $0.state.active || [.queued, .waiting].contains($0.state) }.map(\.id)); Task { await model.pauseJobs(ids) } }.disabled(!jobs.contains { $0.state.active || [.queued, .waiting].contains($0.state) })
-                Button(L10n.text("继续任务"), systemImage: "play") { let ids = Set(jobs.filter { [.paused, .failed, .attention].contains($0.state) }.map(\.id)); Task { await model.resumeJobs(ids) } }.disabled(!jobs.contains { [.paused, .failed, .attention].contains($0.state) })
+                Button(L10n.text("继续暂停任务"), systemImage: "play") { let ids = Set(jobs.filter { $0.state == .paused }.map(\.id)); Task { await model.resumeJobs(ids) } }.disabled(!jobs.contains { $0.state == .paused })
+                Button(L10n.text("重试全部异常任务"), systemImage: "arrow.clockwise") { let ids = Set(jobs.filter(\.retryEligible).map(\.id)); Task { await model.resumeJobs(ids) } }.disabled(!jobs.contains(where: \.retryEligible))
             } }
             Section {
             Button(archived ? L10n.text("选择取消归档") : L10n.text("选择归档"), systemImage: "checkmark.circle") { selecting = true }.disabled(!jobs.contains { $0.state == .completed })

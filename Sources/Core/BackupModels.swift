@@ -101,6 +101,7 @@ struct MediaResource: Codable, Identifiable, Equatable {
     var submitted = false
 }
 struct BackupJob: Codable, Identifiable {
+    var repairStaging: Bool?
     var pipelineStage: PipelineStage?
     var pipelineSeconds: [String: Double]?
     var transferStartedAt: Date?

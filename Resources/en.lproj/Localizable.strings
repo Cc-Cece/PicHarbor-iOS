@@ -38,6 +38,7 @@
 "上传模式" = "Upload mode";
 "上传照片" = "Upload photo";
 "上传画质" = "Upload quality";
+"上传结果暂不可用。点击重试，将检查云端并继续备份。" = "The upload result is unavailable. Tap Retry to check the cloud and continue.";
 "上传视频" = "Upload video";
 "上传进度" = "Upload progress";
 "上次传输中断" = "Previous upload interrupted";
@@ -399,6 +400,7 @@
 "文件已传输，云端尚未确认为动态照片。稍后重试会重新检查，不重复上传。" = "Files uploaded. The cloud has not confirmed the motion photo yet. Retry checks again without uploading again.";
 "无法保存或读取上传响应文件。请检查本机空间，再重新准备此任务。" = "Could not read or save the upload response. Check free space and prepare this task again.";
 "无法取得同一版本的完整 Live Photo 资源。" = "The complete photo and video for this Live Photo version are unavailable.";
+"无法恢复此任务的照片版本。请从照片页面重新备份；已有云端内容保留。" = "This task's photo version cannot be recovered. Back it up again from Photos. Existing cloud content is kept.";
 "无法查看照片" = "Photo unavailable";
 "无法访问安全凭据存储。" = "Secure credential storage is unavailable.";
 "无法读写任务数据库，请检查剩余空间。" = "Task storage could not be read or written. Check free space.";
@@ -422,6 +424,8 @@
 "暂停并等待" = "Pause and wait";
 "暂停当前结果" = "Pause filtered tasks";
 "暂停等待" = "Pause and Wait";
+"暂存文件不可用。点击重试，将重新读取照片并继续备份。" = "The temporary file is unavailable. Tap Retry to read the photo again and continue.";
+"暂存文件发生变化。点击重试，将重新读取照片并核对内容。" = "The temporary file has changed. Tap Retry to read the photo again and check its contents.";
 "暂存资源" = "Temporary files";
 "暂无符合条件的任务" = "No matching tasks";
 "暂时无法分享" = "Unable to share";
@@ -546,6 +550,7 @@
 "照片与动态视频哈希已指向同一云端项目" = "Photo and motion video hashes match the same cloud item";
 "照片与视频的关联请求已提交，正在等待云端确认同一动态项目。继续／重试只核验关联，不会重复提交。" = "Pairing was submitted. Waiting for the cloud to confirm a single motion photo. Resume or retry checks pairing without submitting again.";
 "照片仍在准备或发生变化，正在等待相册资源稳定；无需重新选择照片。" = "The photo is still being prepared or changed. Waiting for Photos; you do not need to select it again.";
+"照片内容已变化，无法继续原任务。请从照片页面重新备份；已有云端内容保留。" = "The photo has changed, so this task cannot continue. Back it up again from Photos. Existing cloud content is kept.";
 "照片可能已从本机删除，或尚未允许访问。" = "The photo may have been deleted from this iPhone, or access has not been allowed.";
 "照片和视频均包含在范围中。选中相簿按成员合并去重，不重复上传同一个项目。" = "Includes photos and videos. Content shared by selected albums is backed up once.";
 "照片和视频已上传，Google 相册的 Live Photo 验证通常需等待 10–20 分钟。" = "The photo and video have been uploaded. Google Photos verification of the Live Photo usually takes 10–20 minutes.";
@@ -624,6 +629,7 @@
 "继续备份" = "Continue backups";
 "继续当前结果" = "Resume filtered tasks";
 "继续扫描" = "Scan Again";
+"继续暂停任务" = "Resume paused tasks";
 "继续等待完整验证" = "Keep waiting for full verification";
 "缓存上限（MB）" = "Buffer limit (MB)";
 "编辑后版本" = "Edited version";
@@ -772,7 +778,9 @@
 "重新读取原件并查重" = "Read original and check backup again";
 "重置当前账号的备份、网络和清理偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。" = "Reset backup, connection, and cleanup preferences for this account. Automatic backup turns off and the scope needs confirmation. Accounts, photos, existing tasks, language, and appearance are kept. Photos will not be uploaded again.";
 "重置当前账号的备份和网络偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。" = "Reset this account's backup and network preferences. Automatic backup will turn off and the scope will need confirmation. Accounts, photos, existing jobs, language and appearance are kept. Photos will not be uploaded again.";
+"重试" = "Retry";
 "重试 0–10 次；查询 15–300 秒；提交 15–600 秒；无进展 30–1800 秒；文件处理 10–1440 分钟；云端等待 10–240 分钟。" = "Retries: 0–10. Queries: 15–300 s. Commits: 15–600 s. No progress: 30–1800 s. File processing: 10–1440 min. Cloud waiting: 10–240 min.";
+"重试全部异常任务" = "Retry all failed tasks";
 "链接仅保存在本机，不加入诊断报告。" = "The URL stays on this device and is excluded from diagnostics.";
 "链接测试（临时）" = "Link tests (temporary)";
 "错误码" = "Error code";

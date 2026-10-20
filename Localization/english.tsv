@@ -801,3 +801,11 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 同时备份数量|Simultaneous backups
 {0} 个|{0} items
 默认同时备份 2 个项目。减少数量时，已开始的上传会继续完成。|Back up 2 items at once by default. Lowering the limit lets uploads already started finish.
+继续暂停任务|Resume paused tasks
+重试全部异常任务|Retry all failed tasks
+重试|Retry
+暂存文件不可用。点击重试，将重新读取照片并继续备份。|The temporary file is unavailable. Tap Retry to read the photo again and continue.
+照片内容已变化，无法继续原任务。请从照片页面重新备份；已有云端内容保留。|The photo has changed, so this task cannot continue. Back it up again from Photos. Existing cloud content is kept.
+上传结果暂不可用。点击重试，将检查云端并继续备份。|The upload result is unavailable. Tap Retry to check the cloud and continue.
+暂存文件发生变化。点击重试，将重新读取照片并核对内容。|The temporary file has changed. Tap Retry to read the photo again and check its contents.
+无法恢复此任务的照片版本。请从照片页面重新备份；已有云端内容保留。|This task's photo version cannot be recovered. Back it up again from Photos. Existing cloud content is kept.

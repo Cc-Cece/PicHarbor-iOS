@@ -2,6 +2,73 @@ import XCTest
 @testable import PicHarbor
 
 final class BackupResilienceTests: XCTestCase {
+    func testRecoveryScopesOldContainerPathsToSameJob() {
+        let home = URL(fileURLWithPath: "/new/Library/Application Support/PicHarbor")
+        XCTAssertEqual(StagingRecovery.candidate("/old/PicHarbor/Staging/job/photo.heic", home: home, jobID: "job")?.path,
+                       home.appendingPathComponent("Staging/job/photo.heic").path)
+        XCTAssertNil(StagingRecovery.candidate("/old/Staging/other/photo.heic", home: home, jobID: "job"))
+        XCTAssertNil(StagingRecovery.candidate("/old/Staging/job/../other/file", home: home, jobID: "job"))
+        XCTAssertNil(StagingRecovery.candidate("/old/photo.heic", home: home, jobID: "job"))
+    }
+    func testRecoveryReconnectPreservesIdentityReceiptAndSubmission() throws {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: BackupSettings())
+        let file = MediaResource(role: "original.photo", path: "/missing", name: "photo.heic", sha1: "sha1", sha256: "sha256", size: 12,
+                                 remoteKey: "remote", responsePath: "/receipt", submitted: true)
+        job.resources = [file]; job.priorResourceKeys = [file.id: "remote"]
+        var replacement = file; replacement.id = "new-export-id"; replacement.path = "/new-export"
+        let recovered = try StagingRecovery.reconnect(job, ids: [file.id], candidates: [replacement])
+        var expected = job; expected.resources[0].path = replacement.path
+        XCTAssertEqual(recovered.resources, expected.resources)
+        XCTAssertEqual(recovered.id, job.id)
+        XCTAssertEqual(recovered.priorResourceKeys, job.priorResourceKeys)
+        XCTAssertEqual(recovered.assetRevision, "v1")
+    }
+    func testRecoveryRejectsChangedContentOrResourceRole() {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: BackupSettings())
+        let file = MediaResource(role: "current.photo", path: "/missing", name: "same.heic", sha1: "sha1", sha256: "sha256", size: 12)
+        job.resources = [file]
+        var changed = file; changed.sha256 = "different"
+        XCTAssertThrowsError(try StagingRecovery.reconnect(job, ids: [file.id], candidates: [changed]))
+        changed = file; changed.role = "original.photo"
+        XCTAssertThrowsError(try StagingRecovery.reconnect(job, ids: [file.id], candidates: [changed]))
+        XCTAssertEqual(job.resources[0].path, "/missing")
+    }
+    func testMissingFileRetryUsesPreparationLaneAndSurvivesRestart() throws {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: BackupSettings())
+        job.resources = [MediaResource(role: "original.photo", path: "/missing-" + UUID().uuidString, name: "photo.heic")]
+        job.state = .failed; job.error = "SOURCE_FILE_MISSING"
+        job.requestStagingRecovery()
+        let restored = try JSONDecoder().decode(BackupJob.self, from: JSONEncoder().encode(job))
+        XCTAssertEqual(restored.repairStaging, true)
+        XCTAssertEqual(PipelineScheduler.stage(restored, hasPlan: true), .preparation)
+        job.resources[0].submitted = true; job.repairStaging = nil
+        job.requestStagingRecovery()
+        XCTAssertNotEqual(job.repairStaging, true)
+        XCTAssertEqual(PipelineScheduler.stage(job, hasPlan: false), .confirmation)
+    }
+    func testBulkRetryExcludesPausedCompletedCancelledAndHidden() {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: BackupSettings())
+        for state in [JobState.failed, .attention] { job.state = state; XCTAssertTrue(job.retryEligible) }
+        for state in [JobState.paused, .completed, .cancelled, .waiting, .transferring] { job.state = state; XCTAssertFalse(job.retryEligible) }
+        job.state = .failed; job.activityHidden = true; XCTAssertFalse(job.retryEligible)
+    }
+    func testLiveSubmittedPairDoesNotRequireLocalReexport() throws {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: BackupSettings())
+        job.isLive = true
+        job.resources = [MediaResource(role: "original.photo", path: "/missing-photo", name: "photo.heic"),
+                         MediaResource(role: "original.pairedVideo", path: "/missing-video", name: "video.mov")]
+        job.livePairs = try LivePairRecord.make(job.resources)
+        XCTAssertEqual(job.localRecoveryIDs.count, 2)
+        job.repairStaging = true
+        XCTAssertEqual(PipelineScheduler.bufferedBytes([job], account: "a"), 0)
+        job.repairStaging = nil; job.livePairs?[0].submitted = true
+        job.error = "SOURCE_FILE_MISSING"
+        job.requestStagingRecovery()
+        XCTAssertTrue(job.localRecoveryIDs.isEmpty)
+        XCTAssertNotEqual(job.repairStaging, true)
+        XCTAssertEqual(PipelineScheduler.stage(job, hasPlan: false), .confirmation)
+        XCTAssertTrue(job.livePairs?[0].submitted == true)
+    }
     func testExportCancellationClosesWriterAndLateCallbacksCannotTouchNewFile() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

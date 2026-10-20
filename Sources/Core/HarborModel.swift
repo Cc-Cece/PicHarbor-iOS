@@ -827,6 +827,12 @@ final class HarborModel: ObservableObject {
         defer { exports.removeValue(forKey: job.id) }
         do {
             try checkpoint(job)
+            if job.repairStaging == true {
+                stage = "staging_recovery"
+                job.state = .preparing; job.failureStage = stage; try await persist(job)
+                job = try await recoverStaging(job)
+                try await handoff(.lookup, jobID: job.id)
+            }
             if workerStages[job.id] == .upload { stage = "transfer_creation"; try await uploadPrepared(job); return }
             let directory = engine.home.appendingPathComponent("Staging/\(job.id)", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -1034,7 +1040,7 @@ final class HarborModel: ObservableObject {
             else if code == "REMOTE_NOT_VISIBLE" { job.waitForConfirmation() }
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "PREVIOUS_BACKUP_NOT_VISIBLE", "STAGE_TIMEOUT", "NO_PROGRESS_TIMEOUT", "PROXY_UNAVAILABLE"].contains(code) {
                 job.retryFailure(code, policy: BackupExecutionContext.lease?.policy ?? settings.executionPolicy)
-            } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "SOURCE_SNAPSHOT_LOCKED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
+            } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "SOURCE_RECOVERY_MISMATCH", "SOURCE_SNAPSHOT_LOCKED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
             try? await persist(job, recoveryBudget: job.recovery)
         }
     }
@@ -1196,6 +1202,51 @@ final class HarborModel: ObservableObject {
         let digest = try await ResourceExporter.hashAsync(URL(fileURLWithPath: resource.path))
         guard digest.0 == resource.sha1, digest.1 == resource.sha256, digest.2 == resource.size else { throw HarborError("SOURCE_CHANGED") }
     }
+    private func recoverStaging(_ initial: BackupJob) async throws -> BackupJob {
+        var job = initial
+        let ids = job.localRecoveryIDs
+        var missing = Set<String>()
+        for index in job.resources.indices where ids.contains(job.resources[index].id) {
+            try checkpoint(job)
+            let resource = job.resources[index]
+            let original = URL(fileURLWithPath: resource.path)
+            let candidate = FileManager.default.fileExists(atPath: original.path) ? original :
+                StagingRecovery.candidate(resource.path, home: engine.home, jobID: job.id)
+            if let candidate, FileManager.default.fileExists(atPath: candidate.path) {
+                let digest = try await ResourceExporter.hashAsync(candidate)
+                if digest.0 == resource.sha1 && digest.1 == resource.sha256 && digest.2 == resource.size {
+                    job.resources[index].path = candidate.path; continue
+                }
+            }
+            missing.insert(resource.id)
+        }
+        if !missing.isEmpty {
+            // Export separately. Never remove files still owned by a transport,
+            // receipt, or an uncertain submission in the existing manifest.
+            let directory = engine.home.appendingPathComponent("Staging/\(job.id)/recovery-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var adopted = false
+            defer { if !adopted { try? FileManager.default.removeItem(at: directory) } }
+            let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+            guard free > 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
+            let control = ExportControl(wifiOnly: job.settings.wifiOnly, budget: bufferBudget, jobID: job.id)
+            exports[job.id] = control
+            let sources = try await ResourceExporter.export(assetID: job.assetID, settings: job.settings, directory: directory, control: control)
+            if let failure = control.failure { throw HarborError(failure) }
+            var candidates = sources
+            if job.isLive && job.settings.live == .motion { candidates = try await MotionPhoto.package(sources, directory: directory) }
+            job = try StagingRecovery.reconnect(job, ids: missing, candidates: candidates)
+            try checkpoint(job)
+            job.repairStaging = false
+            try await persist(job)
+            adopted = true
+        } else {
+            try checkpoint(job)
+            job.repairStaging = false
+            try await persist(job)
+        }
+        return job
+    }
     private func launchPairTransfer(_ initial: BackupJob, index: Int, directory: URL) async throws {
         var job = initial
         try checkpoint(job)
@@ -1308,7 +1359,9 @@ final class HarborModel: ObservableObject {
         let useProxy = ProxyManager.shared.preferences.enabled
         var changes: [BackupJob] = [], resumed = Set<String>()
         for var value in jobs where selected.contains(value.id) && value.account == account && [.paused, .failed, .attention].contains(value.state) {
-            let restartTransport = useProxy || (value.proxyPort ?? 0) > 0
+            value.requestStagingRecovery()
+            uploadPlans.removeValue(forKey: value.id)
+            let restartTransport = useProxy || (value.proxyPort ?? 0) > 0 || value.repairStaging == true
             for index in value.resources.indices {
                 if restartTransport || !transports.contains(value.resources[index].transportID ?? -1) { value.resources[index].transportID = nil }
             }
@@ -1316,6 +1369,7 @@ final class HarborModel: ObservableObject {
             value.resetRecoveryAllowance(); value.transferWatch = nil; transferWatches[value.id] = nil; cloudClocks[value.id] = nil; cloudSeconds[value.id] = nil; transferClocks[value.id] = nil
             value.state = value.resources.contains { $0.transportID != nil } ? .transferring : .queued
             changes.append(value); resumed.insert(value.id)
+            if changes.count % QueueScaling.chunkSize == 0 { await Task.yield() }
         }
         do { try await persistBatch(changes) } catch { editingQueue = false; fatalStorage(error); return }
         for task in tasks {
@@ -1335,8 +1389,10 @@ final class HarborModel: ObservableObject {
         }
         guard !updatingNetwork, !switching else { return }
         guard var job = lookupJob(id), job.account == account, job.state != .completed, job.state != .cancelled else { return }
+        job.requestStagingRecovery()
         if useCurrentConfirmationPolicy { job.settings.strictLiveConfirmation = settings.requiresStrictConfirmation }
-        if ProxyManager.shared.preferences.enabled || (job.proxyPort ?? 0) > 0 {
+        uploadPlans.removeValue(forKey: id)
+        if ProxyManager.shared.preferences.enabled || (job.proxyPort ?? 0) > 0 || job.repairStaging == true {
             await transfer.cancel(jobID: id)
             for index in job.resources.indices { job.resources[index].transportID = nil }
         }
@@ -1383,16 +1439,6 @@ final class HarborModel: ObservableObject {
         for task in await transfer.tasks() where removing.contains(task.taskDescription?.components(separatedBy: ":").first ?? "") { task.cancel() }
         assetStates = [:]; updateAssetStates(jobs)
         await collectFinishedStaging()
-    }
-    func reprepare(_ id: String) async {
-        guard initialized, !storageFailed, !updatingNetwork, engine.ready, !engine.busy else { notice = L10n.text("应用尚未就绪，请等待账号连接完成后重试。"); return }
-        guard let job = lookupJob(id), job.account == account,
-              [.failed, .attention, .paused].contains(job.state), !switching else { return }
-        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [job.assetID], options: nil).firstObject else { notice = HarborError("PHOTO_PERMISSION").localizedDescription; return }
-        await cancel(id)
-        // Preserve the original task policy, and check the cloud hash before
-        // uploading again. A settings change must not silently change this task.
-        await enqueue([asset], force: job.forceUpload, policy: job.settings, origin: job.origin ?? .manual, batchID: job.batchID)
     }
     var diagnostics: String {
         let data: [String: Any] = ["version": 2, "job_count": jobs.count,
