@@ -88,18 +88,27 @@ enum PipelineScheduler {
     static func stage(_ job: BackupJob, hasPlan: Bool) -> PipelineStage {
         if job.resources.isEmpty { return .preparation }
         if hasPlan { return .upload }
-        if job.confirmationOnly || job.livePairs?.contains(where: { $0.queryOnly }) == true { return .confirmation }
-        if job.resources.contains(where: { $0.submitted && !$0.confirmed && ((!job.isLive || job.settings.live == .motion) || $0.remoteKey.isEmpty) }) { return .confirmation }
+        if job.confirmationOnly { return .confirmation }
         if job.isLive && job.settings.live != .motion {
-            for pair in job.livePairs ?? [] where !pair.confirmed {
-                let parts = job.resources.filter { $0.id == pair.photoID || $0.id == pair.videoID }
-                if pair.route == "reconcile", let photo = parts.first(where: { $0.id == pair.photoID }),
-                   photo.responsePath != nil && !photo.submitted && photo.remoteKey.isEmpty { return .commit }
-                let required = pair.route == "reconcile" ? parts.filter { $0.id == pair.videoID } : parts
-                if !required.isEmpty && required.allSatisfy({ $0.responsePath != nil }) { return .commit }
+            // Match the processor's order. A completed earlier version must not
+            // force the pending version back into the confirmation lane.
+            guard let pair = job.livePairs?.first(where: { !$0.isConfirmed(in: job.resources) }) else { return .lookup }
+            if pair.queryOnly { return .confirmation }
+            guard let photo = job.resources.first(where: { $0.id == pair.photoID }),
+                  let video = job.resources.first(where: { $0.id == pair.videoID }) else { return .lookup }
+            if pair.route == "reconcile" {
+                if photo.remoteKey.isEmpty {
+                    if photo.submitted { return .confirmation }
+                    return photo.responsePath == nil ? .lookup : .commit
+                }
+                return video.responsePath == nil ? .lookup : .commit
             }
-        } else if job.resources.contains(where: { !$0.confirmed && $0.responsePath != nil && !$0.submitted }) { return .commit }
-        return .lookup
+            return photo.responsePath != nil && video.responsePath != nil ? .commit : .lookup
+        }
+        // Ordinary and Motion Photo versions are processed in resource order too.
+        guard let resource = job.resources.first(where: { !$0.confirmed }) else { return .confirmation }
+        if resource.submitted { return .confirmation }
+        return resource.responsePath == nil ? .lookup : .commit
     }
     static func select(_ candidates: some Sequence<PipelineCandidate>, limits: PipelineLimits, occupied: [PipelineStage: Int], bufferedBytes: Int64, readyPlans: Int = 0) -> [PipelineCandidate] {
         var selected: [PipelineStage: [PipelineCandidate]] = [:]

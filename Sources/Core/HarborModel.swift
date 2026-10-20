@@ -958,6 +958,9 @@ final class HarborModel: ObservableObject {
             guard let pair = job.livePairs?[pairIndex],
                   let photoIndex = job.resources.firstIndex(where: { $0.id == pair.photoID }),
                   let videoIndex = job.resources.firstIndex(where: { $0.id == pair.videoID }) else { throw HarborError("LIVE_PAIR_MISSING") }
+            // Keep the durable, resource-bound checkpoint. Querying a completed
+            // original on every handoff can otherwise block the edited version.
+            if pair.isConfirmed(in: job.resources) { continue }
             func pairPayload(_ job: BackupJob) -> [String: Any] {
                 var photo = payload(job.resources[photoIndex], account: job.account)
                 var video = payload(job.resources[videoIndex], account: job.account)

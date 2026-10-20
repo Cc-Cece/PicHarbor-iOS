@@ -287,6 +287,13 @@ struct LivePairRecord: Codable, Identifiable {
     var confirmed = false
     var remoteKey = ""
     var queryOnly: Bool { submitted || confirmed }
+    /// A saved pair checkpoint is reusable only for these exact two resources.
+    func isConfirmed(in resources: [MediaResource]) -> Bool {
+        guard confirmed, !remoteKey.isEmpty, photoID != videoID,
+              let photo = resources.first(where: { $0.id == photoID }),
+              let video = resources.first(where: { $0.id == videoID }) else { return false }
+        return photo.confirmed && video.confirmed && photo.remoteKey == remoteKey && video.remoteKey == remoteKey
+    }
     static func make(_ resources: [MediaResource]) throws -> [LivePairRecord] {
         var pairs: [LivePairRecord] = []
         for version in ["original", "current"] {
