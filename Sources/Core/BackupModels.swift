@@ -101,6 +101,8 @@ struct MediaResource: Codable, Identifiable, Equatable {
 }
 struct BackupJob: Codable, Identifiable {
     var pipelineStage: PipelineStage?
+    var pipelineSeconds: [String: Double]?
+    var transferStartedAt: Date?
     var id = UUID().uuidString
     var generation: Int64?
     var origin: BackupOrigin?

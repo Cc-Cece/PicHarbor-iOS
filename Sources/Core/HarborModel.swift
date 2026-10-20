@@ -142,6 +142,7 @@ final class HarborModel: ObservableObject {
         try checkpoint(value)
         let task = try transfer.create(job: value, resource: resource, plan: prepared.plan)
         value.state = .transferring; value.resources[index].transportID = task.taskIdentifier; value.failureStage = "transfer_creation"
+        value.transferStartedAt = Date()
         do { try await persist(value) } catch { task.cancel(); throw error }
         uploadPlans.removeValue(forKey: value.id)
         if lookupJob(value.id)?.state == .cancelled { task.cancel() }
@@ -616,7 +617,10 @@ final class HarborModel: ObservableObject {
         let buffered = PipelineScheduler.bufferedBytes(jobs, account: account)
         bufferBudget.configure(limit: limits.bufferBytes, base: buffered)
         let now = ProcessInfo.processInfo.systemUptime
-        uploadPlans = uploadPlans.filter { now - $0.value.created < 180 }
+        uploadPlans = uploadPlans.filter {
+            guard now - $0.value.created < 180, let value = lookupJob($0.key) else { return false }
+            return value.account == account && value.unfinished && ![.paused, .cancelled, .failed, .attention].contains(value.state)
+        }
         let selected = PipelineScheduler.select(jobs.lazy.filter { self.runnable($0) }.map {
             PipelineCandidate(id: $0.id, stage: PipelineScheduler.stage($0, hasPlan: self.uploadPlans[$0.id] != nil), created: $0.created)
         }, limits: limits, occupied: pipelineActivity(), bufferedBytes: buffered, readyPlans: uploadPlans.count)
@@ -632,13 +636,23 @@ final class HarborModel: ObservableObject {
             if candidate.stage == .preparation { bufferBudget.begin(id) }
             Task { [weak self] in
                 guard let self else { return }
-                var value = self.lookupJob(id) ?? job
+                let began = ProcessInfo.processInfo.systemUptime
+                defer {
+                    if candidate.stage == .preparation { self.bufferBudget.finish(id) }
+                    self.workers.remove(id); self.workerStages.removeValue(forKey: id)
+                    Task { await self.pump() }
+                }
+                guard var value = self.lookupJob(id), value.account == self.account, value.unfinished,
+                      ![.paused, .cancelled].contains(value.state), !self.switching, !self.updatingNetwork else { return }
                 value.pipelineStage = candidate.stage; value.retryAt = nil
                 value.state = candidate.stage == .preparation ? .preparing : candidate.stage == .commit ? .committing : value.hasConfirmedPairs ? .paired : .confirming
                 do { try await self.persist(value); await self.process(value) } catch { self.fatalStorage(error) }
-                if candidate.stage == .preparation { self.bufferBudget.finish(id) }
-                self.workers.remove(id); self.workerStages.removeValue(forKey: id)
-                await self.pump()
+                if candidate.stage != .upload, var latest = self.lookupJob(id), latest.activityHidden != true {
+                    var seconds = latest.pipelineSeconds ?? [:]
+                    seconds[candidate.stage.rawValue, default: 0] += max(0, ProcessInfo.processInfo.systemUptime - began)
+                    latest.pipelineSeconds = seconds
+                    try? await self.persist(latest)
+                }
             }
         }
     }
@@ -761,8 +775,10 @@ final class HarborModel: ObservableObject {
                 } catch { throw error }
                 try await handoff(.lookup, jobID: job.id)
             }
-            let prior = ResourceReuse.evidence(for: job, history: jobs)
-            if job.priorResourceKeys != prior { job.priorResourceKeys = prior; try await persist(job) }
+            if job.priorResourceKeys == nil {
+                job.priorResourceKeys = ResourceReuse.evidence(for: job, history: jobs)
+                try await persist(job)
+            }
             if job.isLive && job.settings.live != .motion {
                 stage = "pair_commit"
                 if !job.hasConfirmedPairs {
@@ -887,6 +903,11 @@ final class HarborModel: ObservableObject {
             job = current
             if let confirmationBegan { job.lastConfirmationSeconds = max(0, ProcessInfo.processInfo.systemUptime - confirmationBegan) }
             let code = (error as? HarborError)?.code ?? ((error as NSError).domain == NSCocoaErrorDomain ? "FILE_ACCESS" : "ENGINE_ERROR")
+            if workerStages[job.id] == .preparation && job.resources.isEmpty {
+                // No manifest or transport references an interrupted export.
+                // Do not leave partial prefetch files outside the byte budget.
+                try? FileManager.default.removeItem(at: engine.home.appendingPathComponent("Staging/\(job.id)", isDirectory: true))
+            }
             if code == "NETWORK_ERROR", ProxyManager.shared.preferences.enabled {
                 job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
                 if network.connected && (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: code, scope: job.proxyScope ?? "legacy") }
@@ -1127,6 +1148,11 @@ final class HarborModel: ObservableObject {
                 transfer.acknowledge(receipt); return
             }
             job.resources[index].transportID = nil
+            if let began = job.transferStartedAt {
+                var seconds = job.pipelineSeconds ?? [:]
+                seconds[PipelineStage.upload.rawValue, default: 0] += max(0, Date().timeIntervalSince(began))
+                job.pipelineSeconds = seconds; job.transferStartedAt = nil
+            }
             if receipt.error.isEmpty {
                 if (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: nil, scope: job.proxyScope ?? "legacy") }
                 job.resources[index].responsePath = receipt.responsePath

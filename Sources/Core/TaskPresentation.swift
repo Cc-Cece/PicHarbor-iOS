@@ -110,6 +110,7 @@ extension BackupJob {
     }
     var diagnosticText: String {
         let value: [String: Any] = ["task_reference": id, "state": state.rawValue,
+            "pipeline_stage": pipelineStage?.rawValue ?? "legacy", "pipeline_seconds": pipelineSeconds ?? [:],
             "stage": failureStage ?? "unknown", "error": error, "system_error": failureSystemCode ?? "",
             "resource_count": resources.count, "source_count": sources.count,
             "pair_confirmed": hasConfirmedPairs, "strict_requested": settings.requiresStrictConfirmation,
