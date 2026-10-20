@@ -79,6 +79,7 @@
 "仅清理核验通过且由你确认的本地照片。后台任务由系统安排，打开应用可继续推进。" = "Only verified photos you select are removed. iPhone schedules background work; open the app to continue.";
 "仅用于 PicHarbor 连接 Google，不影响其他应用。" = "Used only for PicHarbor connections to Google. Other apps are unaffected.";
 "仅用于已有凭据的协议验证。导入不会证明本机网页登录成功；请勿将凭据发送到聊天或上传到仓库。" = "For testing existing credentials. Importing does not validate web sign-in. Never share credentials in chat or a repository.";
+"仅统计尚未上传的内容。" = "Includes only content still waiting to upload.";
 "仅编辑后版本" = "Edited only";
 "仅请求删除所选且再次核对通过的 {0} 项。iCloud 照片的删除会同步；谷歌相册中的内容保留。" = "Only the selected and rechecked content ({0}) will be removed. Deletions sync through iCloud Photos. Google Photos copies are kept.";
 "仅通过 Wi-Fi 备份" = "Back up on Wi-Fi only";
@@ -165,6 +166,7 @@
 "前往 Google 相册释放空间" = "Free up space with Google Photos";
 "前往系统设置" = "Open System Settings";
 "前往设置" = "Open Settings";
+"剩余大小" = "Remaining size";
 "动态照片封装" = "Motion Photo package";
 "动态照片封装未完成，原件已保留。" = "Motion Photo packaging did not finish. Your original is kept.";
 "勾选最多 8 个备用节点。只在允许切换的策略下使用，按勾选顺序尝试。" = "Select up to 8 backup nodes. They are tried in selection order only when the policy permits switching.";
@@ -194,6 +196,7 @@
 "取消选择此项目" = "Deselect this item";
 "受系统限制" = "Restricted by iPhone";
 "另有 {0} 个节点暂不可用，可在配置详情查看。" = "{0} more nodes are unavailable. See configuration details.";
+"另有 {0} 项待计算大小。" = "The size of {0} more items is not yet known.";
 "只影响当前任务，随任务保存，不改变全局。修改会暂停当前传输并从文件边界重新连接，已提交内容仍先确认。" = "Applies only to this task and is saved with it. The global policy stays unchanged. Changing it reconnects the current transfer from the file boundary; submitted content is checked first.";
 "只打开首页" = "Opened Home only";
 "只用于此任务，不会改变全局设置。修改后会重新连接，并先检查已备份内容。" = "Applies only to this task. Changes reconnect and check existing backups first.";
@@ -610,6 +613,7 @@
 "自动备份会识别范围内新增和修改内容。系统后台安排不保证即时，打开应用可继续。" = "New and changed photos in your scope are detected automatically. Background work may be delayed; open the app to continue.";
 "自动归档" = "Automatic archiving";
 "自动选择" = "Automatic";
+"至少 {0}" = "At least {0}";
 "节点" = "Nodes";
 "节点数" = "Node Count";
 "节点测速" = "Node Tests";

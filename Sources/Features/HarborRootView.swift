@@ -137,9 +137,11 @@ private struct BackupTransferMetrics: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 24) {
                     value(L10n.text("当前速度"), speed(summary.bytesPerSecond))
-                    value(L10n.text("预计时间"), remaining(summary))
+                    value(L10n.text("剩余大小"), remaining(summary))
                 }
-                Text(L10n.text("预计时间仅供参考，照片准备和云端处理可能需要更久。"))
+                Text(summary.unknownSizeCount > 0
+                     ? L10n.text("另有 {0} 项待计算大小。", [String(summary.unknownSizeCount)])
+                     : summary.uploadFinished ? L10n.text("等待确认保存") : L10n.text("仅统计尚未上传的内容。"))
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }.accessibilityIdentifier("backup.transferMetrics")
@@ -156,16 +158,9 @@ private struct BackupTransferMetrics: View {
         return ByteCountFormatter.string(fromByteCount: Int64(min(bytes, Double(Int64.max / 2))), countStyle: .file) + "/s"
     }
     private func remaining(_ summary: BackupTransferSummary) -> String {
-        if summary.uploadFinished { return L10n.text("等待确认保存") }
-        if !model.network.connected { return L10n.text("等待网络连接") }
-        if model.settings.wifiOnly && !model.network.wifi { return L10n.text("等待 Wi-Fi") }
-        guard let seconds = summary.remainingSeconds, seconds.isFinite else { return L10n.text("计算中…") }
-        if seconds < 60 { return L10n.text("少于 1 分钟") }
-        let formatter = DateComponentsFormatter()
-        var calendar = Calendar.current; calendar.locale = L10n.locale; formatter.calendar = calendar
-        formatter.allowedUnits = [.day, .hour, .minute]; formatter.unitsStyle = .abbreviated; formatter.maximumUnitCount = 2
-        guard let time = formatter.string(from: seconds) else { return L10n.text("计算中…") }
-        return L10n.text("约 {0}", [time])
+        if summary.remainingBytes == 0 && summary.unknownSizeCount > 0 { return L10n.text("计算中…") }
+        let size = summary.remainingBytes == 0 ? "0 KB" : ByteCountFormatter.string(fromByteCount: summary.remainingBytes, countStyle: .file)
+        return summary.unknownSizeCount > 0 ? L10n.text("至少 {0}", [size]) : size
     }
 }
 

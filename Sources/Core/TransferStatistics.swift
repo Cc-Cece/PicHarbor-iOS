@@ -55,53 +55,38 @@ struct TransferRateTracker {
 
 struct BackupTransferSummary {
     var bytesPerSecond: Double?
-    var remainingSeconds: Double?
-    var uploadFinished: Bool
+    var remainingBytes: Int64
+    var unknownSizeCount: Int
+    var uploadFinished: Bool { unknownSizeCount == 0 && remainingBytes == 0 }
 }
 
-/// Cache this on task changes, not progress callbacks. Unknown assets are
-/// estimated only from known sizes with the same media kind and backup policy.
+/// Cache manifests on task changes. Count only measured bytes; unprepared
+/// assets stay explicitly unknown instead of borrowing another asset's size.
 struct UploadWorkload {
     private struct Part { var size: Int64; var taskID: Int? }
     private var parts: [Part] = []
-    private var estimatedBytes: Double = 0
-    private var hasUnknownSize = false
+    private var unknownSizeCount = 0
     private var active = Set<Int>()
 
     init(jobs: [BackupJob], account: String) {
-        var samples: [String: (bytes: Double, count: Int)] = [:]
-        var unknown: [String: Int] = [:]
         let pending: Set<JobState> = [.queued, .preparing, .transferring, .committing, .confirming, .paired, .waiting]
-        for job in jobs where job.account == account && job.activityHidden != true && job.state != .cancelled {
-            let kind = job.isLive ? "live" : job.mediaKind == "video" ? "video" : "photo"
-            let key = kind + "|" + job.settings.mediaPolicy
-            let known = !job.resources.isEmpty && job.resources.allSatisfy { $0.size > 0 }
-            if known {
-                let size = job.resources.reduce(0.0) { $0 + Double($1.size) }
-                let previous = samples[key] ?? (0, 0)
-                samples[key] = (previous.bytes + size, previous.count + 1)
+        for job in jobs where job.account == account && job.activityHidden != true && pending.contains(job.state) {
+            guard !job.resources.isEmpty, job.resources.allSatisfy({ $0.size > 0 }) else {
+                unknownSizeCount += 1; continue
             }
-            guard pending.contains(job.state) else { continue }
-            if !known { unknown[key, default: 0] += 1; continue }
             for resource in job.resources where !resource.confirmed && !resource.submitted && resource.responsePath == nil {
                 parts.append(Part(size: resource.size, taskID: resource.transportID))
                 if job.state == .transferring, let id = resource.transportID { active.insert(id) }
             }
         }
-        for (key, count) in unknown {
-            if let sample = samples[key], sample.count > 0 {
-                estimatedBytes += sample.bytes / Double(sample.count) * Double(count)
-            } else { hasUnknownSize = true }
-        }
     }
     func summary(tracker: TransferRateTracker, now: TimeInterval, canTransfer: Bool) -> BackupTransferSummary {
-        let remaining = parts.reduce(estimatedBytes) { result, part in
-            result + Double(max(0, part.size - max(0, min(part.size, tracker.sent(part.taskID)))))
+        let remaining = parts.reduce(Int64(0)) { result, part in
+            let bytes = part.size - max(0, min(part.size, tracker.sent(part.taskID)))
+            let sum = result.addingReportingOverflow(bytes)
+            return sum.overflow ? Int64.max : sum.partialValue
         }
         let speed = canTransfer ? tracker.speed(now: now, active: active) : 0
-        let seconds: Double?
-        if !hasUnknownSize, remaining > 0, let speed, speed > 0 { seconds = remaining / speed }
-        else { seconds = nil }
-        return BackupTransferSummary(bytesPerSecond: speed, remainingSeconds: seconds, uploadFinished: !hasUnknownSize && remaining == 0)
+        return BackupTransferSummary(bytesPerSecond: speed, remainingBytes: remaining, unknownSizeCount: unknownSizeCount)
     }
 }

@@ -2,7 +2,7 @@ import XCTest
 @testable import PicHarbor
 
 final class TransferStatisticsTests: XCTestCase {
-    func testLargeQueueEstimatesReusePreparedSizeWithoutInspectingPhotos() throws {
+    func testLargeQueueReportsKnownBytesAndUnknownCountWithoutInspectingPhotos() throws {
         var known = BackupJob(account: "a", assetID: "known", assetRevision: "v1", settings: BackupSettings())
         known.state = .transferring
         known.resources = [MediaResource(role: "original.photo", path: "unused", name: "test.heic", size: 1_000, transportID: 1)]
@@ -12,9 +12,11 @@ final class TransferStatisticsTests: XCTestCase {
         var tracker = TransferRateTracker()
         tracker.record(sample(1, 0, 0)); tracker.record(sample(1, 200, 2))
         for _ in 0..<50 {
-            XCTAssertEqual(try XCTUnwrap(workload.summary(tracker: tracker, now: 2, canTransfer: true).remainingSeconds), 99_998, accuracy: 0.001)
+            let summary = workload.summary(tracker: tracker, now: 2, canTransfer: true)
+            XCTAssertEqual(summary.remainingBytes, 800)
+            XCTAssertEqual(summary.unknownSizeCount, 9_999)
         }
-        print("Upload workload 10000 assets and 50 cached estimates: \(Date().timeIntervalSince(start)) seconds")
+        print("Upload workload 10000 assets and 50 cached byte counts: \(Date().timeIntervalSince(start)) seconds")
     }
     private func sample(_ id: Int, _ sent: Int64, _ time: Double, total: Int64 = 10_000) -> UploadProgressSample {
         UploadProgressSample(taskID: id, jobID: "job-\(id)", resourceID: "resource-\(id)", sent: sent, total: total, time: time)
@@ -53,7 +55,7 @@ final class TransferStatisticsTests: XCTestCase {
         tracker.record(sample(1, 9_100, 101))
         XCTAssertEqual(try XCTUnwrap(tracker.speed(now: 101, active: [1])), 100, accuracy: 0.001)
     }
-    func testRemainingTimeUsesMatchingSizesExcludesOtherAccountsAndPausedJobs() throws {
+    func testRemainingBytesExcludeOtherAccountsAndPausedJobsAndKeepUnknownSizes() throws {
         var current = BackupJob(account: "a", assetID: "current", assetRevision: "v1", settings: BackupSettings())
         current.state = .transferring
         current.resources = [MediaResource(role: "original.photo", path: "unused", name: "test.heic", size: 1_000, transportID: 1)]
@@ -66,13 +68,14 @@ final class TransferStatisticsTests: XCTestCase {
         tracker.record(sample(1, 0, 0)); tracker.record(sample(1, 200, 2))
         let workload = UploadWorkload(jobs: [current, history, otherAccount, unknown, unknown, paused], account: "a")
         let summary = workload.summary(tracker: tracker, now: 2, canTransfer: true)
-        XCTAssertEqual(try XCTUnwrap(summary.remainingSeconds), 38, accuracy: 0.001)
-        XCTAssertNil(workload.summary(tracker: tracker, now: 2, canTransfer: false).remainingSeconds)
+        XCTAssertEqual(summary.remainingBytes, 800); XCTAssertEqual(summary.unknownSizeCount, 2)
+        let offline = workload.summary(tracker: tracker, now: 2, canTransfer: false)
+        XCTAssertEqual(offline.remainingBytes, 800); XCTAssertEqual(offline.bytesPerSecond, 0)
         paused.state = .queued
         let missingVideoSize = UploadWorkload(jobs: [current, history, unknown, paused], account: "a")
-        XCTAssertNil(missingVideoSize.summary(tracker: tracker, now: 2, canTransfer: true).remainingSeconds)
+        XCTAssertEqual(missingVideoSize.summary(tracker: tracker, now: 2, canTransfer: true).unknownSizeCount, 2)
     }
-    func testLargeVideoAndCloudConfirmationAreSeparateFromTransferTime() throws {
+    func testLargeVideoBytesAndCloudConfirmationStaySeparate() throws {
         let size: Int64 = 5 * 1024 * 1024 * 1024
         var video = BackupJob(account: "a", assetID: "video", assetRevision: "v1", settings: BackupSettings())
         video.state = .transferring; video.mediaKind = "video"
@@ -80,10 +83,10 @@ final class TransferStatisticsTests: XCTestCase {
         var tracker = TransferRateTracker()
         tracker.record(sample(1, 0, 0, total: size)); tracker.record(sample(1, 1024 * 1024, 2, total: size))
         let summary = UploadWorkload(jobs: [video], account: "a").summary(tracker: tracker, now: 2, canTransfer: true)
-        XCTAssertTrue(try XCTUnwrap(summary.remainingSeconds) > 10_000)
+        XCTAssertEqual(summary.remainingBytes, size - 1024 * 1024)
         video.state = .confirming; video.resources[0].confirmed = true
         let cloud = UploadWorkload(jobs: [video], account: "a").summary(tracker: tracker, now: 2, canTransfer: true)
-        XCTAssertTrue(cloud.uploadFinished); XCTAssertNil(cloud.remainingSeconds)
+        XCTAssertTrue(cloud.uploadFinished); XCTAssertEqual(cloud.remainingBytes, 0)
         XCTAssertEqual(video.state, .confirming)
         let unknown = BackupJob(account: "a", assetID: "unknown", assetRevision: "v1", settings: BackupSettings())
         XCTAssertFalse(UploadWorkload(jobs: [unknown], account: "a").summary(tracker: tracker, now: 2, canTransfer: true).uploadFinished)
