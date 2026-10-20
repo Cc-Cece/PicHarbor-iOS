@@ -12,6 +12,7 @@ final class HarborModel: ObservableObject {
         didSet {
             if jobs.count != jobPositions.count { rebuildJobPositions() }
             visibleCache = nil; activityCache.removeAll(keepingCapacity: true)
+            uploadWorkload = nil
         }
     }
     private var jobPositions: [String: Int] = [:]
@@ -38,6 +39,13 @@ final class HarborModel: ObservableObject {
     private var stopEnqueue = false
     private var progressTimes: [String: Date] = [:]
     @Published private(set) var transferProgress: [String: Double] = [:]
+    private var rateTracker = TransferRateTracker()
+    private var uploadWorkload: (account: String, value: UploadWorkload)?
+    func backupTransferSummary(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> BackupTransferSummary {
+        if uploadWorkload?.account != account { uploadWorkload = (account, UploadWorkload(jobs: jobs, account: account)) }
+        let allowed = !switching && !updatingNetwork && !recoveryRequired && network.connected && (!settings.wifiOnly || network.wifi)
+        return uploadWorkload!.value.summary(tracker: rateTracker, now: now, canTransfer: allowed)
+    }
     private var lastStagingSweep = Date.distantPast
     private func lookupJob(_ id: String) -> BackupJob? {
         guard let index = jobPositions[id], jobs.indices.contains(index), jobs[index].id == id else { return nil }
@@ -149,9 +157,11 @@ final class HarborModel: ObservableObject {
             }
         }.store(in: &subscriptions)
         transfer.onReceipt = { [weak self] receipt in Task { @MainActor in await self?.receive(receipt) } }
-        transfer.onProgress = { [weak self] id, sent, total in
+        transfer.onProgress = { [weak self] sample in
             Task { @MainActor in
-                guard let self, self.jobPositions[id] != nil, total > 0 else { return }
+                let id = sample.jobID, sent = sample.sent, total = sample.total
+                guard let self, let value = self.lookupJob(id), value.account == self.account, total > 0 else { return }
+                self.rateTracker.record(sample)
                 let now = Date()
                 guard sent >= total || now.timeIntervalSince(self.progressTimes[id] ?? .distantPast) >= 0.5 else { return }
                 self.progressTimes[id] = now
@@ -298,6 +308,7 @@ final class HarborModel: ObservableObject {
         let saved = try await store.load(AccountSettings.self, kind: "settings")
         settingsGeneration = Dictionary(uniqueKeysWithValues: saved.map { ($0.account, $0.generation ?? 0) })
         settings = saved.first(where: { $0.account == account })?.settings ?? BackupSettings()
+        rateTracker = TransferRateTracker(); uploadWorkload = nil; transferProgress = [:]; progressTimes = [:]
         lastArchiveSweep = .distantPast
         savedWifiOnly = settings.wifiOnly
         assetStates = [:]; updateAssetStates(jobs); refreshRecovery()
@@ -1013,6 +1024,7 @@ final class HarborModel: ObservableObject {
         catch { notice = error.localizedDescription }
     }
     private func receive(_ receipt: TransferReceipt) async {
+        rateTracker.finish(receipt.id)
         guard initialized, !switching, !updatingNetwork else { return }
         guard var job = lookupJob(receipt.jobID) else { transfer.acknowledge(receipt); return }
         guard job.account == account else { return }

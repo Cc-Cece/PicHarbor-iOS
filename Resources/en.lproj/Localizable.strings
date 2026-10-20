@@ -264,6 +264,7 @@
 "将照片和动态视频合成一个文件备份。同机查看时可能出现两张。" = "Combine the photo and motion video into one backup file. Two copies may appear on the same device.";
 "将订阅二维码放入取景框" = "Place the subscription QR code in the camera view";
 "将跳过{0}{1}{2}检查。请输入“我已了解风险”。" = "Skip {0}{1}{2}. Enter “I understand the risk”.";
+"少于 1 分钟" = "Less than 1 min";
 "尚未完整验证的 Live Photo 会保留。" = "Incompletely verified Live Photos are kept.";
 "尚未提交关联" = "Pairing not submitted";
 "尚未收到系统打开结果" = "No system open result received";
@@ -341,6 +342,7 @@
 "当前设置" = "Current settings";
 "当前账号有 {0} 张照片或视频可检查。同一照片只列一次，其他照片的备份可以继续。" = "Ready to check: {0}. Each photo appears once. Backups of other photos can continue.";
 "当前账号还没有可检查的已完成备份。" = "This account has no completed backups to check yet.";
+"当前速度" = "Current speed";
 "当前阶段" = "Current step";
 "待云端确认" = "Awaiting cloud confirmation";
 "待完成" = "Pending";
@@ -576,6 +578,7 @@
 "等待备份" = "Queued";
 "等待条件" = "Waiting";
 "等待相册资源稳定" = "Waiting for Photos to finish";
+"等待确认保存" = "Waiting for save confirmation";
 "等待网络连接" = "Waiting for a connection";
 "筛选照片" = "Filter photos";
 "管理" = "Manage";
@@ -586,6 +589,7 @@
 "系统已接受链接，请记录实际页面" = "System accepted the link; record the actual page";
 "系统未能打开此链接" = "System could not open this link";
 "系统错误" = "System error";
+"约 {0}" = "About {0}";
 "结果仅保存在本机，不自动发送。反馈时请补充 Google 相册版本；不需要提供账号或登录凭据。" = "Results stay on this device and are not sent automatically. Include your Google Photos version when reporting. No account or login credentials are needed.";
 "继续" = "Continue";
 "继续 / 重试" = "Resume / Retry";
@@ -615,6 +619,7 @@
 "苹果原始资源的云端配对协议尚未验证；原件已保留，不会按两个普通文件上传。" = "Original Apple pairing is not verified for this account. Originals are kept and will not be uploaded as two unrelated files.";
 "蜂窝网络" = "Cellular";
 "视频" = "Videos";
+"计算中…" = "Calculating…";
 "计配额原画质" = "Original quality · uses quota";
 "订阅" = "Subscription";
 "订阅 {0} · {1}" = "Subscription {0} · {1}";
@@ -745,6 +750,8 @@
 "面向 iPhone 的照片与视频备份。取回内容请使用谷歌相册官方客户端。" = "Photo and video backup for iPhone. Use the official Google Photos app to retrieve your content.";
 "项目源码与许可证" = "Source code and licenses";
 "预览暂不可用，原件可能需要从 iCloud 下载。" = "Preview unavailable. The original may need to download from iCloud.";
+"预计时间" = "Estimated time";
+"预计时间仅供参考，照片准备和云端处理可能需要更久。" = "Times are estimates. Preparing photos and cloud processing may take longer.";
 "额外核验" = "Extra checks";
 "首选节点" = "Preferred node";
 "首选节点 {0}：{1} 毫秒" = "Primary node {0}: {1} ms";

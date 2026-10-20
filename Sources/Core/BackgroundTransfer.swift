@@ -30,7 +30,7 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
     static let identifier = "com.cccece.picharbor.transfers.v2"
     static let shared = BackgroundTransfer()
     var onReceipt: ((TransferReceipt) -> Void)?
-    var onProgress: ((String, Int64, Int64) -> Void)?
+    var onProgress: ((UploadProgressSample) -> Void)?
     var backgroundCompletion: (() -> Void)?
     private var root: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -80,7 +80,10 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
         let task = transport.uploadTask(with: request, fromFile: URL(fileURLWithPath: resource.path))
         guard task.taskIdentifier < Int(UInt32.max) else { task.cancel(); throw HarborError("DATABASE_ERROR") }
         task.taskDescription = job.id + ":" + resource.id
-        return HarborTransferTask(task, port: port)
+        let wrapped = HarborTransferTask(task, port: port)
+        onProgress?(UploadProgressSample(taskID: wrapped.taskIdentifier, jobID: job.id, resourceID: resource.id,
+                                         sent: 0, total: resource.size, time: ProcessInfo.processInfo.systemUptime))
+        return wrapped
     }
     func tasks() async -> [HarborTransferTask] {
         var result = await session.allTasks.map { HarborTransferTask($0) }
@@ -122,7 +125,10 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
         let now = Date.timeIntervalSinceReferenceDate
         guard totalBytesSent == totalBytesExpectedToSend || now - (lastProgress[identifier(session, task)] ?? 0) >= 0.25 else { return }
         lastProgress[identifier(session, task)] = now
-        onProgress?(task.taskDescription?.components(separatedBy: ":").first ?? "", totalBytesSent, totalBytesExpectedToSend)
+        let parts = (task.taskDescription ?? "").components(separatedBy: ":")
+        guard parts.count == 2 else { return }
+        onProgress?(UploadProgressSample(taskID: identifier(session, task), jobID: parts[0], resourceID: parts[1],
+                                         sent: totalBytesSent, total: totalBytesExpectedToSend, time: ProcessInfo.processInfo.systemUptime))
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         lastProgress.removeValue(forKey: identifier(session, task))

@@ -95,6 +95,7 @@ struct BackupDashboard: View {
                         Spacer()
                         metric(L10n.text("可访问"), model.library.assets.count)
                     }
+                    if model.activeCount > 0 { BackupTransferMetrics() }
                 }.padding(.vertical, 12)
             }
             Section {
@@ -124,6 +125,47 @@ struct BackupDashboard: View {
     }
     private func metric(_ title: String, _ value: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) { Text(value.formatted()).font(.title2.bold()).monospacedDigit(); Text(title).font(.caption).foregroundStyle(.secondary) }
+    }
+}
+
+private struct BackupTransferMetrics: View {
+    @EnvironmentObject private var model: HarborModel
+    @ObservedObject private var language = LanguagePreferences.shared
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let summary = model.backupTransferSummary()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 24) {
+                    value(L10n.text("当前速度"), speed(summary.bytesPerSecond))
+                    value(L10n.text("预计时间"), remaining(summary))
+                }
+                Text(L10n.text("预计时间仅供参考，照片准备和云端处理可能需要更久。"))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }.accessibilityIdentifier("backup.transferMetrics")
+    }
+    private func value(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(text).font(.subheadline.bold()).monospacedDigit()
+        }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
+    }
+    private func speed(_ bytes: Double?) -> String {
+        guard let bytes else { return L10n.text("计算中…") }
+        guard bytes > 0, bytes.isFinite else { return "0 KB/s" }
+        return ByteCountFormatter.string(fromByteCount: Int64(min(bytes, Double(Int64.max / 2))), countStyle: .file) + "/s"
+    }
+    private func remaining(_ summary: BackupTransferSummary) -> String {
+        if summary.uploadFinished { return L10n.text("等待确认保存") }
+        if !model.network.connected { return L10n.text("等待网络连接") }
+        if model.settings.wifiOnly && !model.network.wifi { return L10n.text("等待 Wi-Fi") }
+        guard let seconds = summary.remainingSeconds, seconds.isFinite else { return L10n.text("计算中…") }
+        if seconds < 60 { return L10n.text("少于 1 分钟") }
+        let formatter = DateComponentsFormatter()
+        var calendar = Calendar.current; calendar.locale = L10n.locale; formatter.calendar = calendar
+        formatter.allowedUnits = [.day, .hour, .minute]; formatter.unitsStyle = .abbreviated; formatter.maximumUnitCount = 2
+        guard let time = formatter.string(from: seconds) else { return L10n.text("计算中…") }
+        return L10n.text("约 {0}", [time])
     }
 }
 
