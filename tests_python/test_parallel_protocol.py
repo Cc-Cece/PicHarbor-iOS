@@ -73,3 +73,11 @@ class ParallelProtocolTests(unittest.TestCase):
         self.assertEqual(self.service.protocol_pool, {})
         with self.assertRaisesRegex(Failure, 'LOGIN_REQUIRED'):
             self.service.protocol_dispatch('confirm_resource', {'account': 'test@example.invalid'})
+
+    def test_idle_snapshot_cache_is_bounded_across_node_changes(self):
+        with patch.object(Protocol, 'dispatch', return_value={}):
+            for port in range(64):
+                self.service.protocol_dispatch('confirm_resource', {'account': self.service.account, 'proxy_url': str(port)})
+        self.assertEqual(sum(map(len, self.service.protocol_pool.values())), 8)
+        with self.assertRaisesRegex(Failure, 'ACCOUNT_CHANGED'):
+            self.service.protocol_dispatch('confirm_resource', {'account': 'other@example.invalid'})

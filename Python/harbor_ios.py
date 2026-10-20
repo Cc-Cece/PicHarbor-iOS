@@ -138,15 +138,24 @@ class Service:
             identity = (generation, self.account, request_api.proxy)
             pool = self.protocol_pool.get(identity, [])
             context = pool.pop() if pool else Protocol(SimpleNamespace(api=request_api, staging=self.staging))
+            if not pool:
+                self.protocol_pool.pop(identity, None)
             context.service.api = request_api
             self.active_protocol_calls += 1
         try:
             return context.dispatch(action, value)
         finally:
             with self.identity_condition:
-                pool = self.protocol_pool.setdefault(identity, [])
-                if len(pool) < 32:
-                    pool.append(context)
+                pool = self.protocol_pool.pop(identity, [])
+                pool.append(context)
+                self.protocol_pool[identity] = pool
+                # Retain only eight idle contexts in total, including across
+                # node changes. Library snapshots can be large on real accounts.
+                while sum(map(len, self.protocol_pool.values())) > 8:
+                    oldest = next(iter(self.protocol_pool))
+                    self.protocol_pool[oldest].pop(0)
+                    if not self.protocol_pool[oldest]:
+                        del self.protocol_pool[oldest]
                 self.active_protocol_calls -= 1
                 self.identity_condition.notify_all()
 
