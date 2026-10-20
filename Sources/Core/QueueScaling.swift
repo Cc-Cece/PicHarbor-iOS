@@ -8,9 +8,30 @@ struct QueueCandidate {
     let confirmation: Bool
 }
 
+enum QueueMutation { case replace, pause, remove }
+
 enum QueueScaling {
     static let chunkSize = 100
     static let recoveryThreshold = 500
+
+    static func reconcile(_ proposed: BackupJob, current: BackupJob?, intent: QueueMutation) -> BackupJob {
+        guard let current else { return proposed }
+        var value = proposed
+        switch intent {
+        case .replace:
+            // A callback may have saved a newer checkpoint during a prior chunk.
+            guard (current.generation ?? 0) <= (proposed.generation ?? 0) else { return current }
+        case .pause:
+            guard current.unfinished, current.state != .cancelled else { return current }
+            value = current; value.state = .paused
+        case .remove:
+            guard current.unfinished else { return current }
+            value = current; value.removeFromActivity()
+        }
+        value.updated = Date()
+        value.generation = max(value.generation ?? 0, (current.generation ?? 0) + 1)
+        return value
+    }
 
     static func select(_ candidates: some Sequence<QueueCandidate>, uploads: Int, confirmations: Int) -> [String] {
         guard uploads > 0 || confirmations > 0 else { return [] }

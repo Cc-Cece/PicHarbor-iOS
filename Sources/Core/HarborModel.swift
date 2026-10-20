@@ -36,7 +36,7 @@ final class HarborModel: ObservableObject {
         return jobs[index]
     }
     private func refreshRecovery() {
-        recoveryRequired = recovery.requiresReview(account: account, unfinished: jobs.lazy.filter { $0.account == account && $0.unfinished && $0.state != .cancelled }.count)
+        recoveryRequired = recovery.requiresReview(account: account, unfinished: jobs.lazy.filter { $0.account == self.account && $0.unfinished && $0.state != .cancelled }.count)
     }
     func continueQueueRecovery() async {
         guard initialized, !switching, !storageFailed, !account.isEmpty else { return }
@@ -267,23 +267,16 @@ final class HarborModel: ObservableObject {
         catch { fatalStorage(error); throw error }
     }
     /// Publish once per bounded transaction, retaining each task's generation.
-    private func persistBatch(_ values: [BackupJob], pausing: Bool = false) async throws {
+    private func persistBatch(_ values: [BackupJob], intent: QueueMutation = .replace) async throws {
         guard !values.isEmpty, let store else { return }
         for start in stride(from: 0, to: values.count, by: QueueScaling.chunkSize) {
             var chunk = Array(values[start..<min(start + QueueScaling.chunkSize, values.count)])
             var updated = jobs
             for offset in chunk.indices {
-                var value = chunk[offset]
-                if let index = jobPositions[value.id] {
-                    if pausing && (updated[index].state == .completed || updated[index].state == .cancelled || updated[index].activityHidden == true) {
-                        chunk[offset] = updated[index]; continue
-                    }
-                    // Pause intent must keep any checkpoint received while the
-                    // previous chunk was being written.
-                    if pausing { value = updated[index]; value.state = .paused }
-                    value.generation = max(value.generation ?? 0, (updated[index].generation ?? 0) + 1)
-                    updated[index] = value
-                } else { updated.append(value) }
+                let proposed = chunk[offset]
+                let value = QueueScaling.reconcile(proposed, current: lookupJob(proposed.id), intent: intent)
+                if let index = jobPositions[value.id] { updated[index] = value }
+                else { updated.append(value) }
                 chunk[offset] = value
             }
             jobs = updated; updateAssetStates(chunk)
@@ -396,7 +389,7 @@ final class HarborModel: ObservableObject {
         } catch { notice = error.localizedDescription }
     }
     func logout() async {
-        guard !switching && !updatingNetwork && !engine.busy else { notice = HarborError("ACCOUNT_BUSY").localizedDescription; return }
+        guard !switching && !updatingNetwork && !editingQueue && !engine.busy else { notice = HarborError("ACCOUNT_BUSY").localizedDescription; return }
         switching = true
         await pauseAll()
         while !workers.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
@@ -1049,7 +1042,7 @@ final class HarborModel: ObservableObject {
         job.state = .paused; try? await persist(job); await transfer.pause(jobID: id)
     }
     func pauseAll() async {
-        await pauseJobs(Set(jobs.lazy.filter { $0.account == account && ($0.state.active || $0.state == .queued || $0.state == .waiting) }.map(\.id)))
+        await pauseJobs(Set(jobs.lazy.filter { $0.account == self.account && ($0.state.active || $0.state == .queued || $0.state == .waiting) }.map(\.id)))
     }
     func pauseJobs(_ selected: Set<String>) async {
         guard !editingQueue else { return }
@@ -1061,7 +1054,7 @@ final class HarborModel: ObservableObject {
             changes[index].state = .paused; changes[index].updated = Date()
             changes[index].generation = (changes[index].generation ?? 0) + 1
         }
-        do { try await persistBatch(changes, pausing: true) } catch { fatalStorage(error) }
+        do { try await persistBatch(changes, intent: .pause) } catch { fatalStorage(error) }
         for task in await transfer.tasks() where ids.contains(task.taskDescription?.components(separatedBy: ":").first ?? "") { task.suspend() }
     }
     func resumeJobs(_ selected: Set<String>) async {
@@ -1136,14 +1129,13 @@ final class HarborModel: ObservableObject {
         job.state = .cancelled; job.evidence = nil; try? await persist(job); await transfer.cancel(jobID: id)
     }
     func removeUnfinished(_ ids: Set<String>) async {
-        for id in ids {
-            guard var job = lookupJob(id), job.account == account, job.unfinished else { continue }
-            exports[id]?.cancel("JOB_PAUSED")
-            job.removeFromActivity()
-            do { try await persist(job) } catch { return }
-            await transfer.cancel(jobID: id)
-        }
-        assetStates = [:]; updateAssetStates(jobs); refreshRecovery()
+        guard !editingQueue, !switching else { return }
+        let changes = jobs.filter { ids.contains($0.id) && $0.account == account && $0.unfinished }
+        let removing = Set(changes.map(\.id))
+        for (id, control) in exports where removing.contains(id) { control.cancel("JOB_PAUSED") }
+        do { try await persistBatch(changes, intent: .remove) } catch { fatalStorage(error); return }
+        for task in await transfer.tasks() where removing.contains(task.taskDescription?.components(separatedBy: ":").first ?? "") { task.cancel() }
+        assetStates = [:]; updateAssetStates(jobs)
         await collectFinishedStaging()
     }
     func reprepare(_ id: String) async {

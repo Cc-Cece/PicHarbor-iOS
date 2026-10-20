@@ -2,6 +2,26 @@ import XCTest
 @testable import PicHarbor
 
 final class QueueScalingTests: XCTestCase {
+    func testBatchControlsKeepLatestCheckpointAndNeverReopenCompletedTasks() {
+        var snapshot = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: BackupSettings())
+        snapshot.generation = 1
+        var latest = snapshot; latest.generation = 2; latest.state = .transferring
+        latest.resources = [MediaResource(role: "original.photo", path: "keep", name: "test.heic", remoteKey: "saved", confirmed: true)]
+        let paused = QueueScaling.reconcile(snapshot, current: latest, intent: .pause)
+        XCTAssertEqual(paused.state, .paused)
+        XCTAssertEqual(paused.resources, latest.resources)
+        XCTAssertEqual(paused.generation, 3)
+        let stale = QueueScaling.reconcile(snapshot, current: latest, intent: .replace)
+        XCTAssertEqual(stale.resources, latest.resources)
+        XCTAssertEqual(stale.generation, latest.generation)
+        let removed = QueueScaling.reconcile(snapshot, current: latest, intent: .remove)
+        XCTAssertEqual(removed.activityHidden, true)
+        XCTAssertEqual(removed.resources, latest.resources)
+        latest.state = .completed
+        XCTAssertEqual(QueueScaling.reconcile(snapshot, current: latest, intent: .pause).state, .completed)
+        XCTAssertEqual(QueueScaling.reconcile(snapshot, current: latest, intent: .remove).state, .completed)
+        XCTAssertNil(QueueScaling.reconcile(snapshot, current: latest, intent: .remove).activityHidden)
+    }
     func testBoundedSelectionForThousandToTenThousandTasks() {
         for size in [1_000, 5_000, 10_000] {
             let start = Date()
