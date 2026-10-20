@@ -62,7 +62,7 @@ def run():
     for name in ['ProxyRouting.swift', 'ProxyProfiles.swift', 'SubscriptionQRCode.swift', 'ProxySelection.swift', 'BackupModels.swift', 'BackupStore.swift', 'QueueScaling.swift', 'TaskPresentation.swift']:
         text = (ROOT / 'Sources/Core' / name).read_text()
         (package / 'Sources' / name).write_text('import ProxyBridgeHarness\nimport Combine\n' + text)
-    for name in ['ProxyProfileTests.swift', 'ProxyCompatibilityTests.swift', 'SubscriptionQRCodeTests.swift', 'ProxySelectionTests.swift', 'QueueScalingTests.swift']:
+    for name in ['ProxyProfileTests.swift', 'ProxyCompatibilityTests.swift', 'SubscriptionQRCodeTests.swift', 'ProxySelectionTests.swift', 'QueueScalingTests.swift', 'ActivityOrderingTests.swift']:
         (package / 'Tests' / name).write_text('import ProxyBridgeHarness\n' + (ROOT / 'Tests' / name).read_text())
     (package / 'Sources/Support.swift').write_text('''import Foundation
 struct HarborError: LocalizedError {

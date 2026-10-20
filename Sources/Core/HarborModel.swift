@@ -96,7 +96,7 @@ final class HarborModel: ObservableObject {
     func activityBatches(archived: Bool, source: ActivitySource, status: ActivityStatus) -> [ActivityBatch] {
         let key = "\(account)|\(archived)|\(source.rawValue)|\(status.rawValue)"
         if let cached = activityCache[key] { return cached }
-        let result = ActivityBatch.make(activityJobs(archived: archived), source: source, status: status)
+        let result = ActivityBatch.make(activityJobs(archived: archived), source: source, status: status, queueOrder: !archived)
         activityCache[key] = result; return result
     }
     var activeCount: Int { visibleJobs.filter { $0.state.active || $0.state == .queued }.count }
