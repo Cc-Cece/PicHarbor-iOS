@@ -6,7 +6,7 @@ SwiftUI 原生界面 + 内嵌 Python + gpmc，面向 iOS 17+ iPhone。开发者�
 
 开发版产物、自动测试证据与剩余事项见 [开发版验收说明](docs/DEVELOPMENT-ACCEPTANCE.md)。0.2.12 使用真机验证的链接直达 Google 相册释放空间，两种备用路径默认折叠，临时链接测试页已移除，见[本轮说明](docs/GOOGLE-PHOTOS-DIRECT-0212.md)。原始配对的[测试步骤](docs/LIVE-PAIR-TESTING.md)继续适用。完整格式和规模矩阵仍待验收，不将整个计划标为完成。
 
-当前版本 0.2.28：统一[单项及批量重试](docs/TASK-RECOVERY.md)，暂存文件缺失时可在原任务内修复路径或重新导出，核对原内容后继续；保留上传和配对检查点。活动菜单区分继续暂停任务与重试异常任务。继续提供[任务保护](docs/TASK-PROTECTION.md)、[分阶段并发备份](docs/BACKUP-PIPELINE.md)、[上传速度与剩余大小](docs/TRANSFER-METRICS.md)、[大队列恢复保护](docs/LARGE-QUEUE-RECOVERY.md)及[应用内代理](docs/IN-APP-PROXY.md)。包含简体中文、English、粵語（香港）；安装包 `dist/PicHarbor-0.2.28.ipa`，使用原 Sideloadly 配置覆盖安装。原生及 Python 回归已通过，恢复功能及任务保护仍需真机验收。
+当前版本 0.2.29：相片页新增[全部／已备份／未备份筛选](docs/LIBRARY-BACKUP-FILTER.md)，结合相簿及媒体类型使用，按当前账号和照片版本判断，保留跨筛选选择。继续提供[单项及批量重试](docs/TASK-RECOVERY.md)、[任务保护](docs/TASK-PROTECTION.md)、[分阶段并发备份](docs/BACKUP-PIPELINE.md)、[上传速度与剩余大小](docs/TRANSFER-METRICS.md)、[大队列恢复保护](docs/LARGE-QUEUE-RECOVERY.md)及[应用内代理](docs/IN-APP-PROXY.md)。包含简体中文、English、粵語（香港）；目标安装包 `dist/PicHarbor-0.2.29.ipa`，使用原 Sideloadly 配置覆盖安装。筛选、恢复功能及任务保护仍需真机验收。
 
 保留[分享及重复备份检查](docs/SHARING-DEDUP-0214.md)、[界面及归档功能](docs/INTERFACE-ARCHIVE-0213.md)。
 
