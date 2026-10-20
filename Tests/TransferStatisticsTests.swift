@@ -2,6 +2,20 @@ import XCTest
 @testable import PicHarbor
 
 final class TransferStatisticsTests: XCTestCase {
+    func testLargeQueueEstimatesReusePreparedSizeWithoutInspectingPhotos() throws {
+        var known = BackupJob(account: "a", assetID: "known", assetRevision: "v1", settings: BackupSettings())
+        known.state = .transferring
+        known.resources = [MediaResource(role: "original.photo", path: "unused", name: "test.heic", size: 1_000, transportID: 1)]
+        let jobs = [known] + (1..<10_000).map { BackupJob(account: "a", assetID: "asset-\($0)", assetRevision: "v1", settings: BackupSettings()) }
+        let start = Date()
+        let workload = UploadWorkload(jobs: jobs, account: "a")
+        var tracker = TransferRateTracker()
+        tracker.record(sample(1, 0, 0)); tracker.record(sample(1, 200, 2))
+        for _ in 0..<50 {
+            XCTAssertEqual(try XCTUnwrap(workload.summary(tracker: tracker, now: 2, canTransfer: true).remainingSeconds), 99_998, accuracy: 0.001)
+        }
+        print("Upload workload 10000 assets and 50 cached estimates: \(Date().timeIntervalSince(start)) seconds")
+    }
     private func sample(_ id: Int, _ sent: Int64, _ time: Double, total: Int64 = 10_000) -> UploadProgressSample {
         UploadProgressSample(taskID: id, jobID: "job-\(id)", resourceID: "resource-\(id)", sent: sent, total: total, time: time)
     }
