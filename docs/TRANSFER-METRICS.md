@@ -11,3 +11,11 @@
 - 统计只在内存中使用，不写入业务数据库，不改变上传并发、调度、查重或确认标准。
 
 独立原生测试覆盖并行／连续小文件、计数回退、旧回调、后台恢复、账号与暂停任务隔离、未知视频大小、大于 4 GiB 的文件，以及云端确认与传输时间分离。UI 显示及实际网络下的估算波动仍需真机验收。
+
+## 交付记录
+
+- 应用源码 `f6e1c38`；后续 `092fc9a` 仅增加测试与说明，统计实现相同。仍在 `proxy-validation-0215`，未合并 main。
+- [iOS 构建](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39369042553)成功；[37 项原生核心测试](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39369128498)通过，其中 7 项速度及估算回归；另有既有 ObjC 冒烟案例。本机 61 项 Python 回归与本地化覆盖检查通过。
+- 10,000 项的大小统计构建及 50 次缓存估算在 Apple runner 上共约 0.014 秒。该数据不代表 iPhone UI 帧率、网络实测或全流程备份耗时。
+- 包检查通过，版本 `0.2.23`，bundle build `25`，36,947,871 字节。SHA256：`7b212f22fb3bc7e4d83d225e354bbc46dc85a27e9c5e56bf62c5c0b0d8dfc878`。
+- 本机包：`C:\Users\Kanbara\Code\vscode\gpmc-ipa\dist\PicHarbor-0.2.23.ipa`，使用原 Sideloadly 配置覆盖安装。
