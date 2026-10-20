@@ -22,6 +22,11 @@ def inspect(path):
                          "python/lib/python3.13/encodings/__init__.py", "Notices/NOTICE.md", "Notices/Vendor/LIVE-PAIR-REFERENCE-LICENSE-MIT.txt"):
             if app + required not in names:
                 raise RuntimeError(f"Missing {required}")
+        # 0.2.27+ imports the deadline module during engine initialization.
+        # Keep inspecting older delivered packages without requiring a new file.
+        version = tuple(int(part) for part in info.get("CFBundleShortVersionString", "0").split("."))
+        if version >= (0, 2, 27) and app + "app/harbor_deadline.py" not in names:
+            raise RuntimeError("Missing request deadline adapter")
         for module in ("_ssl", "_sqlite3", "_hashlib", "_socket"):
             framework = f"Frameworks/{module}.framework/{module}"
             if app + framework not in names:

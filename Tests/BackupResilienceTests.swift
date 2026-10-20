@@ -114,4 +114,13 @@ final class BackupResilienceTests: XCTestCase {
         XCTAssertTrue(job.resources[0].submitted)
         XCTAssertEqual(PipelineScheduler.stage(job, hasPlan: false), .confirmation)
     }
+    func testOldCloudMessageDoesNotSpendCloudBudgetDuringFileUpload() {
+        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: BackupSettings())
+        job.error = "PAIR_CONFIRMATION_PENDING"; job.state = .confirming
+        XCTAssertTrue(job.awaitingCloud)
+        for state in [JobState.transferring, .committing, .queued, .paused, .attention] {
+            job.state = state
+            XCTAssertFalse(job.awaitingCloud)
+        }
+    }
 }

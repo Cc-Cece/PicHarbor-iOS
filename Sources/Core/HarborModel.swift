@@ -122,7 +122,7 @@ final class HarborModel: ObservableObject {
         guard workerStages[jobID] != stage else { return }
         guard var value = lookupJob(jobID) else { throw HarborError("JOB_PAUSED") }
         try checkpoint(value)
-        value.pipelineStage = stage; value.state = .queued; value.retryAt = nil
+        value.pipelineStage = stage; value.state = .queued; value.retryAt = nil; value.error = ""
         var budget = value.recovery ?? BackupRecoveryBudget(); budget.handoffs += 1
         try await persist(value, recoveryBudget: budget)
         throw PipelineBoundary()
@@ -719,7 +719,7 @@ final class HarborModel: ObservableObject {
                         guard let self else { break }
                         let now = ProcessInfo.processInfo.systemUptime; let delta = now - previous; previous = now
                         if self.lookupJob(id)?.state == .paused || self.lookupJob(id)?.state == .cancelled || self.switching { lease.cancel("JOB_PAUSED") }
-                        else if !self.network.connected || (self.settings.wifiOnly && !self.network.wifi) { lease.cancel("WAITING_NETWORK") }
+                        else if self.updatingNetwork || !self.network.connected || (self.settings.wifiOnly && !self.network.wifi) { lease.cancel("WAITING_NETWORK") }
                         else if UIApplication.shared.applicationState == .active { lease.tick(delta) }
                         if let code = lease.cancellation { self.exports[id]?.cancel(code) }
                     }
@@ -743,7 +743,7 @@ final class HarborModel: ObservableObject {
                     latest.pipelineSeconds = seconds
                     var budget = latest.recovery ?? BackupRecoveryBudget()
                     if !latest.awaitingCloud && !["STAGING_BUFFER_WAIT", "WAITING_NETWORK", "SOURCE_SETTLING"].contains(latest.error) && ![.paused, .cancelled].contains(latest.state) { budget.activeWithoutProgress += lease.checkpointSeconds }
-                    if latest.unfinished && ![.paused, .cancelled].contains(latest.state) && budget.stalled(policy: lease.policy) {
+                    if latest.unfinished && ![.paused, .cancelled, .attention].contains(latest.state) && budget.stalled(policy: lease.policy) {
                         latest.state = .attention; latest.error = "NO_PROGRESS_LIMIT"; latest.retryAt = nil
                     }
                     try? await self.persist(latest, recoveryBudget: budget)
@@ -1264,7 +1264,10 @@ final class HarborModel: ObservableObject {
                 job.failureStage = "upload_response"
                 job.resources[index].responsePath = nil
                 job.attempts += 1
-                if !paused { job.retryFailure(receipt.error, policy: attemptPolicy) }
+                if !paused {
+                    if !network.connected || (settings.wifiOnly && !network.wifi) { job.state = .waiting; job.error = "WAITING_NETWORK"; job.retryAt = nil }
+                    else { job.retryFailure(receipt.error, policy: attemptPolicy) }
+                }
             }
             try await persist(job, recoveryBudget: job.recovery); transfer.acknowledge(receipt); await pump()
         } catch { notice = error.localizedDescription }

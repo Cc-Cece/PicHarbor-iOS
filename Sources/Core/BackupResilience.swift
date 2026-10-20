@@ -66,7 +66,8 @@ extension BackupJob {
         return events
     }
     var awaitingCloud: Bool {
-        error == "PAIR_CONFIRMATION_PENDING" || error == "REMOTE_NOT_VISIBLE" ||
+        guard [.paired, .confirming, .waiting].contains(state) else { return false }
+        return error == "PAIR_CONFIRMATION_PENDING" || error == "REMOTE_NOT_VISIBLE" ||
         (error.hasPrefix("REMOTE_MOTION_") && error != "REMOTE_MOTION_TRASHED")
     }
     mutating func observeRecoveryProgress() {
