@@ -6,7 +6,7 @@ SwiftUI 原生界面 + 内嵌 Python + gpmc，面向 iOS 17+ iPhone。开发者�
 
 开发版产物、自动测试证据与剩余事项见 [开发版验收说明](docs/DEVELOPMENT-ACCEPTANCE.md)。0.2.12 使用真机验证的链接直达 Google 相册释放空间，两种备用路径默认折叠，临时链接测试页已移除，见[本轮说明](docs/GOOGLE-PHOTOS-DIRECT-0212.md)。原始配对的[测试步骤](docs/LIVE-PAIR-TESTING.md)继续适用。完整格式和规模矩阵仍待验收，不将整个计划标为完成。
 
-当前版本 0.2.25：采用[分阶段并发备份](docs/BACKUP-PIPELINE.md)，准备、上传检查、文件传输、保存配对和云端确认独立调度。默认根据机型及设备状况自动管理，高级配置可分别设置并发与缓存上限。保留[当前上传速度与剩余大小](docs/TRANSFER-METRICS.md)、正在处理任务优先排序和[大队列恢复保护](docs/LARGE-QUEUE-RECOVERY.md)，以及[应用内代理](docs/IN-APP-PROXY.md)的测速、订阅和任务独立策略。目标安装包：`dist/PicHarbor-0.2.25.ipa`。包含简体中文、English、粵語（香港），使用原 Sideloadly 配置覆盖安装；大队列及并发真机验证仍待完成。
+当前版本 0.2.26：修复多版本 Live Photo 在原始版确认后、编辑版卡在“确认保存”的调度循环，保留已完成配对和上传响应，从原任务接续。采用[分阶段并发备份](docs/BACKUP-PIPELINE.md)，准备、上传检查、文件传输、保存配对和云端确认独立调度。默认根据机型及设备状况自动管理，高级配置可分别设置并发与缓存上限。保留[当前上传速度与剩余大小](docs/TRANSFER-METRICS.md)、正在处理任务优先排序和[大队列恢复保护](docs/LARGE-QUEUE-RECOVERY.md)，以及[应用内代理](docs/IN-APP-PROXY.md)的测速、订阅和任务独立策略。目标安装包：`dist/PicHarbor-0.2.26.ipa`。包含简体中文、English、粵語（香港），使用原 Sideloadly 配置覆盖安装；大队列及并发真机验证仍待完成。
 
 保留[分享及重复备份检查](docs/SHARING-DEDUP-0214.md)、[界面及归档功能](docs/INTERFACE-ARCHIVE-0213.md)。
 
