@@ -41,6 +41,9 @@ struct ProxyPolicy: Codable, Equatable {
     }
 }
 struct ProxyNodeHealth: Equatable {
+    static func isTransportFailure(_ code: String) -> Bool {
+        ["NETWORK_ERROR", "STAGE_TIMEOUT", "NO_PROGRESS_TIMEOUT"].contains(code)
+    }
     var measuredAt: Date?
     var milliseconds: Int?
     var lastSuccess: Date?

@@ -12,6 +12,26 @@ private actor ProbeCounter {
 }
 
 final class ProxySelectionTests: XCTestCase {
+    @MainActor func testTransportTimeoutsParticipateInFailoverWithoutPenalizingLargeFilesOrLogin() async throws {
+        let suite = "ProxyTimeout." + UUID().uuidString, defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var stored: Data?
+        let manager = ProxyManager(read: { stored }, save: { stored = $0 }, start: { _ in true }, stop: {}, defaults: defaults, latency: { _ in 10 })
+        try await manager.importText(#"{"proxies":[{"name":"a","type":"socks5","server":"127.0.0.1","port":9},{"name":"b","type":"socks5","server":"127.0.0.1","port":9}]}"#)
+        manager.preferences.enabled = true; manager.preferences.selection = .automatic
+        _ = try await manager.route()
+        let before = manager.health["a"]
+        manager.recordOutcome(node: "a", errorCode: "TRANSFER_TIMEOUT")
+        manager.recordOutcome(node: "a", errorCode: "LOGIN_REQUIRED")
+        XCTAssertEqual(manager.health["a"], before)
+        manager.recordOutcome(node: "a", errorCode: "STAGE_TIMEOUT")
+        XCTAssertTrue(manager.health["a"]!.cooling(at: Date()))
+        let next = try await manager.route(preferred: "a")
+        XCTAssertEqual(next.1, "b")
+        manager.recordOutcome(node: "b", errorCode: "NO_PROGRESS_TIMEOUT")
+        XCTAssertTrue(manager.health["b"]!.cooling(at: Date()))
+        XCTAssertEqual(ProxyPolicy.resolve(manager.preferences).exhaustion, .wait)
+    }
     func testLegacyPoliciesPreserveDirectPermissionAndWaitScope() throws {
         let old = Data(#"{"enabled":true,"primary":"a","backups":["b"],"fallback":"wait"}"#.utf8)
         let preferences = try JSONDecoder().decode(ProxyPreferences.self, from: old)

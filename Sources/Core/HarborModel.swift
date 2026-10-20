@@ -647,6 +647,10 @@ final class HarborModel: ObservableObject {
             let code = watch.tick(delta, size: resource.size); transferWatches[job.id] = watch
             if let code {
                 expired.insert(id)
+                if ProxyNodeHealth.isTransportFailure(code), ProxyManager.shared.preferences.enabled, (job.proxyPort ?? 0) > 0 {
+                    job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
+                    ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: code, scope: job.proxyScope ?? "legacy")
+                }
                 for index in job.resources.indices where job.resources[index].transportID == id { job.resources[index].transportID = nil }
                 job.transferWatch = nil; job.failureStage = "transfer_watchdog"
                 job.retryFailure(code, policy: watch.policy)
@@ -1008,7 +1012,7 @@ final class HarborModel: ObservableObject {
                 // Do not leave partial prefetch files outside the byte budget.
                 try? FileManager.default.removeItem(at: engine.home.appendingPathComponent("Staging/\(job.id)", isDirectory: true))
             }
-            if code == "NETWORK_ERROR", ProxyManager.shared.preferences.enabled {
+            if ProxyNodeHealth.isTransportFailure(code), ProxyManager.shared.preferences.enabled, workerStages[job.id] != .preparation {
                 job.proxyFailures = Array(Set((job.proxyFailures ?? []) + [job.proxyLastNode ?? ""]))
                 if network.connected && (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: code, scope: job.proxyScope ?? "legacy") }
             }

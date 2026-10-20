@@ -361,7 +361,7 @@ final class ProxyManager: ObservableObject {
         guard let node, names.contains(node) else { return }
         var value = health[node] ?? ProxyNodeHealth()
         if errorCode == nil { value.succeed(at: Date()) }
-        else if errorCode == "NETWORK_ERROR" { value.fail(at: Date()) }
+        else if let errorCode, ProxyNodeHealth.isTransportFailure(errorCode) { value.fail(at: Date()) }
         else { return }
         health[node] = value
     }
