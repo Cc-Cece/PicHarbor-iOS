@@ -19,7 +19,7 @@ struct ActivityBatch: Identifiable {
     var allJobs: [BackupJob]
     var matching: [BackupJob]
     var isBatch: Bool { allJobs.count > 1 }
-    var created: Date { allJobs.map(\.created).min() ?? .distantPast }
+    var created: Date { allJobs.last?.created ?? .distantPast }
     var title: String { (allJobs.first?.origin?.title ?? L10n.text("历史备份")) + L10n.text("批次") }
     static func make(_ jobs: [BackupJob], source: ActivitySource, status: ActivityStatus) -> [ActivityBatch] {
         let visible = jobs.filter { $0.activityHidden != true && source.matches($0) }

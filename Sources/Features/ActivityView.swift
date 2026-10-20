@@ -7,9 +7,10 @@ struct ActivityView: View {
     @AppStorage("activity.source.v2") private var sourceRaw = "all"
     @AppStorage("activity.status.v2") private var statusRaw = "all"
     @AppStorage("activity.archive.source.v1") private var archivedSourceRaw = "all"
+    @State private var displayed = QueueScaling.chunkSize
     var source: ActivitySource { ActivitySource(rawValue: archived ? archivedSourceRaw : sourceRaw) ?? .all }
     var status: ActivityStatus { archived ? .completed : ActivityStatus(rawValue: statusRaw) ?? .all }
-    var batches: [ActivityBatch] { ActivityBatch.make(model.activityJobs(archived: archived), source: source, status: status) }
+    var batches: [ActivityBatch] { model.activityBatches(archived: archived, source: source, status: status) }
     var filtered: [BackupJob] { batches.flatMap(\.matching) }
     var body: some View {
         List {
@@ -22,7 +23,7 @@ struct ActivityView: View {
                 }.pickerStyle(.segmented).accessibilityIdentifier("activity.status") }
             }
             if batches.isEmpty && (!archived || model.engine.records.isEmpty) { ContentUnavailableView(L10n.text("暂无符合条件的任务"), systemImage: "clock", description: Text(L10n.text("调整来源或状态筛选，查看其他备份活动。"))) }
-            ForEach(batches) { batch in
+            ForEach(batches.prefix(displayed)) { batch in
                 if batch.isBatch {
                     HStack {
                         if let job = batch.matching.first { AssetThumbnail(assetID: job.assetID) }
@@ -30,6 +31,7 @@ struct ActivityView: View {
                     }
                 } else if let job = batch.matching.first { ActivityTaskRow(job: job) }
             }
+            if batches.count > displayed { Button(L10n.text("显示更多")) { displayed += QueueScaling.chunkSize } }
             if archived && !model.engine.records.isEmpty {
                 Section { NavigationLink { LegacyBackupRecordsView() } label: { Label(L10n.text("旧版记录"), systemImage: "clock.arrow.circlepath") } }
             }
@@ -62,12 +64,16 @@ struct ActivityBatchView: View {
     let source: ActivitySource
     let status: ActivityStatus
     var archived = false
-    var batch: ActivityBatch? { ActivityBatch.make(model.activityJobs(archived: archived), source: source, status: status).first { $0.id == id } }
+    @State private var displayed = QueueScaling.chunkSize
+    var batch: ActivityBatch? { model.activityBatches(archived: archived, source: source, status: status).first { $0.id == id } }
     var body: some View {
         List {
             if let batch {
                 Section { HStack { if let job = batch.matching.first { AssetThumbnail(assetID: job.assetID) }; ActivityBatchCard(batch: batch) } }
-                Section(L10n.text("{0} · {1} 项", [String(describing: status.title), String(describing: batch.matching.count)])) { ForEach(batch.matching) { ActivityTaskRow(job: $0) } }
+                Section(L10n.text("{0} · {1} 项", [String(describing: status.title), String(describing: batch.matching.count)])) {
+                    ForEach(batch.matching.prefix(displayed)) { ActivityTaskRow(job: $0) }
+                    if batch.matching.count > displayed { Button(L10n.text("显示更多")) { displayed += QueueScaling.chunkSize } }
+                }
             } else { ContentUnavailableView(L10n.text("本批暂无符合筛选的任务"), systemImage: "checkmark.circle", description: Text(L10n.text("返回活动页可查看其他状态。"))) }
         }.navigationTitle(L10n.text("备份批次")).navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { ActivityActionsMenu(jobs: batch?.matching ?? [], archived: archived) } }
@@ -108,8 +114,8 @@ struct ActivityActionsMenu: View {
     var body: some View {
         Menu {
             if !archived { Section {
-                Button(L10n.text("暂停任务"), systemImage: "pause") { let ids = jobs.filter { $0.state.active || [.queued, .waiting].contains($0.state) }.map(\.id); Task { for id in ids { await model.pause(id) } } }.disabled(!jobs.contains { $0.state.active || [.queued, .waiting].contains($0.state) })
-                Button(L10n.text("继续任务"), systemImage: "play") { let ids = jobs.filter { [.paused, .failed, .attention].contains($0.state) }.map(\.id); Task { for id in ids { await model.resume(id) } } }.disabled(!jobs.contains { [.paused, .failed, .attention].contains($0.state) })
+                Button(L10n.text("暂停任务"), systemImage: "pause") { let ids = Set(jobs.filter { $0.state.active || [.queued, .waiting].contains($0.state) }.map(\.id)); Task { await model.pauseJobs(ids) } }.disabled(!jobs.contains { $0.state.active || [.queued, .waiting].contains($0.state) })
+                Button(L10n.text("继续任务"), systemImage: "play") { let ids = Set(jobs.filter { [.paused, .failed, .attention].contains($0.state) }.map(\.id)); Task { await model.resumeJobs(ids) } }.disabled(!jobs.contains { [.paused, .failed, .attention].contains($0.state) })
             } }
             Section {
             Button(archived ? L10n.text("选择取消归档") : L10n.text("选择归档"), systemImage: "checkmark.circle") { selecting = true }.disabled(!jobs.contains { $0.state == .completed })

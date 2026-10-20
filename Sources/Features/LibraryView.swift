@@ -38,7 +38,7 @@ struct LibraryView: View {
                 }.padding(.horizontal).padding(.vertical, 10)
                 if assets.isEmpty { ContentUnavailableView(L10n.text("没有可显示的项目"), systemImage: "photo", description: Text(L10n.text("调整筛选条件或相册访问权限。"))) }
                 else {
-                    PhotoGrid(assets: assets, manager: model.library.images, selecting: selecting, selected: selected, states: model.assetStates, account: model.account) { asset in
+                    PhotoGrid(assets: assets, revisionKey: "\(model.library.revision):\(album):\(filter)", manager: model.library.images, selecting: selecting, selected: selected, states: model.assetStates, account: model.account) { asset in
                         if selecting {
                             if selected.contains(asset.localIdentifier) { selected.remove(asset.localIdentifier) } else { selected.insert(asset.localIdentifier) }
                         } else { detail = AssetSelection(asset: asset) }
@@ -85,6 +85,7 @@ struct LibraryView: View {
 private struct PhotoGrid: UIViewRepresentable {
     let languageCode = L10n.language.rawValue
     var assets: [PHAsset]
+    var revisionKey: String
     let manager: PHCachingImageManager
     var selecting: Bool
     var selected: Set<String>
@@ -103,7 +104,7 @@ private struct PhotoGrid: UIViewRepresentable {
     func updateUIView(_ grid: UICollectionView, context: Context) {
         let previous = context.coordinator.parent
         context.coordinator.parent = self
-        if previous.languageCode != languageCode || previous.assets.map({ $0.localIdentifier + PhotoLibrary.stamp($0) }) != assets.map({ $0.localIdentifier + PhotoLibrary.stamp($0) }) { grid.reloadData() }
+        if previous.languageCode != languageCode || previous.revisionKey != revisionKey { grid.reloadData() }
         else {
             for path in grid.indexPathsForVisibleItems {
                 guard path.item < assets.count, let cell = grid.cellForItem(at: path) as? PhotoCell else { continue }

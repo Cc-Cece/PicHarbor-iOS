@@ -20,6 +20,27 @@ struct HarborRootView: View {
         .tint(.blue)
         .preferredColorScheme(model.settings.appearance == "dark" ? .dark : model.settings.appearance == "light" ? .light : nil)
         .safeAreaInset(edge: .top) {
+          VStack(spacing: 0) {
+            if model.recoveryRequired {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(L10n.text("备份队列已安全保留"), systemImage: "pause.circle")
+                    Text(L10n.text("为避免恢复大量任务时卡顿，已暂缓自动备份。可以先查看任务，再继续备份。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button(L10n.text("继续备份")) { Task { await model.continueQueueRecovery() } }
+                        .disabled(model.switching || !model.initialized)
+                        .accessibilityIdentifier("queue.recover")
+                }.frame(maxWidth: .infinity, alignment: .leading).padding().background(.regularMaterial)
+            }
+            if model.enqueueing {
+                VStack(alignment: .leading, spacing: 8) {
+                    ProgressView(value: Double(model.enqueueProcessed), total: Double(max(1, model.enqueueTotal)))
+                    HStack {
+                        Text(L10n.text("正在加入备份队列 · {0}/{1}", [String(model.enqueueProcessed), String(model.enqueueTotal)]))
+                        Spacer()
+                        Button(L10n.text("停止加入")) { model.stopAddingTasks() }.accessibilityIdentifier("queue.stopAdding")
+                    }.font(.caption)
+                }.padding().background(.regularMaterial)
+            }
             if L10n.message(model.notice) == L10n.text("已加入备份队列。") {
                 HStack {
                     Label(L10n.text("已加入备份队列 · {0} 项", [String(describing: model.queueNoticeCount)]), systemImage: "checkmark.circle.fill").font(.subheadline)
@@ -28,6 +49,7 @@ struct HarborRootView: View {
                     Button { model.notice = "" } label: { Image(systemName: "xmark") }.accessibilityLabel(L10n.text("关闭备份提示"))
                 }.padding().background(.regularMaterial)
             }
+          }
         }
         .task(id: model.queueNoticeID) {
             guard L10n.message(model.notice) == L10n.text("已加入备份队列。") else { return }
@@ -77,7 +99,7 @@ struct BackupDashboard: View {
             }
             Section {
                 Button { confirm = true } label: { Label(L10n.text("备份当前范围"), systemImage: "arrow.up.circle.fill").font(.headline) }
-                    .disabled(model.account.isEmpty || !model.initialized)
+                    .disabled(model.account.isEmpty || !model.initialized || model.enqueueing || model.recoveryRequired)
                 NavigationLink { BackupScopeView() } label: { Label(L10n.text("备份范围"), systemImage: "rectangle.stack") }
                 NavigationLink { BackupPreferencesView() } label: { Label(L10n.text("备份偏好"), systemImage: "slider.horizontal.3") }
             }
@@ -106,6 +128,7 @@ struct BackupDashboard: View {
 }
 
 struct JobRow: View {
+    @EnvironmentObject private var model: HarborModel
     @ObservedObject private var language = LanguagePreferences.shared
     let job: BackupJob
     var showDate = true
@@ -124,7 +147,7 @@ struct JobRow: View {
                 }
                 if showDate { Text(L10n.date(job.created)).font(.caption2).foregroundStyle(.secondary) }
                 Text(job.albumsPending ? L10n.text("已备份 · 等待相簿同步") : job.displayStatus).font(.caption).foregroundStyle(.secondary)
-                if job.state == .transferring { ProgressView(value: job.progress).accessibilityLabel(L10n.text("上传进度")) }
+                if job.state == .transferring { ProgressView(value: model.transferProgress[job.id] ?? job.progress).accessibilityLabel(L10n.text("上传进度")) }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 4)
         .sheet(isPresented: $filename) {

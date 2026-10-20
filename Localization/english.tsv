@@ -751,3 +751,10 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 连接时自动选择|Selected When Connecting
 重新测速：{0}|Retest: {0}
 连接正常|Connection Healthy
+备份队列已安全保留|Your backup queue has been kept
+为避免恢复大量任务时卡顿，已暂缓自动备份。可以先查看任务，再继续备份。|Automatic backups are on hold while you review the large queue. Review your tasks, then continue when ready.
+继续备份|Continue backups
+正在加入备份队列 · {0}/{1}|Adding to backup queue · {0}/{1}
+停止加入|Stop adding
+请先继续备份，或等待当前批次加入完成。|Continue backups first, or wait for the current batch to finish joining the queue.
+显示更多|Show more

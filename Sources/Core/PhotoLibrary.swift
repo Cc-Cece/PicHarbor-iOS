@@ -21,6 +21,7 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     let images = PHCachingImageManager()
     private var registered = false
     private var refreshingAgain = false
+    private var cachedScope: (ids: [String], revision: Int, assets: [PHAsset])?
     func authorize() async {
         status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         await refresh()
@@ -70,13 +71,16 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     }
     func scope(_ settings: BackupSettings) -> [PHAsset] {
         guard !settings.selectedAlbums.isEmpty else { return assets }
+        if let cachedScope, cachedScope.ids == settings.selectedAlbums, cachedScope.revision == revision { return cachedScope.assets }
         var ids = Set<String>()
         for id in settings.selectedAlbums {
             if let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil).firstObject {
                 PHAsset.fetchAssets(in: collection, options: nil).enumerateObjects { asset, _, _ in ids.insert(asset.localIdentifier) }
             }
         }
-        return assets.filter { ids.contains($0.localIdentifier) }
+        let values = assets.filter { ids.contains($0.localIdentifier) }
+        cachedScope = (settings.selectedAlbums, revision, values)
+        return values
     }
     func memberships(for ids: Set<String>) -> [String: [String]] {
         var result: [String: [String]] = [:]
@@ -87,6 +91,19 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             }
         }
         return result
+    }
+    func membershipsAsync(for ids: Set<String>) async -> [String: [String]] {
+        let albumIDs = albums.map(\.id)
+        return await Task.detached(priority: .utility) {
+            var result: [String: [String]] = [:]
+            for id in albumIDs {
+                guard let group = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil).firstObject else { continue }
+                PHAsset.fetchAssets(in: group, options: nil).enumerateObjects { asset, _, _ in
+                    if ids.contains(asset.localIdentifier) { result[asset.localIdentifier, default: []].append(id) }
+                }
+            }
+            return result
+        }.value
     }
     static func stamp(_ asset: PHAsset) -> String {
         "\(asset.modificationDate?.timeIntervalSince1970 ?? 0):\(asset.pixelWidth):\(asset.pixelHeight):\(asset.duration):\(asset.mediaSubtypes.rawValue)"

@@ -23,7 +23,7 @@ struct JobDetailView: View {
                 Section { NavigationLink(L10n.text("任务连接策略")) { TaskProxyPreferencesView(id: id) } }
                 Section(job.state == .failed || job.state == .attention ? L10n.text("需要处理") : L10n.text("当前状态")) {
                     Text(job.friendlyMessage).foregroundStyle(.secondary)
-                    if job.state == .transferring { ProgressView(value: job.progress).accessibilityLabel(L10n.text("上传进度")) }
+                    if job.state == .transferring { ProgressView(value: model.transferProgress[job.id] ?? job.progress).accessibilityLabel(L10n.text("上传进度")) }
                     if job.state == .completed { NavigationLink(L10n.text("前往 Google 相册释放空间")) { CleanupView() }.font(.footnote) }
                 }
                 Section {
