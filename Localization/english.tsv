@@ -1,4 +1,20 @@
 %.1f 秒|%.1f s
+并发模式|Concurrency mode
+自定义|Custom
+上传检查|Upload checks
+云端确认|Cloud confirmation
+使用自定义配置|Use custom settings
+保存与配对|Save and pair
+准备中 {0} · 上传中 {1} · 确认中 {2}|Preparing {0} · Uploading {1} · Confirming {2}
+准备照片 1–3，上传检查、保存与配对、云端确认 1–4，文件上传 1–12，缓存 128–8192 MB。|Photo preparation: 1–3. Upload checks, save and pair, cloud confirmation: 1–4. File uploads: 1–12. Buffer: 128–8192 MB.
+应用设置|Apply settings
+恢复自动管理|Restore automatic management
+文件上传|File uploads
+等待上传队列腾出空间。|Waiting for space in the upload queue.
+缓存上限（MB）|Buffer limit (MB)
+请输入范围内的整数。|Enter whole numbers within the allowed ranges.
+资源紧张时会自动降低并发。减少数量不会中断已开始的上传。单个大文件可能超过缓存上限。|Concurrency is reduced when resources are limited. Reducing it does not interrupt uploads already started. A large file may exceed the buffer limit.
+高级配置|Advanced configuration
 A · 运行环境|A · Runtime
 B · Google 账号|B · Google account
 Google 拒绝了应用内登录。可导入已有 gpmc 凭据验证，其余情况需要调整认证适配。|Google declined in-app sign-in. Try importing existing gpmc credentials.
@@ -769,3 +785,6 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 另有 {0} 项待计算大小。|The size of {0} more items is not yet known.
 仅统计尚未上传的内容。|Includes only content still waiting to upload.
 至少 {0}|At least {0}
+同时备份数量|Simultaneous backups
+{0} 个|{0} items
+默认同时备份 2 个项目。减少数量时，已开始的上传会继续完成。|Back up 2 items at once by default. Lowering the limit lets uploads already started finish.

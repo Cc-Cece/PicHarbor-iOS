@@ -13,6 +13,7 @@ enum QueueMutation { case replace, pause, remove }
 enum QueueScaling {
     static let chunkSize = 100
     static let recoveryThreshold = 500
+    static let maximumUploads = 12
 
     static func reconcile(_ proposed: BackupJob, current: BackupJob?, intent: QueueMutation) -> BackupJob {
         guard let current else { return proposed }

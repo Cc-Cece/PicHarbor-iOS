@@ -49,6 +49,13 @@ struct BackupPreferencesView: View {
     var body: some View {
         Form {
             Section {
+                Picker(L10n.text("并发模式"), selection: Binding(get: { model.settings.pipelineMode ?? .automatic }, set: { value in
+                    if value == .custom && model.settings.pipelineOverrides == nil { model.settings.pipelineOverrides = PipelineProfiles.recommended(model.pipelineDevice) }
+                    model.settings.pipelineMode = value
+                })) { ForEach(PipelineMode.allCases, id: \.self) { Text($0.title).tag($0) } }.pickerStyle(.menu)
+                NavigationLink(L10n.text("高级配置")) { PipelineAdvancedView() }
+            }
+            Section {
                 Picker(L10n.text("上传画质"), selection: $model.settings.quality) { ForEach(UploadQuality.allCases) { Text($0.title).tag($0) } }.pickerStyle(.menu).accessibilityIdentifier("preferences.quality")
             } header: { Text(L10n.text("上传画质")) } footer: { Text(L10n.text("是否占用空间，以 Google 相册显示为准。")) }
             Section {

@@ -59,10 +59,10 @@ def run():
         (package / folder).mkdir(parents=True, exist_ok=True)
     shutil.copy(ROOT / 'Sources/Bridge/ProxyCoreBridge.h', package / 'Bridge/include')
     shutil.copy(ROOT / 'Sources/Bridge/ProxyCoreBridge.m', package / 'Bridge')
-    for name in ['ProxyRouting.swift', 'ProxyProfiles.swift', 'SubscriptionQRCode.swift', 'ProxySelection.swift', 'BackupModels.swift', 'BackupStore.swift', 'QueueScaling.swift', 'TaskPresentation.swift', 'TransferStatistics.swift']:
+    for name in ['ProxyRouting.swift', 'ProxyProfiles.swift', 'SubscriptionQRCode.swift', 'ProxySelection.swift', 'BackupModels.swift', 'BackupPipeline.swift', 'BackupStore.swift', 'QueueScaling.swift', 'TaskPresentation.swift', 'TransferStatistics.swift']:
         text = (ROOT / 'Sources/Core' / name).read_text()
         (package / 'Sources' / name).write_text('import ProxyBridgeHarness\nimport Combine\n' + text)
-    for name in ['ProxyProfileTests.swift', 'ProxyCompatibilityTests.swift', 'SubscriptionQRCodeTests.swift', 'ProxySelectionTests.swift', 'QueueScalingTests.swift', 'ActivityOrderingTests.swift', 'TransferStatisticsTests.swift']:
+    for name in ['ProxyProfileTests.swift', 'ProxyCompatibilityTests.swift', 'SubscriptionQRCodeTests.swift', 'ProxySelectionTests.swift', 'QueueScalingTests.swift', 'ActivityOrderingTests.swift', 'TransferStatisticsTests.swift', 'PipelineTests.swift']:
         (package / 'Tests' / name).write_text('import ProxyBridgeHarness\n' + (ROOT / 'Tests' / name).read_text())
     (package / 'Sources/Support.swift').write_text('''import Foundation
 struct HarborError: LocalizedError {

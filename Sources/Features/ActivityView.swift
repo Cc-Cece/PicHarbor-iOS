@@ -51,6 +51,7 @@ struct ActivityBatchCard: View {
                 Text(batch.title).font(.headline)
                 Text(L10n.date(batch.created, time: .short)).font(.caption).foregroundStyle(.secondary)
                 Text(L10n.text("{0} 项 · 已完成 {1} 项", [String(describing: batch.allJobs.count), String(describing: batch.allJobs.filter { $0.state == .completed }.count)])).font(.caption).foregroundStyle(.secondary)
+                PipelineActivitySummary(ids: Set(batch.allJobs.map(\.id)))
                 if batch.matching.count != batch.allJobs.count { Text(L10n.text("当前筛选 {0} 项", [String(describing: batch.matching.count)])).font(.caption2).foregroundStyle(.secondary) }
             }
         }.padding(.vertical, 6)

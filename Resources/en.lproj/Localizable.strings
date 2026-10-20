@@ -21,6 +21,7 @@
 "oauth_token 或 gpmc auth_data" = "oauth_token or gpmc auth_data";
 "{0} · {1} 个节点" = "{0} · {1} nodes";
 "{0} · {1} 项" = "{0} · {1}";
+"{0} 个" = "{0} items";
 "{0} 个节点 · 新增 {1}，修改 {2}，移除 {3}" = "{0} nodes: {1} added, {2} changed, {3} removed";
 "{0} 毫秒" = "{0} ms";
 "{0} 项" = "{0}";
@@ -32,6 +33,7 @@
 "上传响应路径不属于当前暂存目录，请重新准备此任务。" = "The upload response is outside the staging folder. Prepare this task again.";
 "上传失败" = "Upload failed";
 "上传授权已过期，可重新准备传输。" = "Upload authorization expired. Prepare the upload again.";
+"上传检查" = "Upload checks";
 "上传模式" = "Upload mode";
 "上传照片" = "Upload photo";
 "上传画质" = "Upload quality";
@@ -68,6 +70,7 @@
 "云端暂未按内容哈希确认，请稍后重新核验。" = "The cloud content has not been confirmed yet. Check again later.";
 "云端未找到相同内容，原件会保留。" = "No matching cloud content was found. Your local original is kept.";
 "云端状态证据已过期，请重新检查。" = "The cloud check expired. Check again.";
+"云端确认" = "Cloud confirmation";
 "云端配对查询返回了无法识别的结果，请稍后重试。" = "The cloud pairing response could not be read. Try again later.";
 "云端项目已在回收站，请先到谷歌相册恢复。" = "This item is in the cloud trash. Restore it in Google Photos first.";
 "仅 Wi-Fi" = "Wi-Fi only";
@@ -113,8 +116,10 @@
 "你的照片，尽在这里" = "Your photos, right here";
 "使用当前设置创建任务" = "Create a task with current settings";
 "使用此配置" = "Use This Configuration";
+"使用自定义配置" = "Use custom settings";
 "保存" = "Save";
 "保存上传响应" = "Save upload response";
+"保存与配对" = "Save and pair";
 "保存修改" = "Save Changes";
 "保存后继续等待动态处理" = "Wait for motion processing after saving";
 "保留原任务设置及批次，重新读取照片并查重。旧任务保留为已取消，本机及云端照片均保留。" = "Read the photo again with the same settings and batch. The old task is kept as canceled. Local and cloud photos are kept.";
@@ -148,9 +153,11 @@
 "关闭备份提示" = "Dismiss backup notice";
 "其他处理步骤" = "Other processing";
 "其他打开方式" = "Other ways to open";
+"准备中 {0} · 上传中 {1} · 确认中 {2}" = "Preparing {0} · Uploading {1} · Confirming {2}";
 "准备原始配对资源" = "Prepare paired originals";
 "准备暂存目录" = "Prepare staging folder";
 "准备照片" = "Prepare photo";
+"准备照片 1–3，上传检查、保存与配对、云端确认 1–4，文件上传 1–12，缓存 128–8192 MB。" = "Photo preparation: 1–3. Upload checks, save and pair, cloud confirmation: 1–4. File uploads: 1–12. Buffer: 128–8192 MB.";
 "准备视频" = "Prepare video";
 "凭据仅保存在本机钥匙串" = "Credentials stay in this iPhone’s Keychain";
 "凭据仅保存在本机钥匙串，不导出到诊断报告。应用内网页登录受 Google 规则影响时，可导入已有凭据。" = "Credentials stay in Keychain and are excluded from diagnostics. If Google blocks in-app sign-in, you can import existing credentials.";
@@ -208,6 +215,7 @@
 "可访问" = "Accessible";
 "可重试" = "Retry available";
 "同时保留修改前后的内容；内容相同只备份一份。不保留撤销编辑的记录。" = "Keep versions before and after edits. Identical content is saved once. Reversible edit history is not preserved.";
+"同时备份数量" = "Simultaneous backups";
 "后台备份由 iPhone 安排，低电量或网络限制时可能延后。打开应用可继续备份。" = "iPhone schedules background backups. Low battery or network limits may delay them. Open the app to continue.";
 "后台执行" = "Background activity";
 "启动应用" = "Launch app";
@@ -312,12 +320,14 @@
 "已通过项默认选中，取消勾选后本轮保留。" = "Verified items are selected by default. Deselect an item to keep it during this review.";
 "已重新查询云端，请查看记录状态。" = "Cloud checked again. See the record status.";
 "已降低清理核验强度" = "Cleanup verification reduced";
+"并发模式" = "Concurrency mode";
 "应用内代理" = "In-App Proxy";
 "应用内代理（验证）" = "In-app proxy (preview)";
 "应用初始化尚未完成。请检查运行环境后重试。" = "The app is still starting. Check the runtime and retry.";
 "应用尚未就绪，请等待初始化完成并检查诊断。" = "The app is not ready. Wait for startup and check diagnostics.";
 "应用尚未就绪，请等待账号连接完成后重试。" = "The app is not ready. Wait for the account connection and retry.";
 "应用核验策略" = "Apply check settings";
+"应用设置" = "Apply settings";
 "应用进入后台后，代理连接可能暂停；返回应用后可继续备份。" = "The proxy may pause in the background. Return to the app to continue backups.";
 "建议先在 Google 相册确认。继续后仍会查重，但未查询到时将上传，可能出现重复项目。" = "Check Google Photos first. If you continue, duplicates will still be checked, but a lookup miss will allow an upload and may create duplicates.";
 "建议分别测试 Google 相册不在后台、仍在后台，以及备份关闭时的表现。记录每个入口最近一次结果即可。" = "Try Google Photos both closed and in the app switcher, including with backup turned off. The latest result for each link is kept.";
@@ -352,6 +362,7 @@
 "恢复备份与清理默认设置" = "Restore backup and cleanup defaults";
 "恢复备份默认设置" = "Restore backup defaults";
 "恢复完整核验" = "Restore full verification";
+"恢复自动管理" = "Restore automatic management";
 "恢复默认设置" = "Restore defaults";
 "恢复默认设置？" = "Restore defaults?";
 "我已了解风险" = "I understand the risk";
@@ -377,6 +388,7 @@
 "操作完成，请查看记录。" = "Finished. Check the records.";
 "操作未完成（{0}），请重试或导出诊断报告。" = "Could not finish ({0}). Retry or export diagnostics.";
 "支持 Clash Meta 配置，最多保存 20 份，每份最多 64 个节点。" = "Supports Clash Meta configurations. Save up to 20 configurations with 64 nodes each.";
+"文件上传" = "File uploads";
 "文件已传输，云端尚未确认为动态照片。稍后重试会重新检查，不重复上传。" = "Files uploaded. The cloud has not confirmed the motion photo yet. Retry checks again without uploading again.";
 "无法保存或读取上传响应文件。请检查本机空间，再重新准备此任务。" = "Could not read or save the upload response. Check free space and prepare this task again.";
 "无法取得同一版本的完整 Live Photo 资源。" = "The complete photo and video for this Live Photo version are unavailable.";
@@ -576,6 +588,7 @@
 "立即检查保存结果" = "Check saved content now";
 "等待 Live Photo 完整验证" = "Waiting for full Live Photo verification";
 "等待 Wi-Fi" = "Waiting for Wi-Fi";
+"等待上传队列腾出空间。" = "Waiting for space in the upload queue.";
 "等待云端处理" = "Waiting for cloud processing";
 "等待云端完成动态处理" = "Wait for cloud motion processing";
 "等待备份" = "Queued";
@@ -602,6 +615,7 @@
 "继续当前结果" = "Resume filtered tasks";
 "继续扫描" = "Scan Again";
 "继续等待完整验证" = "Keep waiting for full verification";
+"缓存上限（MB）" = "Buffer limit (MB)";
 "编辑后版本" = "Edited version";
 "编辑过的照片与视频" = "Edited photos and videos";
 "网络" = "Connection";
@@ -613,6 +627,7 @@
 "自动备份会识别范围内新增和修改内容。系统后台安排不保证即时，打开应用可继续。" = "New and changed photos in your scope are detected automatically. Background work may be delayed; open the app to continue.";
 "自动归档" = "Automatic archiving";
 "自动选择" = "Automatic";
+"自定义" = "Custom";
 "至少 {0}" = "At least {0}";
 "节点" = "Nodes";
 "节点数" = "Node Count";
@@ -659,6 +674,7 @@
 "请输入 1–90 的整数。" = "Enter a whole number from 1 to 90.";
 "请输入有效的 HTTP 或 HTTPS 订阅链接。" = "Enter a valid HTTP or HTTPS subscription URL.";
 "请输入有效的 HTTPS 订阅链接。" = "Enter a valid HTTPS subscription URL.";
+"请输入范围内的整数。" = "Enter whole numbers within the allowed ranges.";
 "请选择节点" = "Choose a Node";
 "请选择要添加的订阅。" = "Choose a subscription to add.";
 "请选择释放设备空间，避免误入清理云端存储。移除后可在苹果相册“最近删除”中查看；需要立即腾出空间时，再自行确认是否清空。开启 iCloud 照片时，本机删除也会同步到同一图库的其他设备。" = "Choose device cleanup rather than cloud storage cleanup. Removed items appear in Recently Deleted in Apple Photos; empty it yourself if you need the space immediately. With iCloud Photos enabled, local deletions also sync to other devices using the same library.";
@@ -675,6 +691,7 @@
 "资源与配对已确认" = "Resources and pairing confirmed";
 "资源已发送，正在确认云端保存结果。" = "Files sent. Confirming cloud saving.";
 "资源校验失败：{0}" = "Resource check failed: {0}";
+"资源紧张时会自动降低并发。减少数量不会中断已开始的上传。单个大文件可能超过缓存上限。" = "Concurrency is reduced when resources are limited. Reducing it does not interrupt uploads already started. A large file may exceed the buffer limit.";
 "跟随全局" = "Follow global";
 "跟随系统" = "Follow system";
 "路径猜测，未经验证" = "Guessed path; unverified";
@@ -763,7 +780,9 @@
 "验证版支持最多 64 个节点的 Clash YAML，暂不支持代理提供者或链式代理。" = "This preview supports Clash YAML with up to 64 nodes. Proxy providers and chained proxies are not supported yet.";
 "高级信息" = "Advanced information";
 "高级备份检查" = "Advanced backup checks";
+"高级配置" = "Advanced configuration";
 "高级：导入已有 gpmc 凭据" = "Advanced: import gpmc credentials";
 "默认关闭。开启后，照片和动态视频均已保存即可继续清理检查；取回后可能需要重新配对，部分动态效果可能无法恢复。其他已开启的检查仍会执行。" = "Off by default. Once the photo and video are saved, cleanup checking can continue. Pairing may need repair after retrieval, and some motion effects may not restore. Other enabled checks still apply.";
 "默认关闭。开启后，照片和视频保存成功后还会等待动态处理完成。蓝色对勾表示已保存，仍在等待处理。" = "Off by default. When enabled, backup also waits for motion processing after saving. A blue check means saved but still processing.";
+"默认同时备份 2 个项目。减少数量时，已开始的上传会继续完成。" = "Back up 2 items at once by default. Lowering the limit lets uploads already started finish.";
 "默认收起 14 天前已完成的记录，照片和备份状态会保留。取消归档后，会重新等待设定天数。此设置适用于本机所有账号。" = "By default, completed records are archived after 14 days. Photos and backup status are kept. Unarchiving restarts the waiting period. This setting applies to all accounts on this device.";

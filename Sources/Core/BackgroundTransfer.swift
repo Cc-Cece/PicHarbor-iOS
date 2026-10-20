@@ -44,7 +44,7 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
         let configuration = URLSessionConfiguration.background(withIdentifier: Self.identifier)
         configuration.sessionSendsLaunchEvents = true
         configuration.waitsForConnectivity = true
-        configuration.httpMaximumConnectionsPerHost = 2
+        configuration.httpMaximumConnectionsPerHost = QueueScaling.maximumUploads
         configuration.timeoutIntervalForResource = 7 * 24 * 3600
         configuration.timeoutIntervalForRequest = 120
         configuration.urlCache = nil
@@ -58,6 +58,7 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
             let configuration = URLSessionConfiguration.default
             ProxyManager.apply(port: port, to: configuration)
             configuration.timeoutIntervalForRequest = 30
+            configuration.httpMaximumConnectionsPerHost = QueueScaling.maximumUploads
             configuration.timeoutIntervalForResource = 24 * 3600
             configuration.urlCache = nil
             let value = URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)

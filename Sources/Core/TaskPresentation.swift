@@ -67,6 +67,15 @@ extension BackupJob {
     var isVideo: Bool { !isLive && (mediaKind == "video" || (sources.isEmpty ? resources : sources).contains { $0.role.hasSuffix(".video") }) }
     var flowIndex: Int {
         if state == .completed { return flowSteps.count - 1 }
+        if let pipelineStage {
+            switch pipelineStage {
+            case .preparation: return 0
+            case .lookup: return 1
+            case .upload: return 2
+            case .commit: return 3
+            case .confirmation: return standardConfirmationPassed && isLive && settings.requiresStrictConfirmation ? 4 : 3
+            }
+        }
         if resources.isEmpty { return 0 }
         if standardConfirmationPassed { return isLive && settings.requiresStrictConfirmation ? 4 : 3 }
         if state == .committing { return 3 }

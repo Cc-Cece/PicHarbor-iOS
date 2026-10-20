@@ -31,6 +31,8 @@ struct BackupSettings: Codable, Equatable {
     var scopeConfirmed: Bool?
     var wifiOnly = true
     var syncAlbums = false
+    var pipelineMode: PipelineMode?
+    var pipelineOverrides: PipelineLimits?
     var selectedAlbums: [String] = []
     // Legacy cleanup preferences remain decodable for upgrades. No longer used
     // by the native application; local removal is delegated to Google Photos.
@@ -98,6 +100,7 @@ struct MediaResource: Codable, Identifiable, Equatable {
     var submitted = false
 }
 struct BackupJob: Codable, Identifiable {
+    var pipelineStage: PipelineStage?
     var id = UUID().uuidString
     var generation: Int64?
     var origin: BackupOrigin?

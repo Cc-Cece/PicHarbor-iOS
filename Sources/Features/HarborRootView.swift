@@ -96,6 +96,7 @@ struct BackupDashboard: View {
                         metric(L10n.text("可访问"), model.library.assets.count)
                     }
                     if model.activeCount > 0 { BackupTransferMetrics() }
+                    PipelineActivitySummary()
                 }.padding(.vertical, 12)
             }
             Section {

@@ -4,10 +4,13 @@ import Photos
 /// Cancels PhotoKit downloads too, rather than only pausing the later HTTP upload.
 final class ExportControl: @unchecked Sendable {
     let wifiOnly: Bool
+    private let budget: PipelineBufferBudget?
+    private let jobID: String
     private let lock = NSLock()
     private var requests = Set<PHAssetResourceDataRequestID>()
     private var reason: String?
-    init(wifiOnly: Bool) { self.wifiOnly = wifiOnly }
+    init(wifiOnly: Bool, budget: PipelineBufferBudget? = nil, jobID: String = "") { self.wifiOnly = wifiOnly; self.budget = budget; self.jobID = jobID }
+    func reserve(_ bytes: Int64) throws { try budget?.reserve(bytes, job: jobID) }
     var failure: String? { lock.lock(); defer { lock.unlock() }; return reason }
     func register(_ id: PHAssetResourceDataRequestID) {
         lock.lock(); let cancelled = reason != nil
@@ -55,6 +58,7 @@ private final class ResourceFileWriter: @unchecked Sendable {
                 guard free > Int64(data.count) + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
                 bytesSinceCheck = 0
             }
+            try control?.reserve(Int64(data.count))
             try file.write(contentsOf: data); bytesSinceCheck += data.count
             lock.unlock()
         } catch {

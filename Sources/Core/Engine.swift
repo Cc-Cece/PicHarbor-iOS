@@ -58,6 +58,7 @@ struct HarborError: LocalizedError {
         case "CLOUD_ORIGINAL_UNCONFIRMED": return L10n.text("云端原件状态尚未通过完整核验，原件会保留。")
         case "ORIGINAL_UNAVAILABLE": return L10n.text("云端原件无法访问或大小不符，原件会保留。")
         case "FILE_ACCESS": return L10n.text("无法读取原件或写入暂存文件，请检查空间与照片权限。")
+        case "STAGING_BUFFER_WAIT": return L10n.text("等待上传队列腾出空间。")
         case "SOURCE_FILE_MISSING": return L10n.text("已导出的暂存原件不存在。请重新准备此任务；不需要删除相册原件。")
         case "UPLOAD_RESPONSE_MISSING", "UPLOAD_RESPONSE_EMPTY": return L10n.text("上传响应文件缺失或为空，尚未完成云端提交。请重新准备此任务。")
         case "UPLOAD_RESPONSE_WRITE", "UPLOAD_RESPONSE_READ": return L10n.text("无法保存或读取上传响应文件。请检查本机空间，再重新准备此任务。")
@@ -110,7 +111,7 @@ final class Engine: ObservableObject {
     @Published var progress: Double?
     @Published var records: [BackupObservation] = []
     @Published var runtime: [String: String] = [:]
-    private let queue = DispatchQueue(label: "io.picharbor.python", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "io.picharbor.python", qos: .userInitiated, attributes: .concurrent)
     private var booted = false
     let home: URL
 

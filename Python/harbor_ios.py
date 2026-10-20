@@ -2,9 +2,12 @@
 
 Only the caller's Keychain owns reusable credentials. SQLite stores account-scoped
 observations, never tokens. A hash lookup confirms content existence, not cleanup
-eligibility or original quality. All work is serialized by the native boundary.
+eligibility or original quality. Legacy database work is exclusive; protocol calls use isolated request contexts.
 """
 import base64
+import copy
+import threading
+from types import SimpleNamespace
 import hashlib
 import json
 import logging
@@ -75,6 +78,11 @@ class Service:
         self.home.mkdir(parents=True, exist_ok=True)
         self.staging = self.home / "Staging"
         self.staging.mkdir(exist_ok=True)
+        self.identity_condition = threading.Condition(threading.RLock())
+        self.active_protocol_calls = 0
+        self.changing_identity = False
+        self.protocol_pool = {}
+        self.identity_generation = 0
         self.api_factory, self.notify = api_factory, notify
         self.last_event = ("", 0.0)
         self.api, self.account = None, ""
@@ -88,6 +96,59 @@ class Service:
         self.db.execute("UPDATE records SET state='interrupted',error='INTERRUPTED' WHERE state='uploading'")
         self.db.commit()
         logging.disable(logging.CRITICAL)
+
+    def control_dispatch(self, action, value):
+        # Login/logout and the legacy observations database form an exclusive
+        # barrier. An in-flight request never changes its account or proxy.
+        with self.identity_condition:
+            while self.changing_identity:
+                self.identity_condition.wait()
+            self.changing_identity = True
+            try:
+                while self.active_protocol_calls:
+                    self.identity_condition.wait()
+                if self.api is not None:
+                    self.api.proxy = value.get("proxy_url", "")
+                result = self.dispatch(action, value)
+                if action in ("connect", "logout"):
+                    self.identity_generation += 1
+                    self.protocol_pool.clear()
+                return result
+            finally:
+                self.changing_identity = False
+                self.identity_condition.notify_all()
+
+    def protocol_dispatch(self, action, value):
+        from harbor_protocol import Protocol
+        with self.identity_condition:
+            while self.changing_identity:
+                self.identity_condition.wait()
+            if self.api is None:
+                raise Failure("LOGIN_REQUIRED")
+            if value.get("account") != self.account:
+                raise Failure("ACCOUNT_CHANGED")
+            request_api = copy.copy(self.api)
+            request_api.proxy = value.get("proxy_url", "")
+            if hasattr(request_api, "auth_response_cache"):
+                request_api.auth_response_cache = dict(self.api.auth_response_cache)
+                # Serialize bearer renewal only, not the media protocol request.
+                _ = request_api.bearer_token
+                self.api.auth_response_cache = dict(request_api.auth_response_cache)
+            generation = self.identity_generation
+            identity = (generation, self.account, request_api.proxy)
+            pool = self.protocol_pool.get(identity, [])
+            context = pool.pop() if pool else Protocol(SimpleNamespace(api=request_api, staging=self.staging))
+            context.service.api = request_api
+            self.active_protocol_calls += 1
+        try:
+            return context.dispatch(action, value)
+        finally:
+            with self.identity_condition:
+                pool = self.protocol_pool.setdefault(identity, [])
+                if len(pool) < 32:
+                    pool.append(context)
+                self.active_protocol_calls -= 1
+                self.identity_condition.notify_all()
 
     def emit(self, phase, completed=0, total=0):
         previous, emitted = self.last_event
@@ -258,9 +319,15 @@ def dispatch(action, payload):
             match = re.fullmatch(r"http://127\.0\.0\.1:([0-9]{1,5})", proxy) if isinstance(proxy, str) else None
             if not match or not 24500 <= int(match[1]) < 24564:
                 raise Failure("INVALID_PROXY")
-        if _service.api is not None:
-            _service.api.proxy = proxy
-        return json.dumps({"ok": True, "protocol_version": 2, "request_id": request_id, **_service.dispatch(action, value)})
+        from harbor_protocol import Protocol
+        if isinstance(_service, Service):
+            result = _service.protocol_dispatch(action, value) if action in Protocol.actions else _service.control_dispatch(action, value)
+        else:
+            # Test doubles and older embedders retain the legacy boundary.
+            if _service.api is not None:
+                _service.api.proxy = proxy
+            result = _service.dispatch(action, value)
+        return json.dumps({"ok": True, "protocol_version": 2, "request_id": request_id, **result})
     except Exception as error:
         code = classify(error)
         return json.dumps({"ok": False, "protocol_version": 2, "request_id": request_id, "error": code,

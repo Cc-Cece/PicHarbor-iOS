@@ -1,6 +1,7 @@
 import SwiftUI
 import Photos
 import Combine
+import UIKit
 
 @MainActor
 final class HarborModel: ObservableObject {
@@ -12,7 +13,7 @@ final class HarborModel: ObservableObject {
         didSet {
             if jobs.count != jobPositions.count { rebuildJobPositions() }
             visibleCache = nil; activityCache.removeAll(keepingCapacity: true)
-            uploadWorkload = nil
+            uploadWorkload = nil; liveTransferCache = nil
         }
     }
     private var jobPositions: [String: Int] = [:]
@@ -40,6 +41,7 @@ final class HarborModel: ObservableObject {
     private var progressTimes: [String: Date] = [:]
     @Published private(set) var transferProgress: [String: Double] = [:]
     private var rateTracker = TransferRateTracker()
+    private var liveTransferCache: (account: String, ids: Set<String>)?
     private var uploadWorkload: (account: String, value: UploadWorkload)?
     func backupTransferSummary(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> BackupTransferSummary {
         if uploadWorkload?.account != account { uploadWorkload = (account, UploadWorkload(jobs: jobs, account: account)) }
@@ -86,6 +88,65 @@ final class HarborModel: ObservableObject {
     private var settingsGeneration: [String: Int64] = [:]
     private let albumGate = PreparationGate()
     private var workers = Set<String>()
+    @Published private(set) var workerStages: [String: PipelineStage] = [:]
+    @Published private(set) var pipelineDevice = PipelineConditions()
+    private var memoryWarningUntil: TimeInterval = 0
+    private var lastDeviceRead: TimeInterval = -100
+    private let bufferBudget = PipelineBufferBudget()
+    private struct UploadPlan { var resourceID: String; var plan: [String: Any]; var created: TimeInterval; var modified: Date? }
+    private var uploadPlans: [String: UploadPlan] = [:]
+    private struct PipelineBoundary: Error {}
+    var pipelineLimits: PipelineLimits { PipelineProfiles.effective(settings: settings, device: pipelineDevice) }
+    private func refreshPipelineDevice(force: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || now - lastDeviceRead >= 10 else { return }
+        lastDeviceRead = now
+        pipelineDevice = PipelineDeviceMonitor.read(home: engine.home, memoryWarningUntil: memoryWarningUntil)
+    }
+    func pipelineActivity(ids: Set<String>? = nil) -> [PipelineStage: Int] {
+        var sets: [PipelineStage: Set<String>] = [:]
+        for (id, phase) in workerStages where ids == nil || ids!.contains(id) { sets[phase, default: []].insert(id) }
+        if liveTransferCache?.account != account {
+            liveTransferCache = (account, Set(jobs.lazy.filter { $0.account == self.account && $0.state == .transferring }.map(\.id)))
+        }
+        for id in liveTransferCache!.ids where ids == nil || ids!.contains(id) { sets[.upload, default: []].insert(id) }
+        return sets.mapValues(\.count)
+    }
+    private func handoff(_ stage: PipelineStage, jobID: String) async throws {
+        guard workerStages[jobID] != stage else { return }
+        guard var value = lookupJob(jobID) else { throw HarborError("JOB_PAUSED") }
+        try checkpoint(value)
+        value.pipelineStage = stage; value.state = .queued; value.retryAt = nil
+        try await persist(value)
+        throw PipelineBoundary()
+    }
+    private func queueUpload(_ job: BackupJob, resource: MediaResource, plan: [String: Any]) async throws {
+        let attrs = try URL(fileURLWithPath: resource.path).resourceValues(forKeys: [.contentModificationDateKey])
+        uploadPlans[job.id] = UploadPlan(resourceID: resource.id, plan: plan, created: ProcessInfo.processInfo.systemUptime, modified: attrs.contentModificationDate)
+        try await handoff(.upload, jobID: job.id)
+    }
+    private func uploadPrepared(_ initial: BackupJob) async throws {
+        guard let prepared = uploadPlans[initial.id], ProcessInfo.processInfo.systemUptime - prepared.created < 180,
+              let index = initial.resources.firstIndex(where: { $0.id == prepared.resourceID }) else {
+            uploadPlans.removeValue(forKey: initial.id); try await handoff(.lookup, jobID: initial.id); return
+        }
+        var value = initial
+        let resource = value.resources[index]
+        // Hashing was performed by the lookup worker before the plan was prepared.
+        let attrs = try URL(fileURLWithPath: resource.path).resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        guard Int64(attrs.fileSize ?? -1) == resource.size, attrs.contentModificationDate == prepared.modified else { throw HarborError("SOURCE_CHANGED") }
+        let free = (try FileManager.default.attributesOfFileSystem(forPath: engine.home.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+        let reserved = jobs.lazy.filter { $0.account == self.account && $0.state == .transferring }
+            .flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
+        guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
+        try checkpoint(value)
+        let task = try transfer.create(job: value, resource: resource, plan: prepared.plan)
+        value.state = .transferring; value.resources[index].transportID = task.taskIdentifier; value.failureStage = "transfer_creation"
+        do { try await persist(value) } catch { task.cancel(); throw error }
+        uploadPlans.removeValue(forKey: value.id)
+        if lookupJob(value.id)?.state == .cancelled { task.cancel() }
+        else if lookupJob(value.id)?.state != .paused { task.resume() }
+    }
     private var collectedStaging = Set<String>()
     private var exports: [String: ExportControl] = [:]
     private var subscriptions = Set<AnyCancellable>()
@@ -138,6 +199,18 @@ final class HarborModel: ObservableObject {
     }
     var stagedBytes: Int64 { jobs.filter { $0.state != .completed && $0.state != .cancelled }.flatMap(\.resources).reduce(0) { $0 + $1.size } }
     init() {
+        NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)
+            .merge(with: NotificationCenter.default.publisher(for: Notification.Name.NSProcessInfoPowerStateDidChange))
+            .sink { [weak self] _ in Task { @MainActor in self?.refreshPipelineDevice(force: true); await self?.pump() } }.store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification).sink { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.memoryWarningUntil = ProcessInfo.processInfo.systemUptime + 120
+                self.refreshPipelineDevice(force: true)
+                for control in self.exports.values { control.cancel("STAGING_BUFFER_WAIT") }
+                await self.pump()
+            }
+        }.store(in: &subscriptions)
         engine.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
         library.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
         library.$revision.dropFirst().sink { [weak self] _ in Task { @MainActor in await self?.automaticScan() } }.store(in: &subscriptions)
@@ -308,6 +381,7 @@ final class HarborModel: ObservableObject {
         let saved = try await store.load(AccountSettings.self, kind: "settings")
         settingsGeneration = Dictionary(uniqueKeysWithValues: saved.map { ($0.account, $0.generation ?? 0) })
         settings = saved.first(where: { $0.account == account })?.settings ?? BackupSettings()
+        uploadPlans = [:]
         rateTracker = TransferRateTracker(); uploadWorkload = nil; transferProgress = [:]; progressTimes = [:]
         lastArchiveSweep = .distantPast
         savedWifiOnly = settings.wifiOnly
@@ -537,24 +611,33 @@ final class HarborModel: ObservableObject {
             lastStagingSweep = Date(); await collectFinishedStaging()
         }
         guard !switching, !updatingNetwork, !storageFailed, !recoveryRequired else { return }
-        let running = jobs.filter { $0.account == account && ($0.state == .transferring || workers.contains($0.id)) }
-        let confirmations = running.filter(\.confirmationOnly).count
-        let ids = QueueScaling.select(jobs.lazy.filter { self.runnable($0) }.map {
-            QueueCandidate(id: $0.id, created: $0.created, confirmation: $0.confirmationOnly)
-        }, uploads: max(0, 2 - (running.count - confirmations)), confirmations: max(0, 1 - confirmations))
-        for id in ids {
+        refreshPipelineDevice()
+        let limits = pipelineLimits
+        let buffered = PipelineScheduler.bufferedBytes(jobs, account: account)
+        bufferBudget.configure(limit: limits.bufferBytes, base: buffered)
+        let now = ProcessInfo.processInfo.systemUptime
+        uploadPlans = uploadPlans.filter { now - $0.value.created < 180 }
+        let selected = PipelineScheduler.select(jobs.lazy.filter { self.runnable($0) }.map {
+            PipelineCandidate(id: $0.id, stage: PipelineScheduler.stage($0, hasPlan: self.uploadPlans[$0.id] != nil), created: $0.created)
+        }, limits: limits, occupied: pipelineActivity(), bufferedBytes: buffered, readyPlans: uploadPlans.count)
+        for candidate in selected {
+            let id = candidate.id
             guard !switching, !updatingNetwork, !storageFailed, !recoveryRequired,
                   var job = lookupJob(id), runnable(job) else { continue }
             guard network.connected && (!job.settings.wifiOnly || network.wifi) else {
                 if job.state != .waiting { job.state = .waiting; job.error = "WAITING_NETWORK"; try? await persist(job) }
                 continue
             }
-            workers.insert(job.id)
+            workers.insert(id); workerStages[id] = candidate.stage
+            if candidate.stage == .preparation { bufferBudget.begin(id) }
             Task { [weak self] in
                 guard let self else { return }
-                await self.process(job)
-                self.workers.remove(job.id)
-                self.transferProgress.removeValue(forKey: job.id); self.progressTimes.removeValue(forKey: job.id)
+                var value = self.lookupJob(id) ?? job
+                value.pipelineStage = candidate.stage; value.retryAt = nil
+                value.state = candidate.stage == .preparation ? .preparing : candidate.stage == .commit ? .committing : value.hasConfirmedPairs ? .paired : .confirming
+                do { try await self.persist(value); await self.process(value) } catch { self.fatalStorage(error) }
+                if candidate.stage == .preparation { self.bufferBudget.finish(id) }
+                self.workers.remove(id); self.workerStages.removeValue(forKey: id)
                 await self.pump()
             }
         }
@@ -591,6 +674,7 @@ final class HarborModel: ObservableObject {
     }
     private func process(_ initial: BackupJob) async {
         do {
+            if workerStages[initial.id] == .preparation { await processRouted(initial); return }
             let sameScope = initial.proxyScope == ProxyManager.shared.routingScope
             let route = try await ProxyManager.shared.route(override: initial.proxyFallback, failures: sameScope ? (initial.proxyFailures ?? []) : [], policy: initial.proxyPolicy, preferred: sameScope ? initial.proxyLastNode : nil)
             try checkpoint(initial)
@@ -625,11 +709,11 @@ final class HarborModel: ObservableObject {
         defer { exports.removeValue(forKey: job.id) }
         do {
             try checkpoint(job)
+            if workerStages[job.id] == .upload { stage = "transfer_creation"; try await uploadPrepared(job); return }
             let directory = engine.home.appendingPathComponent("Staging/\(job.id)", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if job.resources.isEmpty {
                 job.state = .preparing; job.error = ""; job.failureStage = nil; try await persist(job)
-                await PreparationGate.shared.acquire()
                 do {
                 try checkpoint(job)
                 stage = "source_stability"
@@ -648,7 +732,7 @@ final class HarborModel: ObservableObject {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
                 guard free > 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
-                let control = ExportControl(wifiOnly: job.settings.wifiOnly); exports[job.id] = control
+                let control = ExportControl(wifiOnly: job.settings.wifiOnly, budget: bufferBudget, jobID: job.id); exports[job.id] = control
                 stage = "export"
                 job.sources = try await ResourceExporter.export(assetID: job.assetID, settings: job.settings, directory: directory, control: control)
                 if let code = control.failure { throw HarborError(code) }
@@ -674,8 +758,8 @@ final class HarborModel: ObservableObject {
                 } else { job.resources = job.sources }
                 try checkpoint(job)
                 try await persist(job)
-                } catch { await PreparationGate.shared.release(); throw error }
-                await PreparationGate.shared.release()
+                } catch { throw error }
+                try await handoff(.lookup, jobID: job.id)
             }
             let prior = ResourceReuse.evidence(for: job, history: jobs)
             if job.priorResourceKeys != prior { job.priorResourceKeys = prior; try await persist(job) }
@@ -693,6 +777,7 @@ final class HarborModel: ObservableObject {
                     var request = payload(resource, account: job.account)
                     // After an uncertain commit, query first; never label a submitted key confirmed.
                     if resource.submitted {
+                        try await handoff(.confirmation, jobID: job.id)
                         stage = "confirmation"
                         job.state = .confirming; try await persist(job)
                         let result = try await engine.invoke("confirm_resource", request)
@@ -709,6 +794,7 @@ final class HarborModel: ObservableObject {
                     try checkpoint(job)
                     if let response = resource.responsePath {
                         stage = "commit_response"
+                        try await handoff(.commit, jobID: job.id)
                         committingResourceID = resource.id
                         job.state = .committing; job.resources[index].submitted = true
                         try await persist(job)
@@ -716,6 +802,8 @@ final class HarborModel: ObservableObject {
                         let result = try await engine.invoke("commit_resource", request)
                         try checkpoint(job)
                         job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
+                        try await persist(job)
+                        try await handoff(.confirmation, jobID: job.id)
                         stage = "confirmation"
                         let confirmation = try await engine.invoke("confirm_resource", request)
                         try checkpoint(job)
@@ -736,6 +824,7 @@ final class HarborModel: ObservableObject {
                             job.resources[index].remoteKey = key; job.resources[index].confirmed = true
                             job.resources[index].reused = true; try await persist(job); continue
                         }
+                        try await handoff(.lookup, jobID: job.id)
                         let plan = try await engine.invoke("prepare_upload", request)
                         try checkpoint(job)
                         if plan["exists"] as? Bool == true {
@@ -743,17 +832,7 @@ final class HarborModel: ObservableObject {
                             job.resources[index].remoteKey = plan["remote_key"] as? String ?? ""
                             job.resources[index].confirmed = true; try await persist(job)
                         } else {
-                            let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
-                            let reserved = jobs.flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
-                            // Background URLSession may make its own file copy.
-                            guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
-                            stage = "transfer_creation"
-                            let task = try transfer.create(job: job, resource: resource, plan: plan)
-                            job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
-                            do { try await persist(job) } catch { task.cancel(); throw error }
-                            let current = lookupJob(job.id)?.state
-                            if current == .cancelled { task.cancel() }
-                            else if current != .paused { task.resume() }
+                            try await queueUpload(job, resource: resource, plan: plan)
                             return
                         }
                     }
@@ -762,11 +841,13 @@ final class HarborModel: ObservableObject {
             try checkpoint(job)
             if job.settings.requiresStrictConfirmation && job.confirmationOnly && !initial.confirmationOnly {
                 job.state = job.hasConfirmedPairs ? .paired : .confirming
+                job.pipelineStage = .confirmation
                 if job.hasConfirmedPairs { job.pairedAt = job.pairedAt ?? Date() }
                 job.error = ""; job.retryAt = nil; job.failureStage = "confirmation"; try await persist(job)
                 return // All Live strategies release the upload lane before library queries.
             }
             if job.isLive && job.settings.requiresStrictConfirmation {
+                try await handoff(.confirmation, jobID: job.id)
                 stage = "confirmation"
                 job.beginConfirmation(); confirmationBegan = ProcessInfo.processInfo.systemUptime; try await persist(job)
                 // Older jobs may retain the commit RPC's key rather than the
@@ -800,6 +881,7 @@ final class HarborModel: ObservableObject {
             try await persist(job)
             try? FileManager.default.removeItem(at: directory)
         } catch {
+            if error is PipelineBoundary { return }
             guard let current = lookupJob(job.id), current.state != .paused, current.state != .cancelled else { return }
             if stage == "pair_commit" && job.isLive && job.settings.live != .motion && !current.resources.isEmpty { stage = current.failureStage ?? stage }
             job = current
@@ -816,7 +898,8 @@ final class HarborModel: ObservableObject {
             job.attempts += 1
             let system = error as NSError
             job.failureSystemCode = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain, "PHPhotosErrorDomain"].contains(system.domain) ? "\(system.domain):\(system.code)" : nil
-            if code == "SOURCE_SETTLING" {
+            if code == "STAGING_BUFFER_WAIT" { job.state = .waiting; job.retryAt = Date(timeIntervalSinceNow: 5); job.attempts = max(0, job.attempts - 1) }
+            else if code == "SOURCE_SETTLING" {
                 job.waitForSource()
             }
             else if code == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil; job.attempts = max(0, job.attempts - 1) }
@@ -897,10 +980,16 @@ final class HarborModel: ObservableObject {
                     if !job.resources[photoIndex].submitted && job.resources[photoIndex].responsePath == nil { job.resources[photoIndex].reused = true }
                     try await persist(job)
                 } else {
-                    if job.resources[photoIndex].submitted { throw HarborError("REMOTE_NOT_VISIBLE") }
+                    if job.resources[photoIndex].submitted {
+                        let visible = try await engine.invoke("confirm_resource", payload(job.resources[photoIndex], account: job.account))
+                        try checkpoint(job)
+                        guard visible["confirmed"] as? Bool == true, let key = visible["remote_key"] as? String, !key.isEmpty else { throw HarborError("REMOTE_NOT_VISIBLE") }
+                        job.resources[photoIndex].remoteKey = key; try await persist(job)
+                    }
                     if job.resources[photoIndex].responsePath == nil {
                         try await launchPairTransfer(job, index: photoIndex, directory: directory); return nil
                     }
+                    if !job.resources[photoIndex].submitted {
                     var request = payload(job.resources[photoIndex], account: job.account)
                     request["name"] = job.resources[photoIndex].name
                     request["response_path"] = job.resources[photoIndex].responsePath
@@ -908,6 +997,7 @@ final class HarborModel: ObservableObject {
                     try await verifyPairSource(job.resources[photoIndex])
                     try checkpoint(job)
                     job.failureStage = "pair_photo_commit"; job.state = .committing
+                    try await handoff(.commit, jobID: job.id)
                     job.resources[photoIndex].submitted = true; try await persist(job)
                     do { try checkpoint(job) }
                     catch {
@@ -924,11 +1014,13 @@ final class HarborModel: ObservableObject {
                         throw error
                     }
                     try checkpoint(job)
+                    try await handoff(.confirmation, jobID: job.id)
                     let visible = try await engine.invoke("confirm_resource", payload(job.resources[photoIndex], account: job.account))
                     try checkpoint(job)
                     guard visible["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
                     job.resources[photoIndex].remoteKey = visible["remote_key"] as? String ?? ""
                     try await persist(job)
+                    }
                 }
             }
             let required = job.livePairs?[pairIndex].route == "joint" ? [photoIndex, videoIndex] : [videoIndex]
@@ -938,6 +1030,7 @@ final class HarborModel: ObservableObject {
             for index in [photoIndex, videoIndex] { try await verifyPairSource(job.resources[index]); try checkpoint(job) }
             try checkpoint(job)
             job.failureStage = "pair_commit"; job.state = .committing
+            try await handoff(.commit, jobID: job.id)
             job.livePairs?[pairIndex].submitted = true
             try await persist(job)
             do { try checkpoint(job) }
@@ -967,6 +1060,7 @@ final class HarborModel: ObservableObject {
                 }
                 throw error
             }
+            try await handoff(.confirmation, jobID: job.id)
             let linked = try await engine.invoke("confirm_pair", pairPayload(job))
             try checkpoint(job)
             guard linked["confirmed"] as? Bool == true, let key = linked["remote_key"] as? String, !key.isEmpty else { throw HarborError("PAIR_CONFIRMATION_PENDING") }
@@ -988,16 +1082,10 @@ final class HarborModel: ObservableObject {
         try await verifyPairSource(resource)
         try checkpoint(job)
         job.failureStage = "pair_transfer"; try await persist(job)
+        try await handoff(.lookup, jobID: job.id)
         let plan = try await engine.invoke("prepare_pair_component", payload(resource, account: job.account))
         try checkpoint(job)
-        let free = (try FileManager.default.attributesOfFileSystem(forPath: directory.path)[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
-        let reserved = jobs.flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
-        guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
-        let task = try transfer.create(job: job, resource: resource, plan: plan)
-        job.state = .transferring; job.resources[index].transportID = task.taskIdentifier
-        do { try await persist(job) } catch { task.cancel(); throw error }
-        let state = lookupJob(job.id)?.state
-        if state == .cancelled { task.cancel() } else if state != .paused { task.resume() }
+        try await queueUpload(job, resource: resource, plan: plan)
     }
     private func synchronizeAlbums(_ job: BackupJob) async throws {
         guard let store else { throw HarborError("DATABASE_ERROR") }
@@ -1147,6 +1235,7 @@ final class HarborModel: ObservableObject {
     func cancel(_ id: String) async {
         guard var job = lookupJob(id), job.account == account, job.state != .completed else { return }
         exports[id]?.cancel("JOB_PAUSED")
+        uploadPlans.removeValue(forKey: id)
         job.state = .cancelled; job.evidence = nil; try? await persist(job); await transfer.cancel(jobID: id)
     }
     func removeUnfinished(_ ids: Set<String>) async {
@@ -1183,6 +1272,8 @@ final class HarborModel: ObservableObject {
             "storage_failed": storageFailed, "credential_storage_available": credentialStorageAvailable,
             "initialized": initialized, "engine_ready": engine.ready, "engine_busy": engine.busy,
             "account_switching": switching, "queue_recovery_required": recoveryRequired, "queue_adding": enqueueing,
+            "pipeline_mode": (settings.pipelineMode ?? .automatic).rawValue, "pipeline_limits": pipelineLimits.diagnostic,
+            "pipeline_device": pipelineDevice.machine, "pipeline_stages": pipelineActivity().reduce(into: [String: Int]()) { $0[$1.key.rawValue] = $1.value },
             "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
             "app_build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
             "os": ProcessInfo.processInfo.operatingSystemVersionString]
