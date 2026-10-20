@@ -43,3 +43,13 @@ SQLite 仍在独立 actor 中读取。此版一次读取所有任务元数据，
 交付仍需用户覆盖安装，在原有受影响账号验证：先能查看界面，再继续大队列；加入时可停止；批量暂停／继续／移除；Wi-Fi 与蜂窝策略改变；强制关闭后重新进入；账号切换无串号；已上传结果没有被丢弃或无故重传。尚未完成真机大图库响应及内存采样，不将自动测试等同于该故障已实测消失。
 
 使用原 Sideloadly 配置覆盖安装；不要先卸载。恢复保护不会自动清空队列或照片。
+
+## 构建记录
+
+- 应用源码：`07d6517`，分支 `proxy-validation-0215`，未合并到 main。
+- [最终 iOS 构建](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39366052303)：成功，离线适配器回归与包检查通过。
+- [Apple 原生核心测试](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39365811453)：25 项通过，其中 8 项队列测试；另有 4 个既有 ObjC 代理核心冒烟案例通过。该测试使用的队列、数据模型与存储源码同最终构建；后续提交仅优化 HarborModel 的增量位置索引及更新文档。
+- 本机 61 项 Python 回归及本地化覆盖检查通过。没有把独立核心测试表述为全套 iOS 应用宿主／界面测试通过。
+- 最终包：`PicHarbor-0.2.21.ipa`，版本 `0.2.21`，实际 bundle build `23`，36,924,804 字节。Actions 产物名中的 `54` 是工作流运行序号。
+- SHA256：`253c31f36ff6140a87d2adaf34853a8a8435261a24f3bfd2b34dcbecbb243ec9`。
+- 本机交付位置：`C:\Users\Kanbara\Code\vscode\gpmc-ipa\dist\PicHarbor-0.2.21.ipa`。已核对包名、版本、iOS 17 最低版本、Python framework 与内嵌组件完整性。
