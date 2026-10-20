@@ -6,6 +6,7 @@
 // Calls use separate native threads; the GIL protects Python execution while
 // requests releases it for I/O. Progress handlers must be thread-local too.
 static PyObject *dispatchFunction;
+static PyObject *cancelFunction;
 static NSString * const progressKey = @"PicHarborPythonProgress";
 
 static PyObject *emitEvent(PyObject *self, PyObject *args) {
@@ -50,6 +51,7 @@ static PyObject *PyInit_harbor_native(void) { return PyModule_Create(&module); }
     if (adapter) {
         PyObject *init = PyObject_CallMethod(adapter, "initialize", "s", home.UTF8String);
         if (init) dispatchFunction = PyObject_GetAttrString(adapter, "dispatch");
+        if (init) cancelFunction = PyObject_GetAttrString(adapter, "cancel_request");
         Py_XDECREF(init);
         Py_DECREF(adapter);
     }
@@ -58,6 +60,13 @@ static PyObject *PyInit_harbor_native(void) { return PyModule_Create(&module); }
     PyErr_Clear();
     PyEval_SaveThread();
     return ready;
+}
++ (void)cancelRequest:(NSString *)requestID reason:(NSString *)reason {
+    if (!cancelFunction) return;
+    PyGILState_STATE state = PyGILState_Ensure();
+    PyObject *result = PyObject_CallFunction(cancelFunction, "ss", requestID.UTF8String, reason.UTF8String);
+    Py_XDECREF(result); PyErr_Clear();
+    PyGILState_Release(state);
 }
 + (NSString *)call:(NSString *)action payload:(NSString *)payload event:(void (^)(NSString *))event {
     if (!dispatchFunction) return @"{\"ok\":false,\"error\":\"RUNTIME_UNAVAILABLE\"}";

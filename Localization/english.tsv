@@ -16,6 +16,19 @@
 资源紧张时会自动降低并发。减少数量不会中断已开始的上传。单个大文件可能超过缓存上限。|Concurrency is reduced when resources are limited. Reducing it does not interrupt uploads already started. A large file may exceed the buffer limit.
 高级配置|Advanced configuration
 A · 运行环境|A · Runtime
+自动重试次数|Automatic retries
+查询超时（秒）|Query timeout (seconds)
+提交超时（秒）|Commit timeout (seconds)
+无进展超时（秒）|No-progress timeout (seconds)
+文件处理上限（分钟）|File time limit (minutes)
+云端等待上限（分钟）|Cloud wait limit (minutes)
+自定义任务保护|Customize task protection
+重试 0–10 次；查询 15–300 秒；提交 15–600 秒；无进展 30–1800 秒；文件处理 10–1440 分钟；云端等待 10–240 分钟。|Retries: 0–10. Queries: 15–300 s. Commits: 15–600 s. No progress: 30–1800 s. File processing: 10–1440 min. Cloud waiting: 10–240 min.
+本次处理超时，稍后会重试。|This attempt timed out. It will retry shortly.
+一段时间没有进展，稍后会重试。|No progress was detected for a while. It will retry shortly.
+多次尝试仍未成功，已暂停自动重试。可以稍后继续。|Automatic retries have stopped after repeated failures. You can resume later.
+任务长时间没有进展，已暂停。请稍后继续或查看高级信息。|This task was paused after making no progress for a long time. Resume later or view advanced information.
+云端确认等待较久，已暂停检查。请稍后重新检查。|Cloud confirmation is taking too long. Checks are paused; try again later.
 B · Google 账号|B · Google account
 Google 拒绝了应用内登录。可导入已有 gpmc 凭据验证，其余情况需要调整认证适配。|Google declined in-app sign-in. Try importing existing gpmc credentials.
 Google 登录跳转暂不受支持。请取消后导入已有凭据，或导出脱敏诊断。|This Google sign-in redirect is not supported. Import existing credentials or export diagnostics.

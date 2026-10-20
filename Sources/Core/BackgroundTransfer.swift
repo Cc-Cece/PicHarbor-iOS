@@ -69,9 +69,10 @@ final class BackgroundTransfer: NSObject, URLSessionDataDelegate, URLSessionTask
         ((Int(session.sessionDescription ?? "") ?? 0) << 32) | task.taskIdentifier
     }
     func activate() { _ = session }
-    func create(job: BackupJob, resource: MediaResource, plan: [String: Any]) throws -> HarborTransferTask {
+    func create(job: BackupJob, resource: MediaResource, plan: [String: Any], policy: BackupExecutionPolicy = BackupExecutionPolicy()) throws -> HarborTransferTask {
         guard let address = plan["url"] as? String, let url = URL(string: address), url.scheme == "https", url.host == "photos.googleapis.com" else { throw HarborError("INVALID_UPLOAD_URL") }
         var request = URLRequest(url: url)
+        request.timeoutInterval = Double(policy.idleSeconds)
         request.httpMethod = "PUT"
         request.allowsCellularAccess = !job.settings.wifiOnly
         request.setValue(String(resource.size), forHTTPHeaderField: "Content-Length")

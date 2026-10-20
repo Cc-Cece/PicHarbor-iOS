@@ -6,12 +6,13 @@ final class ExportControl: @unchecked Sendable {
     let wifiOnly: Bool
     private let budget: PipelineBufferBudget?
     private let jobID: String
+    private let lease: BackupExecutionLease?
     private let lock = NSLock()
     private var requests = Set<PHAssetResourceDataRequestID>()
     private var reason: String?
-    init(wifiOnly: Bool, budget: PipelineBufferBudget? = nil, jobID: String = "") { self.wifiOnly = wifiOnly; self.budget = budget; self.jobID = jobID }
-    func reserve(_ bytes: Int64) throws { try budget?.reserve(bytes, job: jobID) }
-    var failure: String? { lock.lock(); defer { lock.unlock() }; return reason }
+    init(wifiOnly: Bool, budget: PipelineBufferBudget? = nil, jobID: String = "") { self.wifiOnly = wifiOnly; self.budget = budget; self.jobID = jobID; self.lease = BackupExecutionContext.lease }
+    func reserve(_ bytes: Int64) throws { try lease?.check(); try budget?.reserve(bytes, job: jobID); lease?.progress() }
+    var failure: String? { lock.lock(); defer { lock.unlock() }; return reason ?? lease?.cancellation }
     func register(_ id: PHAssetResourceDataRequestID) {
         lock.lock(); let cancelled = reason != nil
         if !cancelled { requests.insert(id) }; lock.unlock()

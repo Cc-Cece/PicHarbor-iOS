@@ -20,6 +20,7 @@ import uuid
 from urllib.parse import parse_qs
 
 import requests
+from harbor_deadline import RequestBudget, DeadlineExceeded, DeadlineSession, current as current_budget, check as check_budget, cancel_request
 from gpmc.api import Api
 from gpmc.auth import authenticate
 from gpmc.exceptions import AuthenticationError, BrowserAuthenticationRequiredError
@@ -32,7 +33,8 @@ class Failure(Exception):
 class IOSApi(Api):
     def _new_session(self):
         # No inherited proxy/TLS override or hidden retry multiplication.
-        session = requests.Session()
+        budget = current_budget()
+        session = DeadlineSession(budget) if budget is not None else requests.Session()
         session.verify = True
         session.trust_env = False
         if self.proxy:
@@ -41,6 +43,8 @@ class IOSApi(Api):
 
 
 def classify(error):
+    if isinstance(error, DeadlineExceeded):
+        return error.code
     if isinstance(error, Failure):
         return str(error)
     if isinstance(error, (AuthenticationError, BrowserAuthenticationRequiredError)):
@@ -102,11 +106,11 @@ class Service:
         # barrier. An in-flight request never changes its account or proxy.
         with self.identity_condition:
             while self.changing_identity:
-                self.identity_condition.wait()
+                check_budget(); self.identity_condition.wait(timeout=.5)
             self.changing_identity = True
             try:
                 while self.active_protocol_calls:
-                    self.identity_condition.wait()
+                    check_budget(); self.identity_condition.wait(timeout=.5)
                 if self.api is not None:
                     self.api.proxy = value.get("proxy_url", "")
                 result = self.dispatch(action, value)
@@ -122,7 +126,7 @@ class Service:
         from harbor_protocol import Protocol
         with self.identity_condition:
             while self.changing_identity:
-                self.identity_condition.wait()
+                check_budget(); self.identity_condition.wait(timeout=.5)
             if self.api is None:
                 raise Failure("LOGIN_REQUIRED")
             if value.get("account") != self.account:
@@ -143,7 +147,10 @@ class Service:
             context.service.api = request_api
             self.active_protocol_calls += 1
         try:
-            return context.dispatch(action, value)
+            check_budget()
+            result = context.dispatch(action, value)
+            check_budget()
+            return result
         finally:
             with self.identity_condition:
                 pool = self.protocol_pool.pop(identity, [])
@@ -328,14 +335,19 @@ def dispatch(action, payload):
             match = re.fullmatch(r"http://127\.0\.0\.1:([0-9]{1,5})", proxy) if isinstance(proxy, str) else None
             if not match or not 24500 <= int(match[1]) < 24564:
                 raise Failure("INVALID_PROXY")
-        from harbor_protocol import Protocol
-        if isinstance(_service, Service):
-            result = _service.protocol_dispatch(action, value) if action in Protocol.actions else _service.control_dispatch(action, value)
-        else:
-            # Test doubles and older embedders retain the legacy boundary.
-            if _service.api is not None:
-                _service.api.proxy = proxy
-            result = _service.dispatch(action, value)
+        seconds = value.get("timeout_seconds", 90 if action in ("commit_resource", "commit_pair_photo", "pair_apple") else 60)
+        if type(seconds) not in (int, float) or not .01 <= seconds <= 600:
+            raise Failure("INVALID_TIMEOUT")
+        with RequestBudget(request_id, seconds) as budget:
+            from harbor_protocol import Protocol
+            if isinstance(_service, Service):
+                result = _service.protocol_dispatch(action, value) if action in Protocol.actions else _service.control_dispatch(action, value)
+            else:
+                # Test doubles and older embedders retain the legacy boundary.
+                if _service.api is not None:
+                    _service.api.proxy = proxy
+                result = _service.dispatch(action, value)
+            budget.check()
         return json.dumps({"ok": True, "protocol_version": 2, "request_id": request_id, **result})
     except Exception as error:
         code = classify(error)

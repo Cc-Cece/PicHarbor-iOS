@@ -148,7 +148,7 @@ enum ResourceExporter {
                 let name = (resource.originalFilename as NSString).lastPathComponent
                 let path = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension((name as NSString).pathExtension)
                 try await PhotoResourceWriter.write(resource: resource, url: path, control: control)
-                let digest = try await Task.detached { try hash(path) }.value
+                let digest = try await hashAsync(path)
                 result.append(MediaResource(role: role, path: path.path, name: name, sha1: digest.0, sha256: digest.1, size: digest.2))
             }
         }
@@ -163,15 +163,21 @@ enum ResourceExporter {
         }
         return result
     }
-    static func hash(_ url: URL) throws -> (String, String, Int64) {
+    static func hashAsync(_ url: URL) async throws -> (String, String, Int64) {
+        let lease = BackupExecutionContext.lease
+        return try await Task.detached { try hash(url, lease: lease) }.value
+    }
+    static func hash(_ url: URL, lease: BackupExecutionLease? = nil) throws -> (String, String, Int64) {
         let before = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         let input = try FileHandle(forReadingFrom: url); defer { try? input.close() }
         var sha1 = Insecure.SHA1(), sha256 = SHA256(), size: Int64 = 0
         while true {
             let count = try autoreleasepool { () throws -> Int in
                 try Task.checkCancellation()
+                try lease?.check()
                 guard let data = try input.read(upToCount: 1024 * 1024), !data.isEmpty else { return 0 }
                 sha1.update(data: data); sha256.update(data: data); size += Int64(data.count)
+                lease?.progress()
                 return data.count
             }
             if count == 0 { break }

@@ -88,6 +88,12 @@ final class HarborModel: ObservableObject {
     private var settingsGeneration: [String: Int64] = [:]
     private let albumGate = PreparationGate()
     private var workers = Set<String>()
+    private var executionLeases: [String: BackupExecutionLease] = [:]
+    private var cloudClocks: [String: BackupObservedClock] = [:]
+    private var cloudSeconds: [String: Double] = [:]
+    private var transferClocks: [String: BackupObservedClock] = [:]
+    private var transferWatches: [String: BackupTransferWatch] = [:]
+    private var lastBudgetSweep: Double = -100
     @Published private(set) var workerStages: [String: PipelineStage] = [:]
     @Published private(set) var pipelineDevice = PipelineConditions()
     private var memoryWarningUntil: TimeInterval = 0
@@ -117,7 +123,8 @@ final class HarborModel: ObservableObject {
         guard var value = lookupJob(jobID) else { throw HarborError("JOB_PAUSED") }
         try checkpoint(value)
         value.pipelineStage = stage; value.state = .queued; value.retryAt = nil
-        try await persist(value)
+        var budget = value.recovery ?? BackupRecoveryBudget(); budget.handoffs += 1
+        try await persist(value, recoveryBudget: budget)
         throw PipelineBoundary()
     }
     private func queueUpload(_ job: BackupJob, resource: MediaResource, plan: [String: Any]) async throws {
@@ -140,9 +147,11 @@ final class HarborModel: ObservableObject {
             .flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
         guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
         try checkpoint(value)
-        let task = try transfer.create(job: value, resource: resource, plan: prepared.plan)
+        let task = try transfer.create(job: value, resource: resource, plan: prepared.plan, policy: settings.executionPolicy)
         value.state = .transferring; value.resources[index].transportID = task.taskIdentifier; value.failureStage = "transfer_creation"
         value.transferStartedAt = Date()
+        value.transferWatch = BackupTransferWatch(taskID: task.taskIdentifier, resourceID: resource.id, policy: settings.executionPolicy)
+        transferWatches[value.id] = value.transferWatch; transferClocks[value.id] = nil
         do { try await persist(value) } catch { task.cancel(); throw error }
         uploadPlans.removeValue(forKey: value.id)
         if lookupJob(value.id)?.state == .cancelled { task.cancel() }
@@ -236,6 +245,9 @@ final class HarborModel: ObservableObject {
                 let id = sample.jobID, sent = sample.sent, total = sample.total
                 guard let self, let value = self.lookupJob(id), value.account == self.account, total > 0 else { return }
                 self.rateTracker.record(sample)
+                if var watch = self.transferWatches[id] ?? value.transferWatch, watch.taskID == sample.taskID {
+                    watch.progress(sample.sent); self.transferWatches[id] = watch
+                }
                 let now = Date()
                 guard sent >= total || now.timeIntervalSince(self.progressTimes[id] ?? .distantPast) >= 0.5 else { return }
                 self.progressTimes[id] = now
@@ -348,10 +360,14 @@ final class HarborModel: ObservableObject {
     private func fatalStorage(_ error: Error) {
         storageFailed = true; notice = L10n.text("任务存储不可用，已停止新任务：{0}", [String(describing: error.localizedDescription)])
     }
-    private func persist(_ value: BackupJob) async throws {
+    private func persist(_ value: BackupJob, recoveryBudget: BackupRecoveryBudget? = nil) async throws {
         guard let store else { throw HarborError("DATABASE_ERROR") }
         if lookupJob(value.id)?.activityHidden == true && value.activityHidden != true { return }
         var value = value; value.updated = Date()
+        value.recovery = recoveryBudget ?? lookupJob(value.id)?.recovery ?? value.recovery
+        let previousEvents = value.recovery?.events ?? []
+        value.observeRecoveryProgress()
+        if value.recovery?.events != previousEvents { BackupExecutionContext.lease?.checkpoint(); cloudSeconds[value.id] = nil }
         value.generation = (lookupJob(value.id)?.generation ?? 0) + 1
         // Publish intent before yielding: pause/cancel must see the latest transport ID.
         if let index = jobPositions[value.id] { jobs[index] = value } else { appendJobs([value]) }
@@ -383,6 +399,7 @@ final class HarborModel: ObservableObject {
         settingsGeneration = Dictionary(uniqueKeysWithValues: saved.map { ($0.account, $0.generation ?? 0) })
         settings = saved.first(where: { $0.account == account })?.settings ?? BackupSettings()
         uploadPlans = [:]
+        cloudClocks = [:]; cloudSeconds = [:]; transferClocks = [:]; transferWatches = [:]; lastBudgetSweep = -100
         rateTracker = TransferRateTracker(); uploadWorkload = nil; transferProgress = [:]; progressTimes = [:]
         lastArchiveSweep = .distantPast
         savedWifiOnly = settings.wifiOnly
@@ -594,6 +611,61 @@ final class HarborModel: ObservableObject {
         job.account == account && [.queued, .waiting, .confirming, .paired].contains(job.state) &&
         (job.retryAt == nil || job.retryAt! <= Date()) && !workers.contains(job.id)
     }
+    private func monitorBudgets() async {
+        let allowed = UIApplication.shared.applicationState == .active && network.connected && (!settings.wifiOnly || network.wifi)
+        guard allowed else { cloudClocks = [:]; transferClocks = [:]; return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastBudgetSweep >= 5 else { return }
+        lastBudgetSweep = now
+        var changes: [String: BackupJob] = [:], expired = Set<Int>()
+        var liveCloud = Set<String>(), liveTransfers = Set<String>()
+        for var job in jobs where job.account == account && job.unfinished && ![.paused, .cancelled, .failed, .attention].contains(job.state) {
+            if job.awaitingCloud {
+                liveCloud.insert(job.id)
+                var clock = cloudClocks[job.id] ?? BackupObservedClock()
+                let delta = clock.tick(now: now, running: true); cloudClocks[job.id] = clock
+                var budget = job.recovery ?? BackupRecoveryBudget()
+                let seconds = (cloudSeconds[job.id] ?? budget.cloudSeconds) + delta
+                cloudSeconds[job.id] = seconds
+                let exceeded = seconds >= Double(settings.executionPolicy.cloudMinutes * 60)
+                if exceeded || Int(seconds / 60) > Int(budget.cloudSeconds / 60) {
+                    budget.cloudSeconds = seconds; job.recovery = budget
+                    if exceeded {
+                        executionLeases[job.id]?.cancel("JOB_PAUSED")
+                        job.state = .attention; job.lastAttemptError = job.error; job.error = "CLOUD_WAIT_LIMIT"; job.retryAt = nil
+                    }
+                    changes[job.id] = job
+                }
+            }
+            guard job.state == .transferring,
+                  let resource = job.resources.first(where: { $0.transportID != nil }), let id = resource.transportID else { continue }
+            liveTransfers.insert(job.id)
+            var clock = transferClocks[job.id] ?? BackupObservedClock()
+            let delta = clock.tick(now: now, running: true); transferClocks[job.id] = clock
+            var watch = transferWatches[job.id] ?? job.transferWatch ?? BackupTransferWatch(taskID: id, resourceID: resource.id, policy: settings.executionPolicy)
+            guard watch.taskID == id else { transferWatches[job.id] = nil; continue }
+            let code = watch.tick(delta, size: resource.size); transferWatches[job.id] = watch
+            if let code {
+                expired.insert(id)
+                for index in job.resources.indices where job.resources[index].transportID == id { job.resources[index].transportID = nil }
+                job.transferWatch = nil; job.failureStage = "transfer_watchdog"
+                job.retryFailure(code, policy: watch.policy)
+                changes[job.id] = job
+            } else if Int(watch.active / 60) > Int((job.transferWatch?.active ?? 0) / 60) {
+                job.transferWatch = watch; changes[job.id] = job
+            }
+        }
+        cloudClocks = cloudClocks.filter { liveCloud.contains($0.key) }; cloudSeconds = cloudSeconds.filter { liveCloud.contains($0.key) }
+        transferClocks = transferClocks.filter { liveTransfers.contains($0.key) }; transferWatches = transferWatches.filter { liveTransfers.contains($0.key) }
+        if !changes.isEmpty {
+            // One bounded batch publication; do not rebuild large activity lists
+            // once for every waiting task on every watchdog tick.
+            do { try await persistBatch(Array(changes.values)) } catch { fatalStorage(error); return }
+        }
+        if !expired.isEmpty {
+            for task in await transfer.tasks() where expired.contains(task.taskIdentifier) { task.cancel() }
+        }
+    }
     func pump() async {
         if pumping { pumpAgain = true; return }
         guard initialized, !account.isEmpty, engine.ready, !storageFailed, !switching, !updatingNetwork, !recoveryRequired, !editingQueue else { return }
@@ -612,6 +684,7 @@ final class HarborModel: ObservableObject {
             lastStagingSweep = Date(); await collectFinishedStaging()
         }
         guard !switching, !updatingNetwork, !storageFailed, !recoveryRequired else { return }
+        await monitorBudgets()
         refreshPipelineDevice()
         let limits = pipelineLimits
         let buffered = PipelineScheduler.bufferedBytes(jobs, account: account)
@@ -633,11 +706,26 @@ final class HarborModel: ObservableObject {
                 continue
             }
             workers.insert(id); workerStages[id] = candidate.stage
+            let lease = BackupExecutionLease(stage: candidate.stage, policy: settings.executionPolicy)
+            executionLeases[id] = lease
             if candidate.stage == .preparation { bufferBudget.begin(id) }
             Task { [weak self] in
                 guard let self else { return }
                 let began = ProcessInfo.processInfo.systemUptime
+                let watchdog = Task { [weak self] in
+                    var previous = ProcessInfo.processInfo.systemUptime
+                    while !Task.isCancelled {
+                        do { try await Task.sleep(for: .seconds(1)) } catch { break }
+                        guard let self else { break }
+                        let now = ProcessInfo.processInfo.systemUptime; let delta = now - previous; previous = now
+                        if self.lookupJob(id)?.state == .paused || self.lookupJob(id)?.state == .cancelled || self.switching { lease.cancel("JOB_PAUSED") }
+                        else if !self.network.connected || (self.settings.wifiOnly && !self.network.wifi) { lease.cancel("WAITING_NETWORK") }
+                        else if UIApplication.shared.applicationState == .active { lease.tick(delta) }
+                        if let code = lease.cancellation { self.exports[id]?.cancel(code) }
+                    }
+                }
                 defer {
+                    watchdog.cancel(); self.executionLeases.removeValue(forKey: id)
                     if candidate.stage == .preparation { self.bufferBudget.finish(id) }
                     self.workers.remove(id); self.workerStages.removeValue(forKey: id)
                     Task { await self.pump() }
@@ -646,12 +734,19 @@ final class HarborModel: ObservableObject {
                       ![.paused, .cancelled].contains(value.state), !self.switching, !self.updatingNetwork else { return }
                 value.pipelineStage = candidate.stage; value.retryAt = nil
                 value.state = candidate.stage == .preparation ? .preparing : candidate.stage == .commit ? .committing : value.hasConfirmedPairs ? .paired : .confirming
-                do { try await self.persist(value); await self.process(value) } catch { self.fatalStorage(error) }
+                await BackupExecutionContext.$lease.withValue(lease) {
+                    do { try await self.persist(value); await self.process(value) } catch { self.fatalStorage(error) }
+                }
                 if candidate.stage != .upload, var latest = self.lookupJob(id), latest.activityHidden != true {
                     var seconds = latest.pipelineSeconds ?? [:]
                     seconds[candidate.stage.rawValue, default: 0] += max(0, ProcessInfo.processInfo.systemUptime - began)
                     latest.pipelineSeconds = seconds
-                    try? await self.persist(latest)
+                    var budget = latest.recovery ?? BackupRecoveryBudget()
+                    if !latest.awaitingCloud && ![.paused, .cancelled].contains(latest.state) { budget.activeWithoutProgress += lease.checkpointSeconds }
+                    if latest.unfinished && ![.paused, .cancelled].contains(latest.state) && budget.stalled(policy: lease.policy) {
+                        latest.state = .attention; latest.error = "NO_PROGRESS_LIMIT"; latest.retryAt = nil
+                    }
+                    try? await self.persist(latest, recoveryBudget: budget)
                 }
             }
         }
@@ -678,6 +773,7 @@ final class HarborModel: ObservableObject {
         }
     }
     private func checkpoint(_ job: BackupJob) throws {
+        try BackupExecutionContext.lease?.check()
         guard !recoveryRequired else { throw HarborError("JOB_PAUSED") }
         guard !switching, job.account == account else { throw HarborError("ACCOUNT_CHANGED") }
         guard let current = lookupJob(job.id), current.state != .paused, current.state != .cancelled else { throw HarborError("JOB_PAUSED") }
@@ -700,9 +796,11 @@ final class HarborModel: ObservableObject {
         } catch {
             guard var job = lookupJob(initial.id), job.state != .paused, job.state != .cancelled else { return }
             job.error = (error as? HarborError)?.code ?? "PROXY_UNAVAILABLE"
-            job.failureStage = "proxy_route"; job.state = .waiting
-            job.retryAt = Date(timeIntervalSinceNow: 15); job.proxyFailures = []
-            try? await persist(job)
+            job.failureStage = "proxy_route"; job.proxyFailures = []
+            if job.error == "JOB_PAUSED" || job.error == "ACCOUNT_CHANGED" { return }
+            if job.error == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil }
+            else { job.retryFailure(job.error, policy: BackupExecutionContext.lease?.policy ?? settings.executionPolicy) }
+            try? await persist(job, recoveryBudget: job.recovery)
         }
     }
     func setProxyPolicy(_ id: String, policy: ProxyPolicy?) async {
@@ -805,7 +903,7 @@ final class HarborModel: ObservableObject {
                     }
                     stage = "source_read"
                     guard FileManager.default.fileExists(atPath: resource.path) else { throw HarborError("SOURCE_FILE_MISSING") }
-                    let digest = try await Task.detached { try ResourceExporter.hash(URL(fileURLWithPath: resource.path)) }.value
+                    let digest = try await ResourceExporter.hashAsync(URL(fileURLWithPath: resource.path))
                     guard digest.1 == resource.sha256, digest.2 == resource.size else { throw HarborError("SOURCE_CHANGED") }
                     try checkpoint(job)
                     if let response = resource.responsePath {
@@ -927,18 +1025,11 @@ final class HarborModel: ObservableObject {
             else if (code.hasPrefix("REMOTE_MOTION_") && code != "REMOTE_MOTION_TRASHED") || code == "PAIR_CONFIRMATION_PENDING" {
                 job.waitForConfirmation()
             }
-            else if code == "PREVIOUS_BACKUP_NOT_VISIBLE" {
-                job.state = job.attempts <= 3 ? .confirming : .attention
-                job.retryAt = job.attempts <= 3 ? Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5) : nil
-            }
-            else if code == "NETWORK_ERROR" && ProxyManager.shared.preferences.enabled {
-                job.state = .waiting; job.retryAt = Date(timeIntervalSinceNow: 10); job.attempts = max(0, job.attempts - 1)
-            }
-            else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "REMOTE_NOT_VISIBLE"].contains(code) && job.attempts <= 3 {
-                job.state = code == "REMOTE_NOT_VISIBLE" ? (job.hasConfirmedPairs ? .paired : .confirming) : .waiting
-                job.retryAt = Date(timeIntervalSinceNow: pow(2, Double(job.attempts)) * 5)
+            else if code == "REMOTE_NOT_VISIBLE" { job.waitForConfirmation() }
+            else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "PREVIOUS_BACKUP_NOT_VISIBLE", "STAGE_TIMEOUT", "NO_PROGRESS_TIMEOUT", "PROXY_UNAVAILABLE"].contains(code) {
+                job.retryFailure(code, policy: BackupExecutionContext.lease?.policy ?? settings.executionPolicy)
             } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "SOURCE_SNAPSHOT_LOCKED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
-            try? await persist(job)
+            try? await persist(job, recoveryBudget: job.recovery)
         }
     }
     private func stableSource(for job: BackupJob) async throws -> PHAsset {
@@ -1096,7 +1187,7 @@ final class HarborModel: ObservableObject {
     }
     private func verifyPairSource(_ resource: MediaResource) async throws {
         guard FileManager.default.fileExists(atPath: resource.path) else { throw HarborError("SOURCE_FILE_MISSING") }
-        let digest = try await Task.detached { try ResourceExporter.hash(URL(fileURLWithPath: resource.path)) }.value
+        let digest = try await ResourceExporter.hashAsync(URL(fileURLWithPath: resource.path))
         guard digest.0 == resource.sha1, digest.1 == resource.sha256, digest.2 == resource.size else { throw HarborError("SOURCE_CHANGED") }
     }
     private func launchPairTransfer(_ initial: BackupJob, index: Int, directory: URL) async throws {
@@ -1146,11 +1237,13 @@ final class HarborModel: ObservableObject {
         }
         do {
             let paused = job.state == .paused
+            let attemptPolicy = job.transferWatch?.policy ?? settings.executionPolicy
             if job.state == .cancelled {
                 try? FileManager.default.removeItem(atPath: receipt.responsePath)
                 transfer.acknowledge(receipt); return
             }
             job.resources[index].transportID = nil
+            job.transferWatch = nil; transferWatches.removeValue(forKey: job.id); transferClocks.removeValue(forKey: job.id)
             if let began = job.transferStartedAt {
                 var seconds = job.pipelineSeconds ?? [:]
                 seconds[PipelineStage.upload.rawValue, default: 0] += max(0, Date().timeIntervalSince(began))
@@ -1168,15 +1261,16 @@ final class HarborModel: ObservableObject {
                 }
                 job.failureStage = "upload_response"
                 job.resources[index].responsePath = nil
-                job.attempts += 1; job.retryAt = Date(timeIntervalSinceNow: min(300, pow(2, Double(job.attempts)) * 5))
-                if job.attempts > 3 && !paused && !ProxyManager.shared.preferences.enabled { job.state = .failed }
+                job.attempts += 1
+                if !paused { job.retryFailure(receipt.error, policy: attemptPolicy) }
             }
-            try await persist(job); transfer.acknowledge(receipt); await pump()
+            try await persist(job, recoveryBudget: job.recovery); transfer.acknowledge(receipt); await pump()
         } catch { notice = error.localizedDescription }
     }
     func pause(_ id: String) async {
         guard var job = lookupJob(id), job.account == account, job.state != .completed, job.state != .cancelled else { return }
         exports[id]?.cancel("JOB_PAUSED")
+        executionLeases[id]?.cancel("JOB_PAUSED")
         job.state = .paused; try? await persist(job); await transfer.pause(jobID: id)
     }
     func pauseAll() async {
@@ -1187,6 +1281,7 @@ final class HarborModel: ObservableObject {
         let values = jobs.filter { selected.contains($0.id) && $0.account == account && $0.unfinished && $0.state != .cancelled }
         let ids = Set(values.map(\.id))
         for (id, control) in exports where ids.contains(id) { control.cancel("JOB_PAUSED") }
+        for (id, lease) in executionLeases where ids.contains(id) { lease.cancel("JOB_PAUSED") }
         var changes = values
         for index in changes.indices {
             changes[index].state = .paused; changes[index].updated = Date()
@@ -1209,6 +1304,7 @@ final class HarborModel: ObservableObject {
                 if restartTransport || !transports.contains(value.resources[index].transportID ?? -1) { value.resources[index].transportID = nil }
             }
             value.error = ""; value.retryAt = nil; value.attempts = 0; value.sourceWaits = 0; value.confirmationRetries = 0
+            value.resetRecoveryAllowance(); value.transferWatch = nil; transferWatches[value.id] = nil; cloudClocks[value.id] = nil; cloudSeconds[value.id] = nil; transferClocks[value.id] = nil
             value.state = value.resources.contains { $0.transportID != nil } ? .transferring : .queued
             changes.append(value); resumed.insert(value.id)
         }
@@ -1236,14 +1332,15 @@ final class HarborModel: ObservableObject {
             for index in job.resources.indices { job.resources[index].transportID = nil }
         }
         job.error = ""; job.retryAt = nil; job.attempts = 0; job.sourceWaits = 0; job.confirmationRetries = 0
+        job.resetRecoveryAllowance(); job.transferWatch = nil; transferWatches[id] = nil; cloudClocks[id] = nil; cloudSeconds[id] = nil; transferClocks[id] = nil
         let liveTasks = await transfer.tasks()
         for index in job.resources.indices {
             if let transportID = job.resources[index].transportID, !liveTasks.contains(where: { $0.taskIdentifier == transportID }) { job.resources[index].transportID = nil }
         }
         if job.resources.contains(where: { $0.transportID != nil }) {
-            job.state = .transferring; try? await persist(job); await transfer.resume(jobID: id)
+            job.state = .transferring; try? await persist(job, recoveryBudget: job.recovery); await transfer.resume(jobID: id)
         } else {
-            job.state = .queued; try? await persist(job)
+            job.state = .queued; try? await persist(job, recoveryBudget: job.recovery)
         }
         await pump()
     }
@@ -1265,6 +1362,7 @@ final class HarborModel: ObservableObject {
         guard var job = lookupJob(id), job.account == account, job.state != .completed else { return }
         exports[id]?.cancel("JOB_PAUSED")
         uploadPlans.removeValue(forKey: id)
+        executionLeases[id]?.cancel("JOB_PAUSED")
         job.state = .cancelled; job.evidence = nil; try? await persist(job); await transfer.cancel(jobID: id)
     }
     func removeUnfinished(_ ids: Set<String>) async {

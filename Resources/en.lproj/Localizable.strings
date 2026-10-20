@@ -27,6 +27,7 @@
 "{0} 项" = "{0}";
 "{0} 项 · {1}\n{2} · {3}" = "{0} selected · {1}\n{2} · {3}";
 "{0} 项 · 已完成 {1} 项" = "{1} of {0} completed";
+"一段时间没有进展，稍后会重试。" = "No progress was detected for a while. It will retry shortly.";
 "上传中" = "Uploading";
 "上传响应内容无效，尚未完成云端提交。请保持代理可访问 Google 后重试。" = "The upload response is invalid. Make sure Google is reachable and retry.";
 "上传响应文件缺失或为空，尚未完成云端提交。请重新准备此任务。" = "The upload response is missing or empty. Prepare this task again.";
@@ -71,6 +72,8 @@
 "云端未找到相同内容，原件会保留。" = "No matching cloud content was found. Your local original is kept.";
 "云端状态证据已过期，请重新检查。" = "The cloud check expired. Check again.";
 "云端确认" = "Cloud confirmation";
+"云端确认等待较久，已暂停检查。请稍后重新检查。" = "Cloud confirmation is taking too long. Checks are paused; try again later.";
+"云端等待上限（分钟）" = "Cloud wait limit (minutes)";
 "云端配对查询返回了无法识别的结果，请稍后重试。" = "The cloud pairing response could not be read. Try again later.";
 "云端项目已在回收站，请先到谷歌相册恢复。" = "This item is in the cloud trash. Restore it in Google Photos first.";
 "仅 Wi-Fi" = "Wi-Fi only";
@@ -107,6 +110,7 @@
 "任务状态" = "Task status";
 "任务详情" = "Task details";
 "任务连接策略" = "Task connection policy";
+"任务长时间没有进展，已暂停。请稍后继续或查看高级信息。" = "This task was paused after making no progress for a long time. Resume later or view advanced information.";
 "任务默认跟随全局，也可在任务详情单独设置。直连需要明确允许，失败后继续等待，不会标记完成。" = "Tasks follow the global policy unless overridden in task details. Direct access requires permission. Failed connections wait and do not mark a task complete.";
 "任务默认跟随此设置，也可单独调整。仅在你允许时使用直连。" = "Tasks follow this setting unless individually overridden. Direct connections require your permission.";
 "优先保持正常连接，失败后结合延时和近期表现选择其他节点。" = "Keep working connections. On failure, choose another node using latency and recent results.";
@@ -245,6 +249,7 @@
 "复制文件名" = "Copy filename";
 "复制测试结果" = "Copy test results";
 "外观" = "Appearance";
+"多次尝试仍未成功，已暂停自动重试。可以稍后继续。" = "Automatic retries have stopped after repeated failures. You can resume later.";
 "失败" = "Failed";
 "好" = "OK";
 "媒体类型" = "Media type";
@@ -384,11 +389,13 @@
 "拍摄时间" = "Date taken";
 "按当前核验策略继续" = "Continue with current check settings";
 "按当前设置重新备份" = "Back up again with current settings";
+"提交超时（秒）" = "Commit timeout (seconds)";
 "提交配对用原图" = "Save original photo for pairing";
 "操作完成，请查看记录。" = "Finished. Check the records.";
 "操作未完成（{0}），请重试或导出诊断报告。" = "Could not finish ({0}). Retry or export diagnostics.";
 "支持 Clash Meta 配置，最多保存 20 份，每份最多 64 个节点。" = "Supports Clash Meta configurations. Save up to 20 configurations with 64 nodes each.";
 "文件上传" = "File uploads";
+"文件处理上限（分钟）" = "File time limit (minutes)";
 "文件已传输，云端尚未确认为动态照片。稍后重试会重新检查，不重复上传。" = "Files uploaded. The cloud has not confirmed the motion photo yet. Retry checks again without uploading again.";
 "无法保存或读取上传响应文件。请检查本机空间，再重新准备此任务。" = "Could not read or save the upload response. Check free space and prepare this task again.";
 "无法取得同一版本的完整 Live Photo 资源。" = "The complete photo and video for this Live Photo version are unavailable.";
@@ -399,6 +406,7 @@
 "无法读取原件或写入暂存文件，请检查空间与照片权限。" = "Could not read the original or save a temporary file. Check storage and Photos access.";
 "无法读取图片，请选择另一张二维码图片。" = "Could not read the image. Choose another QR code image.";
 "无法读取这项照片，请检查相册访问权限。" = "This photo could not be read. Check Photos access.";
+"无进展超时（秒）" = "No-progress timeout (seconds)";
 "旧版记录" = "Earlier records";
 "旧配置未能重新启动，请重新测试连接。" = "The previous configuration could not restart. Test the connection again.";
 "时长" = "Duration";
@@ -450,10 +458,12 @@
 "本批暂无符合筛选的任务" = "No matching tasks in this batch";
 "本机及云端照片保留。仍可手动重新备份。" = "Local and cloud photos are kept. You can back up manually again.";
 "本机账号" = "Accounts on this iPhone";
+"本次处理超时，稍后会重试。" = "This attempt timed out. It will retry shortly.";
 "来源" = "Source";
 "查看活动" = "View Activity";
 "查看照片详情" = "View photo details";
 "查询耗时包含协议排队与网络响应。" = "Duration includes request queuing and network response.";
+"查询超时（秒）" = "Query timeout (seconds)";
 "查重与申请上传" = "Check for duplicates and prepare upload";
 "标准" = "Standard";
 "核对并请求删除" = "Check and request deletion";
@@ -627,7 +637,9 @@
 "自动备份会识别范围内新增和修改内容。系统后台安排不保证即时，打开应用可继续。" = "New and changed photos in your scope are detected automatically. Background work may be delayed; open the app to continue.";
 "自动归档" = "Automatic archiving";
 "自动选择" = "Automatic";
+"自动重试次数" = "Automatic retries";
 "自定义" = "Custom";
+"自定义任务保护" = "Customize task protection";
 "至少 {0}" = "At least {0}";
 "节点" = "Nodes";
 "节点数" = "Node Count";
@@ -760,6 +772,7 @@
 "重新读取原件并查重" = "Read original and check backup again";
 "重置当前账号的备份、网络和清理偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。" = "Reset backup, connection, and cleanup preferences for this account. Automatic backup turns off and the scope needs confirmation. Accounts, photos, existing tasks, language, and appearance are kept. Photos will not be uploaded again.";
 "重置当前账号的备份和网络偏好。自动备份将关闭，范围需要重新确认。账号、照片、历史任务、语言及外观会保留，不会重新上传照片。" = "Reset this account's backup and network preferences. Automatic backup will turn off and the scope will need confirmation. Accounts, photos, existing jobs, language and appearance are kept. Photos will not be uploaded again.";
+"重试 0–10 次；查询 15–300 秒；提交 15–600 秒；无进展 30–1800 秒；文件处理 10–1440 分钟；云端等待 10–240 分钟。" = "Retries: 0–10. Queries: 15–300 s. Commits: 15–600 s. No progress: 30–1800 s. File processing: 10–1440 min. Cloud waiting: 10–240 min.";
 "链接仅保存在本机，不加入诊断报告。" = "The URL stays on this device and is excluded from diagnostics.";
 "链接测试（临时）" = "Link tests (temporary)";
 "错误码" = "Error code";

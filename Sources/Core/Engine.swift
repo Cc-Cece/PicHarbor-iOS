@@ -59,6 +59,11 @@ struct HarborError: LocalizedError {
         case "ORIGINAL_UNAVAILABLE": return L10n.text("云端原件无法访问或大小不符，原件会保留。")
         case "FILE_ACCESS": return L10n.text("无法读取原件或写入暂存文件，请检查空间与照片权限。")
         case "STAGING_BUFFER_WAIT": return L10n.text("等待上传队列腾出空间。")
+        case "STAGE_TIMEOUT", "TRANSFER_TIMEOUT": return L10n.text("本次处理超时，稍后会重试。")
+        case "NO_PROGRESS_TIMEOUT": return L10n.text("一段时间没有进展，稍后会重试。")
+        case "RETRY_LIMIT": return L10n.text("多次尝试仍未成功，已暂停自动重试。可以稍后继续。")
+        case "NO_PROGRESS_LIMIT": return L10n.text("任务长时间没有进展，已暂停。请稍后继续或查看高级信息。")
+        case "CLOUD_WAIT_LIMIT": return L10n.text("云端确认等待较久，已暂停检查。请稍后重新检查。")
         case "SOURCE_FILE_MISSING": return L10n.text("已导出的暂存原件不存在。请重新准备此任务；不需要删除相册原件。")
         case "UPLOAD_RESPONSE_MISSING", "UPLOAD_RESPONSE_EMPTY": return L10n.text("上传响应文件缺失或为空，尚未完成云端提交。请重新准备此任务。")
         case "UPLOAD_RESPONSE_WRITE", "UPLOAD_RESPONSE_READ": return L10n.text("无法保存或读取上传响应文件。请检查本机空间，再重新准备此任务。")
@@ -146,6 +151,8 @@ final class Engine: ObservableObject {
     }
 
     func invoke(_ action: String, _ payload: [String: Any] = [:]) async throws -> [String: Any] {
+        let lease = BackupExecutionContext.lease
+        try lease?.check()
         let requestID = UUID().uuidString
         var envelope = payload
         if !["probe", "capabilities", "records", "logout"].contains(action) {
@@ -155,8 +162,13 @@ final class Engine: ObservableObject {
             envelope["proxy_url"] = port > 0 ? "http://127.0.0.1:\(port)" : ""
         }
         envelope["protocol_version"] = 2; envelope["request_id"] = requestID
+        if let lease { envelope["timeout_seconds"] = min(lease.remaining, Double(lease.stage == .commit ? lease.policy.commitSeconds : lease.policy.querySeconds)) }
         let encoded = try JSONSerialization.data(withJSONObject: envelope)
         let input = String(decoding: encoded, as: UTF8.self)
+        lease?.register(requestID) { code in
+            DispatchQueue.global(qos: .userInitiated).async { PythonBridge.cancelRequest(requestID, reason: code) }
+        }
+        defer { lease?.unregister(requestID) }
         let output: String = await withCheckedContinuation { continuation in
             queue.async {
                 let result = PythonBridge.call(action, payload: input) { value in
@@ -174,6 +186,7 @@ final class Engine: ObservableObject {
                 continuation.resume(returning: result)
             }
         }
+        try lease?.check()
         let result = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] ?? [:]
         guard result["protocol_version"] as? Int == 2, result["request_id"] as? String == requestID else { throw HarborError("PROTOCOL_VERSION") }
         guard result["ok"] as? Bool == true else { throw HarborError(result["error"] as? String ?? "ENGINE_ERROR") }
