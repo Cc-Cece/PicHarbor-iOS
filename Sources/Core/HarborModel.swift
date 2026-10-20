@@ -72,6 +72,7 @@ final class HarborModel: ObservableObject {
     func stopAddingTasks() { stopEnqueue = true; scanAgain = false }
 
     private(set) var assetStates: [String: AssetBackupState] = [:]
+    private(set) var completedAssets = CompletedAssetIndex()
     @Published var settings = BackupSettings()
     @Published private(set) var accounts: [String] = []
     @Published var notice = ""
@@ -403,10 +404,11 @@ final class HarborModel: ObservableObject {
         rateTracker = TransferRateTracker(); uploadWorkload = nil; transferProgress = [:]; progressTimes = [:]
         lastArchiveSweep = .distantPast
         savedWifiOnly = settings.wifiOnly
-        assetStates = [:]; updateAssetStates(jobs); refreshRecovery()
+        completedAssets.reset(account: account); assetStates = [:]; updateAssetStates(jobs); refreshRecovery()
     }
     private func updateAssetStates(_ values: [BackupJob]) {
         objectWillChange.send()
+        completedAssets.include(values, account: account)
         for job in values where job.account == account && job.activityHidden != true {
             if assetStates[job.assetID] == nil || job.created >= assetStates[job.assetID]!.created {
                 assetStates[job.assetID] = AssetBackupState(account: job.account, revision: job.assetRevision, state: job.state, created: job.created, skipped: job.skippedExisting)
@@ -1437,7 +1439,7 @@ final class HarborModel: ObservableObject {
         for (id, control) in exports where removing.contains(id) { control.cancel("JOB_PAUSED") }
         do { try await persistBatch(changes, intent: .remove) } catch { fatalStorage(error); return }
         for task in await transfer.tasks() where removing.contains(task.taskDescription?.components(separatedBy: ":").first ?? "") { task.cancel() }
-        assetStates = [:]; updateAssetStates(jobs)
+        completedAssets.reset(account: account); assetStates = [:]; updateAssetStates(jobs)
         await collectFinishedStaging()
     }
     var diagnostics: String {

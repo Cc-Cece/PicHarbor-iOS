@@ -22,6 +22,26 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     private var registered = false
     private var refreshingAgain = false
     private var cachedScope: (ids: [String], revision: Int, assets: [PHAsset])?
+    private struct FilterKey: Equatable {
+        var libraryRevision: Int
+        var account: String
+        var completedRevision: Int
+        var album: String
+        var media: String
+        var backup: LibraryBackupFilter
+    }
+    private var cachedFilter: (key: FilterKey, assets: [PHAsset])?
+    func filteredAssets(album: String, media: String, backup: LibraryBackupFilter, account: String, completed: CompletedAssetIndex) -> [PHAsset] {
+        let key = FilterKey(libraryRevision: revision, account: account, completedRevision: backup == .all ? 0 : completed.revision, album: album, media: media, backup: backup)
+        if let cachedFilter, cachedFilter.key == key { return cachedFilter.assets }
+        var settings = BackupSettings(); settings.selectedAlbums = album.isEmpty ? [] : [album]
+        let values = scope(settings).filter { asset in
+            guard media == "all" || (media == "video" ? asset.mediaType == .video : media == "live" ? asset.mediaSubtypes.contains(.photoLive) : asset.mediaType == .image) else { return false }
+            return backup == .all || backup.includes(backedUp: completed.contains(assetID: asset.localIdentifier, revision: Self.stamp(asset), account: account))
+        }
+        cachedFilter = (key, values)
+        return values
+    }
     func authorize() async {
         status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         await refresh()

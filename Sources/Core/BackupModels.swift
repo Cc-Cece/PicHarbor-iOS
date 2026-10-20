@@ -85,6 +85,32 @@ struct AssetBackupState {
     var created: Date
     var skipped = false
 }
+
+enum LibraryBackupFilter: String, CaseIterable, Identifiable {
+    case all, backedUp, notBackedUp
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .all: return L10n.text("全部"); case .backedUp: return L10n.text("已备份"); case .notBackedUp: return L10n.text("未备份") }
+    }
+    func includes(backedUp: Bool) -> Bool { self == .all || (self == .backedUp ? backedUp : !backedUp) }
+}
+
+struct CompletedAssetIndex {
+    private struct Version: Hashable { let assetID: String; let revision: String }
+    private var versions = Set<Version>()
+    private(set) var account = ""
+    private(set) var revision = 0
+    mutating func reset(account: String) { self.account = account; versions.removeAll(keepingCapacity: true); revision += 1 }
+    mutating func include(_ jobs: [BackupJob], account: String) {
+        if self.account != account { reset(account: account) }
+        for job in jobs where !account.isEmpty && job.account == account && job.state == .completed {
+            if versions.insert(Version(assetID: job.assetID, revision: job.assetRevision)).inserted { revision += 1 }
+        }
+    }
+    func contains(assetID: String, revision: String, account: String) -> Bool {
+        !account.isEmpty && account == self.account && versions.contains(Version(assetID: assetID, revision: revision))
+    }
+}
 struct MediaResource: Codable, Identifiable, Equatable {
     var id = UUID().uuidString
     var role: String

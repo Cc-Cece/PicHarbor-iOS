@@ -11,16 +11,12 @@ struct LibraryView: View {
     @State private var selecting = false
     @State private var selected = Set<String>()
     @State private var filter = "all"
+    @State private var backupFilter: LibraryBackupFilter = .all
     @State private var album = ""
     @State private var detail: AssetSelection?
     @State private var confirm = false
     var assets: [PHAsset] {
-        var values = model.library.assets
-        if !album.isEmpty {
-            var settings = BackupSettings(); settings.selectedAlbums = [album]
-            values = model.library.scope(settings)
-        }
-        return values.filter { filter == "all" || (filter == "video" ? $0.mediaType == .video : filter == "live" ? $0.mediaSubtypes.contains(.photoLive) : $0.mediaType == .image) }
+        model.library.filteredAssets(album: album, media: filter, backup: backupFilter, account: model.account, completed: model.completedAssets)
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -36,9 +32,13 @@ struct LibraryView: View {
                     Spacer()
                     Text(L10n.text("{0} 项", [String(describing: assets.count.formatted())])).font(.caption).foregroundStyle(.secondary)
                 }.padding(.horizontal).padding(.vertical, 10)
+                Picker(L10n.text("备份状态"), selection: $backupFilter) {
+                    ForEach(LibraryBackupFilter.allCases) { value in Text(value.title).tag(value) }
+                }.pickerStyle(.segmented).padding(.horizontal).accessibilityIdentifier("library.backupFilter")
+                Text(L10n.text("备份状态以当前账号的记录为准。")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
                 if assets.isEmpty { ContentUnavailableView(L10n.text("没有可显示的项目"), systemImage: "photo", description: Text(L10n.text("调整筛选条件或相册访问权限。"))) }
                 else {
-                    PhotoGrid(assets: assets, revisionKey: "\(model.library.revision):\(album):\(filter)", manager: model.library.images, selecting: selecting, selected: selected, states: model.assetStates, account: model.account) { asset in
+                    PhotoGrid(assets: assets, revisionKey: "\(model.library.revision):\(album):\(filter):\(backupFilter.rawValue):\(model.account):\(backupFilter == .all ? 0 : model.completedAssets.revision)", manager: model.library.images, selecting: selecting, selected: selected, states: model.assetStates, account: model.account) { asset in
                         if selecting {
                             if selected.contains(asset.localIdentifier) { selected.remove(asset.localIdentifier) } else { selected.insert(asset.localIdentifier) }
                         } else { detail = AssetSelection(asset: asset) }
@@ -71,7 +71,7 @@ struct LibraryView: View {
                 Menu { Picker(L10n.text("媒体类型"), selection: $filter) { Text(L10n.text("全部")).tag("all"); Text(L10n.text("照片")).tag("photo"); Text(L10n.text("视频")).tag("video"); Text("Live Photo").tag("live") } } label: { Image(systemName: "line.3.horizontal.decrease.circle") }.accessibilityLabel(L10n.text("筛选照片"))
             }
             ToolbarItem(placement: .topBarTrailing) { Button(selecting ? L10n.text("完成") : L10n.text("选择")) { selecting.toggle(); if !selecting { selected = [] } } }
-            if selecting { ToolbarItem(placement: .bottomBar) { Button(L10n.text("选择当前范围全部")) { selected = Set(assets.map(\.localIdentifier)) } } }
+            if selecting { ToolbarItem(placement: .bottomBar) { Button(L10n.text("选择当前范围全部")) { selected.formUnion(assets.map(\.localIdentifier)) } } }
         }
         .sheet(item: $detail) { item in NavigationStack { AssetDetailView(asset: item.asset) }.environmentObject(model) }
         .confirmationDialog(L10n.text("备份已选项目"), isPresented: $confirm, titleVisibility: .visible) {

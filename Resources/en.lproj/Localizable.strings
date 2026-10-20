@@ -243,6 +243,8 @@
 "备份此项目" = "Back up this item";
 "备份流程" = "Backup progress";
 "备份照片" = "Backed-up photo";
+"备份状态" = "Backup status";
+"备份状态以当前账号的记录为准。" = "Backup status is based on this account's records.";
 "备份范围" = "Backup scope";
 "备份进行中" = "Backup in progress";
 "备份队列已安全保留" = "Your backup queue has been kept";
@@ -447,6 +449,7 @@
 "有限授权仅显示和备份已授权内容。权限减少不会被视为照片已经删除。原件位于 iCloud 时需联网读取。" = "Only allowed photos are shown and backed up. Reduced access is not treated as deletion. iCloud originals need an internet connection.";
 "有限访问" = "Limited access";
 "服务器拒绝了原始资源关联请求。原件与上传响应已保留，请导出诊断并反馈测试方式。" = "The server rejected pairing. Originals and upload responses are kept. Export diagnostics and report the backup method.";
+"未备份" = "Not backed up";
 "未完成" = "Unfinished";
 "未开启" = "Off";
 "未测速" = "Not Tested";

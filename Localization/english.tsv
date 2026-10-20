@@ -809,3 +809,6 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 上传结果暂不可用。点击重试，将检查云端并继续备份。|The upload result is unavailable. Tap Retry to check the cloud and continue.
 暂存文件发生变化。点击重试，将重新读取照片并核对内容。|The temporary file has changed. Tap Retry to read the photo again and check its contents.
 无法恢复此任务的照片版本。请从照片页面重新备份；已有云端内容保留。|This task's photo version cannot be recovered. Back it up again from Photos. Existing cloud content is kept.
+未备份|Not backed up
+备份状态|Backup status
+备份状态以当前账号的记录为准。|Backup status is based on this account's records.
