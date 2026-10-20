@@ -8,6 +8,8 @@
 
 新增五项独立原生回归，覆盖批次排序、云端延后确认、单张任务、相同创建时间及归档／完成记录顺序。本轮仅调整展示排序，不改变调度策略、上传并发和已保存的任务。
 
+交付：应用源码 `eeb6bcf`；[iOS 构建](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39368199384)与[30 项原生核心测试](https://github.com/Cc-Cece/PicHarbor-iOS/actions/runs/39368197402)成功，61 项 Python 回归、本地化覆盖及 IPA 检查通过。版本 `0.2.22`，bundle build `24`，36,929,286 字节，SHA256 `5e01f686454c0b37677048d8f02e533e0a90e918949707ff7621907203a0c776`。本机包：`C:\Users\Kanbara\Code\vscode\gpmc-ipa\dist\PicHarbor-0.2.22.ipa`。用原 Sideloadly 配置覆盖安装；排序体验及大图库响应仍需真机验收。
+
 ## 问题与范围
 
 用户反馈：选择全部范围（数千项）后界面卡死，重新打开并进入同一账号后再次卡死。

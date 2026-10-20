@@ -6,7 +6,7 @@ SwiftUI 原生界面 + 内嵌 Python + gpmc，面向 iOS 17+ iPhone。开发者�
 
 开发版产物、自动测试证据与剩余事项见 [开发版验收说明](docs/DEVELOPMENT-ACCEPTANCE.md)。0.2.12 使用真机验证的链接直达 Google 相册释放空间，两种备用路径默认折叠，临时链接测试页已移除，见[本轮说明](docs/GOOGLE-PHOTOS-DIRECT-0212.md)。原始配对的[测试步骤](docs/LIVE-PAIR-TESTING.md)继续适用。完整格式和规模矩阵仍待验收，不将整个计划标为完成。
 
-当前版本 0.2.21：针对数千项备份队列增加恢复保护、索引查重、分批加入及批量任务控制，限制调度和界面刷新开销，见[大队列修复与验收](docs/LARGE-QUEUE-RECOVERY.md)。保留应用内代理的全部节点测速、手动／自动选路、订阅管理和任务独立策略，见[使用说明](docs/IN-APP-PROXY.md)。目标安装包：`dist/PicHarbor-0.2.22.ipa`。包含简体中文、English、粵語（香港），使用原 Sideloadly 配置覆盖安装；大队列真机验证仍待完成。
+当前版本 0.2.22：备份批次与活动页优先展示正在处理和即将备份的项目，保留大队列恢复保护、分批加入和性能优化，见[修复与验收](docs/LARGE-QUEUE-RECOVERY.md)。保留应用内代理的全部节点测速、手动／自动选路、订阅管理和任务独立策略，见[使用说明](docs/IN-APP-PROXY.md)。目标安装包：`dist/PicHarbor-0.2.22.ipa`。包含简体中文、English、粵語（香港），使用原 Sideloadly 配置覆盖安装；大队列真机验证仍待完成。
 
 保留[分享及重复备份检查](docs/SHARING-DEDUP-0214.md)、[界面及归档功能](docs/INTERFACE-ARCHIVE-0213.md)。
 
