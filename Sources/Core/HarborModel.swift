@@ -742,7 +742,7 @@ final class HarborModel: ObservableObject {
                     seconds[candidate.stage.rawValue, default: 0] += max(0, ProcessInfo.processInfo.systemUptime - began)
                     latest.pipelineSeconds = seconds
                     var budget = latest.recovery ?? BackupRecoveryBudget()
-                    if !latest.awaitingCloud && ![.paused, .cancelled].contains(latest.state) { budget.activeWithoutProgress += lease.checkpointSeconds }
+                    if !latest.awaitingCloud && !["STAGING_BUFFER_WAIT", "WAITING_NETWORK", "SOURCE_SETTLING"].contains(latest.error) && ![.paused, .cancelled].contains(latest.state) { budget.activeWithoutProgress += lease.checkpointSeconds }
                     if latest.unfinished && ![.paused, .cancelled].contains(latest.state) && budget.stalled(policy: lease.policy) {
                         latest.state = .attention; latest.error = "NO_PROGRESS_LIMIT"; latest.retryAt = nil
                     }
@@ -786,7 +786,9 @@ final class HarborModel: ObservableObject {
         do {
             if workerStages[initial.id] == .preparation { await processRouted(initial); return }
             let sameScope = initial.proxyScope == ProxyManager.shared.routingScope
-            let route = try await ProxyManager.shared.route(override: initial.proxyFallback, failures: sameScope ? (initial.proxyFailures ?? []) : [], policy: initial.proxyPolicy, preferred: sameScope ? initial.proxyLastNode : nil)
+            let route = try await BackupRouteGuard.run(lease: BackupExecutionContext.lease) {
+                try await ProxyManager.shared.route(override: initial.proxyFallback, failures: sameScope ? (initial.proxyFailures ?? []) : [], policy: initial.proxyPolicy, preferred: sameScope ? initial.proxyLastNode : nil)
+            }
             try checkpoint(initial)
             var job = lookupJob(initial.id) ?? initial
             job.proxyPort = route.0; job.proxyLastNode = route.1; job.proxyScope = ProxyManager.shared.routingScope

@@ -102,7 +102,7 @@ final class BackupExecutionLease: @unchecked Sendable {
     var cancellation: String? { lock.lock(); defer { lock.unlock() }; return reason }
     var activeSeconds: Double { lock.lock(); defer { lock.unlock() }; return elapsed }
     var checkpointSeconds: Double { lock.lock(); defer { lock.unlock() }; return checkpointElapsed }
-    var remaining: Double { lock.lock(); defer { lock.unlock() }; return max(.01, policy.stageSeconds(stage) - elapsed) }
+    var remaining: Double { lock.lock(); defer { lock.unlock() }; return max(0.01, policy.stageSeconds(stage) - elapsed) }
     func check() throws { if let code = cancellation { throw HarborError(code) } }
     func progress() { lock.lock(); idle = 0; lock.unlock() }
     func checkpoint() { lock.lock(); checkpointElapsed = 0; idle = 0; lock.unlock() }
@@ -130,6 +130,53 @@ final class BackupExecutionLease: @unchecked Sendable {
 
 enum BackupExecutionContext {
     @TaskLocal static var lease: BackupExecutionLease?
+}
+
+/// Routing may await a shared proxy-core start/probe. A timed-out waiter can
+/// detach safely: the shared operation never mutates a backup job. Keep a hard
+/// bound on detached routing work if the third-party core itself stops replying.
+enum BackupRouteGuard {
+    private static let lock = NSLock()
+    private static var running = 0
+    private static func enter() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard running < 32 else { return false }
+        running += 1; return true
+    }
+    private static func leave() { lock.lock(); running -= 1; lock.unlock() }
+    static func run<Value>(lease: BackupExecutionLease?, operation: @escaping () async throws -> Value) async throws -> Value {
+        guard let lease else { return try await operation() }
+        try lease.check()
+        guard enter() else { throw HarborError("PROXY_UNAVAILABLE") }
+        let requestID = UUID().uuidString
+        return try await withCheckedThrowingContinuation { continuation in
+            let result = BackupOneShot(continuation)
+            lease.register(requestID) { code in
+                if result.finish(.failure(HarborError(code))) { lease.unregister(requestID) }
+            }
+            Task {
+                defer { leave() }
+                do {
+                    try lease.check()
+                    let value = try await operation()
+                    if result.finish(.success(value)) { lease.unregister(requestID) }
+                } catch {
+                    if result.finish(.failure(error)) { lease.unregister(requestID) }
+                }
+            }
+        }
+    }
+}
+
+private final class BackupOneShot<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+    init(_ continuation: CheckedContinuation<Value, Error>) { self.continuation = continuation }
+    func finish(_ result: Result<Value, Error>) -> Bool {
+        lock.lock(); let pending = continuation; continuation = nil; lock.unlock()
+        pending?.resume(with: result)
+        return pending != nil
+    }
 }
 
 /// Counts only observed, connected foreground intervals. Relaunch, suspension,

@@ -2,6 +2,22 @@ import XCTest
 @testable import PicHarbor
 
 final class BackupResilienceTests: XCTestCase {
+    func testTimedOutSharedRouteDetachesAndIgnoresItsLateResult() async throws {
+        let lease = BackupExecutionLease(stage: .lookup, policy: BackupExecutionPolicy())
+        let canceller = Task { try? await Task.sleep(for: .milliseconds(20)); lease.cancel("STAGE_TIMEOUT") }
+        let start = Date()
+        do {
+            _ = try await BackupRouteGuard.run(lease: lease) {
+                try await Task.sleep(for: .milliseconds(150))
+                return "late-route"
+            }
+            XCTFail("A timed-out route cannot supply a result")
+        } catch { XCTAssertEqual((error as? HarborError)?.code, "STAGE_TIMEOUT") }
+        await canceller.value
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.12)
+        // Let the detached shared operation finish: no double continuation resume.
+        try await Task.sleep(for: .milliseconds(170))
+    }
     func testFiniteRetriesPersistAcrossRelaunchAndStageChanges() throws {
         var job = BackupJob(account: "a", assetID: "asset", assetRevision: "v1", settings: BackupSettings())
         for attempt in 1...4 {

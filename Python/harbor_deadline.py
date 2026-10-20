@@ -53,10 +53,12 @@ class RequestBudget:
     def __init__(self, request_id, seconds):
         self.request_id = request_id
         self.deadline = time.monotonic() + seconds
+        self.observed_at = time.monotonic()
         self.lock = threading.Lock()
         self.connections = []
         self.reason = ''
-        self.timer = threading.Timer(seconds, self.cancel)
+        self.stopped = threading.Event()
+        self.timer = threading.Thread(target=self._watch)
         self.timer.daemon = True
 
     def __enter__(self):
@@ -71,7 +73,7 @@ class RequestBudget:
         return self
 
     def __exit__(self, *args):
-        self.timer.cancel()
+        self.stopped.set()
         with _lock:
             _active.pop(self.request_id, None)
         _local.budget = self.previous
@@ -79,8 +81,26 @@ class RequestBudget:
             self.connections.clear()
 
     def check(self):
+        self._observe()
         if self.reason or time.monotonic() >= self.deadline:
             raise DeadlineExceeded(self.reason or 'STAGE_TIMEOUT')
+
+    def _observe(self):
+        # All Python threads stop when iOS suspends the process. A large gap
+        # between watchdog observations must not spend that suspended interval.
+        now = time.monotonic()
+        with self.lock:
+            gap = now - self.observed_at
+            if gap > 15:
+                self.deadline += gap
+            self.observed_at = now
+
+    def _watch(self):
+        while not self.stopped.wait(.05):
+            self._observe()
+            if time.monotonic() >= self.deadline:
+                self.cancel()
+                return
 
     def remaining(self):
         self.check()

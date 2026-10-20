@@ -133,3 +133,10 @@ class DeadlineTests(unittest.TestCase):
         self.assertEqual(result['error'], 'STAGE_TIMEOUT')
         self.assertEqual(result['request_id'], 'budget-envelope')
         self.assertFalse(result['ok'])
+
+    def test_suspended_process_gap_does_not_spend_deadline(self):
+        budget = RequestBudget('suspension', 60)
+        before = budget.deadline
+        budget.observed_at -= 600
+        budget.check()
+        self.assertGreater(budget.deadline, before + 590)
