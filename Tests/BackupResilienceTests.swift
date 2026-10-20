@@ -2,6 +2,37 @@ import XCTest
 @testable import PicHarbor
 
 final class BackupResilienceTests: XCTestCase {
+    func testExportCancellationClosesWriterAndLateCallbacksCannotTouchNewFile() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("export.bin")
+        let control = ExportControl(wifiOnly: true)
+        let writer = try ResourceFileWriter(url: url, control: control)
+        let observer = UUID()
+        control.observe(observer) { code in
+            let result = writer.finish(HarborError(code))
+            XCTAssertTrue(result.0)
+            XCTAssertEqual((result.1 as? HarborError)?.code, "NO_PROGRESS_TIMEOUT")
+            control.unobserve(observer)
+        }
+        let queue = DispatchQueue(label: "test.export", attributes: .concurrent)
+        let group = DispatchGroup()
+        for _ in 0..<50 { group.enter(); queue.async { writer.append(Data(repeating: 1, count: 1024)); group.leave() } }
+        control.cancel("NO_PROGRESS_TIMEOUT"); group.wait()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        try Data("new-attempt".utf8).write(to: url)
+        writer.append(Data("late-data".utf8))
+        XCTAssertFalse(writer.finish(nil).0)
+        XCTAssertEqual(try Data(contentsOf: url), Data("new-attempt".utf8))
+    }
+    func testExportObserverRegisteredAfterCancellationIsImmediatelyNotified() {
+        let control = ExportControl(wifiOnly: true)
+        control.cancel("JOB_PAUSED")
+        var calls = 0
+        control.observe(UUID()) { code in XCTAssertEqual(code, "JOB_PAUSED"); calls += 1 }
+        XCTAssertEqual(calls, 1)
+    }
     func testTimedOutSharedRouteDetachesAndIgnoresItsLateResult() async throws {
         let lease = BackupExecutionLease(stage: .lookup, policy: BackupExecutionPolicy())
         let canceller = Task { try? await Task.sleep(for: .milliseconds(20)); lease.cancel("STAGE_TIMEOUT") }
