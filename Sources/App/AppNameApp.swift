@@ -14,7 +14,7 @@ struct PicHarborApp: App {
         preferredVPN: .localDevVPN,
         defaultAnisetteURL: "https://ani.sidestore.io",
         githubRepository: "Cc-Cece/PicHarbor-iOS",
-        localizer: { L10n.text($0) == $0 ? SelfRefreshStrings.translate($0, localeIdentifier: L10n.language.rawValue) : L10n.text($0) }
+        hostLanguageProvider: { L10n.language.rawValue }
       )
     )
   }
