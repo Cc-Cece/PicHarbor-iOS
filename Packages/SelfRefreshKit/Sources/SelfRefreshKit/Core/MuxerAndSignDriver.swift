@@ -447,12 +447,14 @@ final class RealSideSignDriverHelper: @unchecked Sendable {
         let anisetteData = try await fetchFreshAnisetteData(primaryURL: primaryAnisetteURL)
 
         if let savedData = try? SelfRefreshKeychain.loadPortalSessionData(),
-           var authSession = try? JSONDecoder().decode(AuthSession.self, from: savedData),
+           let authSession = try? JSONDecoder().decode(AuthSession.self, from: savedData),
            authSession.session.isValid {
-            authSession.session.anisetteData = anisetteData
-            if let teams = try? await DeveloperPortal.shared.fetchTeams(for: authSession.account, session: authSession.session),
+            var session = authSession.session
+            session.anisetteData = anisetteData
+            let updatedAuthSession = AuthSession(account: authSession.account, session: session)
+            if let teams = try? await DeveloperPortal.shared.fetchTeams(for: updatedAuthSession.account, session: session),
                let team = teams.first(where: { $0.type == .individual || $0.type == .organization }) ?? teams.first {
-                return (team, authSession.session)
+                return (team, session)
             }
         }
 
