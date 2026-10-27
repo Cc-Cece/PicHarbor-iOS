@@ -80,6 +80,7 @@ public final class SelfRefreshManager: ObservableObject {
         static let takenOver = "selfrefreshkit.takenOver"
         static let lastRefreshDate = "selfrefreshkit.lastRefreshDate"
         static let cachedExpirationDate = "selfrefreshkit.cachedExpirationDate"
+        static let cachedProfileMetadata = "selfrefreshkit.cachedProfileMetadata"
         static let setupGuideSkipped = "selfrefreshkit.setupGuideSkipped"
     }
 
@@ -264,9 +265,20 @@ public final class SelfRefreshManager: ObservableObject {
     // MARK: - Step 1: Pairing File Import (Supports XML & Binary Plist + Detailed Feedback)
 
     public func reloadEmbeddedProfile(in bundleURL: URL = Bundle.main.bundleURL) {
-        if let parsed = ProfileInspector.inspectEmbeddedProfile(in: bundleURL) {
-            self.profileMetadata = parsed
-            defaults.set(parsed.expirationDate, forKey: Keys.cachedExpirationDate)
+        var active: ProvisioningProfileMetadata? = ProfileInspector.inspectEmbeddedProfile(in: bundleURL)
+        if let data = defaults.data(forKey: Keys.cachedProfileMetadata),
+           let cached = try? JSONDecoder().decode(ProvisioningProfileMetadata.self, from: data) {
+            if let current = active {
+                if cached.expirationDate > current.expirationDate {
+                    active = cached
+                }
+            } else {
+                active = cached
+            }
+        }
+        if let resolved = active {
+            self.profileMetadata = resolved
+            defaults.set(resolved.expirationDate, forKey: Keys.cachedExpirationDate)
         } else if let cachedExp = defaults.object(forKey: Keys.cachedExpirationDate) as? Date {
             let bundleID = Bundle.main.bundleIdentifier ?? "com.app.sideloaded"
             self.profileMetadata = ProvisioningProfileMetadata(
@@ -653,6 +665,9 @@ public final class SelfRefreshManager: ObservableObject {
         self.lastRefreshDate = now
         defaults.set(now, forKey: Keys.lastRefreshDate)
         defaults.set(updatedProfile.expirationDate, forKey: Keys.cachedExpirationDate)
+        if let encoded = try? JSONEncoder().encode(updatedProfile) {
+            defaults.set(encoded, forKey: Keys.cachedProfileMetadata)
+        }
         postNotice(
             title: localized(.noticeRefreshSuccessTitle),
             message: localized(.noticeRefreshSuccessMessage),
@@ -721,6 +736,9 @@ public final class SelfRefreshManager: ObservableObject {
         defaults.set(true, forKey: Keys.takenOver)
         defaults.set(now, forKey: Keys.lastRefreshDate)
         defaults.set(updatedProfile.expirationDate, forKey: Keys.cachedExpirationDate)
+        if let encoded = try? JSONEncoder().encode(updatedProfile) {
+            defaults.set(encoded, forKey: Keys.cachedProfileMetadata)
+        }
         postNotice(
             title: localized(.noticeTakeoverSuccessTitle),
             message: localized(.noticeTakeoverSuccessMessage),
