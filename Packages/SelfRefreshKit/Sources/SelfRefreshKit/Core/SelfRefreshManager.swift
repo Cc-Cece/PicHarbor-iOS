@@ -825,28 +825,12 @@ public final class SelfRefreshManager: ObservableObject {
 
 #if canImport(AppIntents)
 /// Built-in background iOS Shortcuts `AppIntent`.
-/// - Supports all 7 built-in languages via `Bundle.module` `.lproj/Localizable.strings` (falling back to English `"Refresh App Provisioning Profile"`).
+/// - Uses the main bundle for `LocalizedStringResource` metadata extraction as required by Xcode's `appintentsmetadataprocessor` (defaulting to `"Refresh App Provisioning Profile"`).
 /// - Runs purely in the background (`openAppWhenRun = false`) without opening or jumping to the host app.
 @available(iOS 17.0, macOS 14.0, *)
 public struct SelfRefreshProfileIntent: AppIntent {
-    #if SWIFT_PACKAGE
-    public static var title: LocalizedStringResource = LocalizedStringResource(
-        "srk.intent.refresh.title",
-        defaultValue: "Refresh App Provisioning Profile",
-        bundle: .atURL(Bundle.module.bundleURL)
-    )
-    public static var description = IntentDescription(
-        LocalizedStringResource(
-            "srk.intent.refresh.description",
-            defaultValue: "Silently refreshes the 7-day provisioning profile in the background via LocalDevVPN without opening the app.",
-            bundle: .atURL(Bundle.module.bundleURL)
-        )
-    )
-    #else
     public static var title: LocalizedStringResource = "Refresh App Provisioning Profile"
     public static var description = IntentDescription("Silently refreshes the 7-day provisioning profile in the background via LocalDevVPN without opening the app.")
-    #endif
-
     public static var openAppWhenRun: Bool = false
 
     public init() {}
