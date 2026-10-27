@@ -1,5 +1,6 @@
 import SwiftUI
 import Photos
+import SelfRefreshKit
 
 struct HarborSettingsView: View {
     @ObservedObject private var language = LanguagePreferences.shared
@@ -24,6 +25,7 @@ struct HarborSettingsView: View {
             Section(L10n.text("设备")) {
                 NavigationLink { InterfacePreferencesView() } label: { Label(L10n.text("界面"), systemImage: "paintpalette") }.accessibilityIdentifier("settings.interface")
                 NavigationLink { PermissionView() } label: { Label(L10n.text("相册访问"), systemImage: "photo.badge.checkmark") }
+                SelfRefreshSection()
             }
             Section {
                 Button(L10n.text("恢复备份默认设置")) { restore = true }

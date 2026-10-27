@@ -17,6 +17,10 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
+packages:
+  SelfRefreshKit:
+    path: Packages/SelfRefreshKit
+
 settings:
   configs:
     Debug:
@@ -44,6 +48,8 @@ targets:
       - framework: Runtime/Python.xcframework
         embed: true
         codeSign: false
+      - package: SelfRefreshKit
+        product: SelfRefreshKit
     postBuildScripts:
       - name: Embed Python standard library and gpmc
         script: python3 "$PROJECT_DIR/tools/embed_python.py"
@@ -72,6 +78,8 @@ targets:
       - path: Tests
     dependencies:
       - target: PicHarbor
+      - package: SelfRefreshKit
+        product: SelfRefreshKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cccece.picharbor.tests

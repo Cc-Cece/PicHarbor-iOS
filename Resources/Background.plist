@@ -2,7 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
-  <key>LSApplicationQueriesSchemes</key><array><string>googlephotos</string></array>
+  <key>LSApplicationQueriesSchemes</key><array><string>googlephotos</string><string>localdevvpn</string><string>stosvpn</string><string>wireguard</string></array>
+  <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.cccece.picharbor.refresh</string><key>CFBundleURLSchemes</key><array><string>picharbor</string></array></dict></array>
   <key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string><string>zh-Hant-HK</string><string>yue-Hant-HK</string></array>
   <key>UIBackgroundModes</key><array><string>processing</string><string>fetch</string></array>
   <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>com.cccece.picharbor.processing</string></array>

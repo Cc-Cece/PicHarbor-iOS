@@ -1,7 +1,23 @@
 import XCTest
 @testable import PicHarbor
+import SelfRefreshKit
 
 final class PicHarborTests: XCTestCase {
+    @MainActor
+    func testSelfRefreshKitIntegrationConfiguredForPicHarbor() throws {
+        SelfRefreshManager.shared.configure(
+            SelfRefreshConfiguration(
+                urlScheme: "picharbor",
+                preferredVPN: .localDevVPN,
+                defaultAnisetteURL: "https://ani.sidestore.io",
+                githubRepository: "Cc-Cece/PicHarbor-iOS"
+            )
+        )
+        XCTAssertEqual(SelfRefreshManager.shared.configuration.urlScheme, "picharbor")
+        XCTAssertEqual(SelfRefreshManager.shared.configuration.preferredVPN, .localDevVPN)
+        XCTAssertEqual(SelfRefreshManager.shared.configuration.refreshWakeupURLString, "picharbor://refresh")
+        XCTAssertEqual(SelfRefreshManager.shared.configuration.githubRepository, "Cc-Cece/PicHarbor-iOS")
+    }
     @MainActor
     func testLoginRejectedWhileBusyIsNotReportedAsSuccess() async {
         let engine = Engine()
