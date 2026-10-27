@@ -21,6 +21,27 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     let images = PHCachingImageManager()
     private var registered = false
     private var refreshingAgain = false
+    private var cachedScope: (ids: [String], revision: Int, assets: [PHAsset])?
+    private struct FilterKey: Equatable {
+        var libraryRevision: Int
+        var account: String
+        var completedRevision: Int
+        var album: String
+        var media: String
+        var backup: LibraryBackupFilter
+    }
+    private var cachedFilter: (key: FilterKey, assets: [PHAsset])?
+    func filteredAssets(album: String, media: String, backup: LibraryBackupFilter, account: String, completed: CompletedAssetIndex) -> [PHAsset] {
+        let key = FilterKey(libraryRevision: revision, account: account, completedRevision: backup == .all ? 0 : completed.revision, album: album, media: media, backup: backup)
+        if let cachedFilter, cachedFilter.key == key { return cachedFilter.assets }
+        var settings = BackupSettings(); settings.selectedAlbums = album.isEmpty ? [] : [album]
+        let values = scope(settings).filter { asset in
+            guard media == "all" || (media == "video" ? asset.mediaType == .video : media == "live" ? asset.mediaSubtypes.contains(.photoLive) : asset.mediaType == .image) else { return false }
+            return backup == .all || backup.includes(backedUp: completed.contains(assetID: asset.localIdentifier, revision: Self.stamp(asset), account: account))
+        }
+        cachedFilter = (key, values)
+        return values
+    }
     func authorize() async {
         status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         await refresh()
@@ -70,13 +91,16 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     }
     func scope(_ settings: BackupSettings) -> [PHAsset] {
         guard !settings.selectedAlbums.isEmpty else { return assets }
+        if let cachedScope, cachedScope.ids == settings.selectedAlbums, cachedScope.revision == revision { return cachedScope.assets }
         var ids = Set<String>()
         for id in settings.selectedAlbums {
             if let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil).firstObject {
                 PHAsset.fetchAssets(in: collection, options: nil).enumerateObjects { asset, _, _ in ids.insert(asset.localIdentifier) }
             }
         }
-        return assets.filter { ids.contains($0.localIdentifier) }
+        let values = assets.filter { ids.contains($0.localIdentifier) }
+        cachedScope = (settings.selectedAlbums, revision, values)
+        return values
     }
     func memberships(for ids: Set<String>) -> [String: [String]] {
         var result: [String: [String]] = [:]
@@ -87,6 +111,19 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             }
         }
         return result
+    }
+    func membershipsAsync(for ids: Set<String>) async -> [String: [String]] {
+        let albumIDs = albums.map(\.id)
+        return await Task.detached(priority: .utility) {
+            var result: [String: [String]] = [:]
+            for id in albumIDs {
+                guard let group = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil).firstObject else { continue }
+                PHAsset.fetchAssets(in: group, options: nil).enumerateObjects { asset, _, _ in
+                    if ids.contains(asset.localIdentifier) { result[asset.localIdentifier, default: []].append(id) }
+                }
+            }
+            return result
+        }.value
     }
     static func stamp(_ asset: PHAsset) -> String {
         "\(asset.modificationDate?.timeIntervalSince1970 ?? 0):\(asset.pixelWidth):\(asset.pixelHeight):\(asset.duration):\(asset.mediaSubtypes.rawValue)"
@@ -131,7 +168,7 @@ enum ResourceExporter {
                 let name = (resource.originalFilename as NSString).lastPathComponent
                 let path = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension((name as NSString).pathExtension)
                 try await PhotoResourceWriter.write(resource: resource, url: path, control: control)
-                let digest = try await Task.detached { try hash(path) }.value
+                let digest = try await hashAsync(path)
                 result.append(MediaResource(role: role, path: path.path, name: name, sha1: digest.0, sha256: digest.1, size: digest.2))
             }
         }
@@ -146,15 +183,21 @@ enum ResourceExporter {
         }
         return result
     }
-    static func hash(_ url: URL) throws -> (String, String, Int64) {
+    static func hashAsync(_ url: URL) async throws -> (String, String, Int64) {
+        let lease = BackupExecutionContext.lease
+        return try await Task.detached { try hash(url, lease: lease) }.value
+    }
+    static func hash(_ url: URL, lease: BackupExecutionLease? = nil) throws -> (String, String, Int64) {
         let before = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         let input = try FileHandle(forReadingFrom: url); defer { try? input.close() }
         var sha1 = Insecure.SHA1(), sha256 = SHA256(), size: Int64 = 0
         while true {
             let count = try autoreleasepool { () throws -> Int in
                 try Task.checkCancellation()
+                try lease?.check()
                 guard let data = try input.read(upToCount: 1024 * 1024), !data.isEmpty else { return 0 }
                 sha1.update(data: data); sha256.update(data: data); size += Int64(data.count)
+                lease?.progress()
                 return data.count
             }
             if count == 0 { break }

@@ -3,14 +3,17 @@
 #import "PythonBridge.h"
 
 // Interpreter is initialized/imported on the main thread (gpmc installs SIGINT).
-// Calls occur only on Engine's serial queue, with the GIL held.
+// Calls use separate native threads; the GIL protects Python execution while
+// requests releases it for I/O. Progress handlers must be thread-local too.
 static PyObject *dispatchFunction;
-static void (^progressHandler)(NSString *);
+static PyObject *cancelFunction;
+static NSString * const progressKey = @"PicHarborPythonProgress";
 
 static PyObject *emitEvent(PyObject *self, PyObject *args) {
     const char *value;
     if (!PyArg_ParseTuple(args, "s", &value)) return NULL;
-    if (progressHandler) progressHandler([NSString stringWithUTF8String:value]);
+    void (^handler)(NSString *) = [NSThread currentThread].threadDictionary[progressKey];
+    if (handler) handler([NSString stringWithUTF8String:value]);
     Py_RETURN_NONE;
 }
 static PyMethodDef methods[] = {{"event", emitEvent, METH_VARARGS, NULL}, {NULL, NULL, 0, NULL}};
@@ -48,6 +51,7 @@ static PyObject *PyInit_harbor_native(void) { return PyModule_Create(&module); }
     if (adapter) {
         PyObject *init = PyObject_CallMethod(adapter, "initialize", "s", home.UTF8String);
         if (init) dispatchFunction = PyObject_GetAttrString(adapter, "dispatch");
+        if (init) cancelFunction = PyObject_GetAttrString(adapter, "cancel_request");
         Py_XDECREF(init);
         Py_DECREF(adapter);
     }
@@ -57,16 +61,23 @@ static PyObject *PyInit_harbor_native(void) { return PyModule_Create(&module); }
     PyEval_SaveThread();
     return ready;
 }
++ (void)cancelRequest:(NSString *)requestID reason:(NSString *)reason {
+    if (!cancelFunction) return;
+    PyGILState_STATE state = PyGILState_Ensure();
+    PyObject *result = PyObject_CallFunction(cancelFunction, "ss", requestID.UTF8String, reason.UTF8String);
+    Py_XDECREF(result); PyErr_Clear();
+    PyGILState_Release(state);
+}
 + (NSString *)call:(NSString *)action payload:(NSString *)payload event:(void (^)(NSString *))event {
     if (!dispatchFunction) return @"{\"ok\":false,\"error\":\"RUNTIME_UNAVAILABLE\"}";
     PyGILState_STATE state = PyGILState_Ensure();
-    progressHandler = [event copy];
+    if (event) [NSThread currentThread].threadDictionary[progressKey] = [event copy];
     PyObject *result = PyObject_CallFunction(dispatchFunction, "ss", action.UTF8String, payload.UTF8String);
     const char *utf8 = result ? PyUnicode_AsUTF8(result) : NULL;
     NSString *text = utf8 ? [NSString stringWithUTF8String:utf8] : @"{\"ok\":false,\"error\":\"ENGINE_ERROR\"}";
     Py_XDECREF(result);
     PyErr_Clear();
-    progressHandler = nil;
+    [[NSThread currentThread].threadDictionary removeObjectForKey:progressKey];
     PyGILState_Release(state);
     return text;
 }

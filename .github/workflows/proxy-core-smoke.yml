@@ -1,0 +1,22 @@
+name: Apple Proxy Core Smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [proxy-validation-0215]
+    paths: [tools/proxy_core_smoke.*, Sources/Bridge/ProxyCoreBridge.*, .github/workflows/proxy-core-smoke.yml]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/cache@v4
+        with:
+          path: .runtime-cache/clash3-*
+          key: proxy-clash3-fbee3cf05b24de4e
+      - run: python tools/proxy_core_smoke.py

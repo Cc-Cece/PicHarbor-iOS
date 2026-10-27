@@ -7,6 +7,7 @@ import base64
 import re
 import time
 from urllib.parse import quote, urlparse, urljoin
+from harbor_deadline import check as check_budget
 
 from blackboxprotobuf import decode_message
 from gpmc.db_update_parser import parse_db_update, _parse_media_item, _get_nested
@@ -166,11 +167,13 @@ class Protocol:
         # starts a full sync; never publish a partially applied delta.
         self.snapshot, self.snapshot_at, self.sync_token = {}, 0, ""
         for _ in range(10):
+            check_budget()
             page_token = token  # Pagination belongs to the input sync context.
             response = self.api.get_library_state(token if ready else "")
             more = _get_nested(response, "1", "7") == 2
             seen = set()
             while True:
+                check_budget()
                 new_token, resume, _, deleted = parse_db_update(response)
                 token = new_token or token
                 raw_items = _get_nested(response, "1", "2") or []

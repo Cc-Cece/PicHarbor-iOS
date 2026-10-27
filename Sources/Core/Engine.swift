@@ -3,14 +3,29 @@ import SwiftUI
 
 struct HarborError: LocalizedError {
     let code: String
-    init(_ code: String) { self.code = code }
+    let detail: String?
+    init(_ code: String, detail: String? = nil) { self.code = code; self.detail = detail }
     var errorDescription: String? {
+        if code == "PROXY_START_FAILED", let detail, !detail.isEmpty { return L10n.text("代理启动失败：{0}", [detail]) }
         switch code {
         case "LOGIN_REQUIRED": return L10n.text("需要重新登录 Google，或服务端要求额外验证。")
         case "INVALID_CREDENTIAL": return L10n.text("登录凭据无效。")
         case "ACCOUNT_BUSY": return L10n.text("正在连接或切换账号，请等待当前操作完成。")
         case "CLEANUP_BUSY": return L10n.text("正在核验或清理照片，请等待完成后再操作账号。")
         case "NETWORK_ERROR": return L10n.text("网络请求失败，请检查网络后重试。")
+        case "PROXY_CONFIG_REQUIRED": return L10n.text("请先导入代理配置。")
+        case "QR_SINGLE_NODE": return L10n.text("这是单个节点链接，请使用订阅二维码或手动导入配置文件。")
+        case "QR_UNSUPPORTED": return L10n.text("此二维码不是有效的 HTTP 或 HTTPS 订阅链接。")
+        case "QR_IMAGE_UNAVAILABLE": return L10n.text("无法读取图片，请选择另一张二维码图片。")
+        case "QR_NOT_FOUND": return L10n.text("图片中未找到二维码，请选择清晰、完整的二维码图片。")
+        case "PROXY_SUBSCRIPTION_URL": return L10n.text("请输入有效的 HTTP 或 HTTPS 订阅链接。")
+        case "PROXY_EMPTY_SUBSCRIPTION": return L10n.text("订阅未提供可用节点，请确认链接支持 Clash Meta 格式。")
+        case "PROXY_SUBSCRIPTION_DOWNLOAD": return L10n.text("订阅服务器未返回有效内容，请检查链接后重试。")
+        case "PROXY_TASKS_ACTIVE": return L10n.text("请先暂停备份，再更新或切换配置。")
+        case "PROXY_PROFILE_LIMIT": return L10n.text("最多保存 20 份配置，请先移除不用的配置。")
+        case "PROXY_CONFIG_UNSUPPORTED": return L10n.text("暂不支持此配置，请使用最多 64 个节点的 Clash Meta 完整配置。")
+        case "PROXY_START_FAILED": return L10n.text("代理启动失败，请检查节点配置，或导入其他配置重试。")
+        case "PROXY_UNAVAILABLE": return L10n.text("允许的连接均不可用，正在等待代理恢复。")
         case "PREVIOUS_BACKUP_NOT_VISIBLE": return L10n.text("已有备份记录，但暂未查询到对应云端内容。会先重新检查，避免重复上传。")
         case "RUNTIME_UNAVAILABLE": return L10n.text("Python 运行环境不可用，请导出诊断报告。")
         case "KEYCHAIN_ERROR": return L10n.text("无法访问安全凭据存储。")
@@ -43,15 +58,22 @@ struct HarborError: LocalizedError {
         case "CLOUD_ORIGINAL_UNCONFIRMED": return L10n.text("云端原件状态尚未通过完整核验，原件会保留。")
         case "ORIGINAL_UNAVAILABLE": return L10n.text("云端原件无法访问或大小不符，原件会保留。")
         case "FILE_ACCESS": return L10n.text("无法读取原件或写入暂存文件，请检查空间与照片权限。")
-        case "SOURCE_FILE_MISSING": return L10n.text("已导出的暂存原件不存在。请重新准备此任务；不需要删除相册原件。")
-        case "UPLOAD_RESPONSE_MISSING", "UPLOAD_RESPONSE_EMPTY": return L10n.text("上传响应文件缺失或为空，尚未完成云端提交。请重新准备此任务。")
+        case "STAGING_BUFFER_WAIT": return L10n.text("等待上传队列腾出空间。")
+        case "STAGE_TIMEOUT", "TRANSFER_TIMEOUT": return L10n.text("本次处理超时，稍后会重试。")
+        case "NO_PROGRESS_TIMEOUT": return L10n.text("一段时间没有进展，稍后会重试。")
+        case "RETRY_LIMIT": return L10n.text("多次尝试仍未成功，已暂停自动重试。可以稍后继续。")
+        case "NO_PROGRESS_LIMIT": return L10n.text("任务长时间没有进展，已暂停。请稍后继续或查看高级信息。")
+        case "CLOUD_WAIT_LIMIT": return L10n.text("云端确认等待较久，已暂停检查。请稍后重新检查。")
+        case "SOURCE_FILE_MISSING": return L10n.text("暂存文件不可用。点击重试，将重新读取照片并继续备份。")
+        case "SOURCE_RECOVERY_MISMATCH": return L10n.text("照片内容已变化，无法继续原任务。请从照片页面重新备份；已有云端内容保留。")
+        case "UPLOAD_RESPONSE_MISSING", "UPLOAD_RESPONSE_EMPTY": return L10n.text("上传结果暂不可用。点击重试，将检查云端并继续备份。")
         case "UPLOAD_RESPONSE_WRITE", "UPLOAD_RESPONSE_READ": return L10n.text("无法保存或读取上传响应文件。请检查本机空间，再重新准备此任务。")
         case "UPLOAD_RESPONSE_PATH": return L10n.text("上传响应路径不属于当前暂存目录，请重新准备此任务。")
         case "UPLOAD_RESPONSE_TOO_LARGE", "UPLOAD_RESPONSE_INVALID": return L10n.text("上传响应内容无效，尚未完成云端提交。请保持代理可访问 Google 后重试。")
-        case "SOURCE_CHANGED": return L10n.text("已导出的暂存文件发生变化。请重新准备此任务；已有云端提交会先按内容核对。")
+        case "SOURCE_CHANGED": return L10n.text("暂存文件发生变化。点击重试，将重新读取照片并核对内容。")
         case "SOURCE_SETTLING": return L10n.text("照片仍在准备或发生变化，正在等待相册资源稳定；无需重新选择照片。")
         case "SOURCE_SETTLING_LIMIT": return L10n.text("相册资源多次变化，已暂停自动尝试。照片准备完成后点击继续／重试即可，无需重新选择。")
-        case "SOURCE_SNAPSHOT_LOCKED": return L10n.text("此任务已有固定的资源版本。请重新准备任务，已有云端结果会先查重。")
+        case "SOURCE_SNAPSHOT_LOCKED": return L10n.text("无法恢复此任务的照片版本。请从照片页面重新备份；已有云端内容保留。")
         case "ACCOUNT_CHANGED": return L10n.text("账号已变化，请重新连接。")
         case "REMOTE_NOT_VISIBLE": return L10n.text("云端暂未按内容哈希确认，请稍后重新核验。")
         case "WEB_LOGIN_REJECTED": return L10n.text("Google 拒绝了应用内登录。可导入已有 gpmc 凭据验证，其余情况需要调整认证适配。")
@@ -95,7 +117,7 @@ final class Engine: ObservableObject {
     @Published var progress: Double?
     @Published var records: [BackupObservation] = []
     @Published var runtime: [String: String] = [:]
-    private let queue = DispatchQueue(label: "io.picharbor.python", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "io.picharbor.python", qos: .userInitiated, attributes: .concurrent)
     private var booted = false
     let home: URL
 
@@ -130,11 +152,24 @@ final class Engine: ObservableObject {
     }
 
     func invoke(_ action: String, _ payload: [String: Any] = [:]) async throws -> [String: Any] {
+        let lease = BackupExecutionContext.lease
+        try lease?.check()
         let requestID = UUID().uuidString
         var envelope = payload
+        if !["probe", "capabilities", "records", "logout"].contains(action) {
+            let port: Int
+            if let inherited = ProxyContext.port { port = inherited }
+            else { port = try await ProxyManager.shared.route().0 }
+            envelope["proxy_url"] = port > 0 ? "http://127.0.0.1:\(port)" : ""
+        }
         envelope["protocol_version"] = 2; envelope["request_id"] = requestID
+        if let lease { envelope["timeout_seconds"] = min(lease.remaining, Double(lease.stage == .commit ? lease.policy.commitSeconds : lease.policy.querySeconds)) }
         let encoded = try JSONSerialization.data(withJSONObject: envelope)
         let input = String(decoding: encoded, as: UTF8.self)
+        lease?.register(requestID) { code in
+            DispatchQueue.global(qos: .userInitiated).async { PythonBridge.cancelRequest(requestID, reason: code) }
+        }
+        defer { lease?.unregister(requestID) }
         let output: String = await withCheckedContinuation { continuation in
             queue.async {
                 let result = PythonBridge.call(action, payload: input) { value in
@@ -152,6 +187,7 @@ final class Engine: ObservableObject {
                 continuation.resume(returning: result)
             }
         }
+        try lease?.check()
         let result = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] ?? [:]
         guard result["protocol_version"] as? Int == 2, result["request_id"] as? String == requestID else { throw HarborError("PROTOCOL_VERSION") }
         guard result["ok"] as? Bool == true else { throw HarborError(result["error"] as? String ?? "ENGINE_ERROR") }

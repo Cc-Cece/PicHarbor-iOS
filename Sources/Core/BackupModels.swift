@@ -31,6 +31,9 @@ struct BackupSettings: Codable, Equatable {
     var scopeConfirmed: Bool?
     var wifiOnly = true
     var syncAlbums = false
+    var pipelineMode: PipelineMode?
+    var pipelineOverrides: PipelineLimits?
+    var executionOverrides: BackupExecutionPolicy?
     var selectedAlbums: [String] = []
     // Legacy cleanup preferences remain decodable for upgrades. No longer used
     // by the native application; local removal is delegated to Google Photos.
@@ -82,6 +85,32 @@ struct AssetBackupState {
     var created: Date
     var skipped = false
 }
+
+enum LibraryBackupFilter: String, CaseIterable, Identifiable {
+    case all, backedUp, notBackedUp
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .all: return L10n.text("全部"); case .backedUp: return L10n.text("已备份"); case .notBackedUp: return L10n.text("未备份") }
+    }
+    func includes(backedUp: Bool) -> Bool { self == .all || (self == .backedUp ? backedUp : !backedUp) }
+}
+
+struct CompletedAssetIndex {
+    private struct Version: Hashable { let assetID: String; let revision: String }
+    private var versions = Set<Version>()
+    private(set) var account = ""
+    private(set) var revision = 0
+    mutating func reset(account: String) { self.account = account; versions.removeAll(keepingCapacity: true); revision += 1 }
+    mutating func include(_ jobs: [BackupJob], account: String) {
+        if self.account != account { reset(account: account) }
+        for job in jobs where !account.isEmpty && job.account == account && job.state == .completed {
+            if versions.insert(Version(assetID: job.assetID, revision: job.assetRevision)).inserted { revision += 1 }
+        }
+    }
+    func contains(assetID: String, revision: String, account: String) -> Bool {
+        !account.isEmpty && account == self.account && versions.contains(Version(assetID: assetID, revision: revision))
+    }
+}
 struct MediaResource: Codable, Identifiable, Equatable {
     var id = UUID().uuidString
     var role: String
@@ -98,11 +127,24 @@ struct MediaResource: Codable, Identifiable, Equatable {
     var submitted = false
 }
 struct BackupJob: Codable, Identifiable {
+    var repairStaging: Bool?
+    var pipelineStage: PipelineStage?
+    var pipelineSeconds: [String: Double]?
+    var transferStartedAt: Date?
+    var recovery: BackupRecoveryBudget?
+    var lastAttemptError: String?
+    var transferWatch: BackupTransferWatch?
     var id = UUID().uuidString
     var generation: Int64?
     var origin: BackupOrigin?
     var batchID: String?
     var activityHidden: Bool?
+    var proxyFallback: ProxyFallback?
+    var proxyPolicy: ProxyPolicy?
+    var proxyScope: String?
+    var proxyPort: Int?
+    var proxyLastNode: String?
+    var proxyFailures: [String]?
     var archivedAt: Date?
     var unarchivedAt: Date?
     var account: String
@@ -276,6 +318,13 @@ struct LivePairRecord: Codable, Identifiable {
     var confirmed = false
     var remoteKey = ""
     var queryOnly: Bool { submitted || confirmed }
+    /// A saved pair checkpoint is reusable only for these exact two resources.
+    func isConfirmed(in resources: [MediaResource]) -> Bool {
+        guard confirmed, !remoteKey.isEmpty, photoID != videoID,
+              let photo = resources.first(where: { $0.id == photoID }),
+              let video = resources.first(where: { $0.id == videoID }) else { return false }
+        return photo.confirmed && video.confirmed && photo.remoteKey == remoteKey && video.remoteKey == remoteKey
+    }
     static func make(_ resources: [MediaResource]) throws -> [LivePairRecord] {
         var pairs: [LivePairRecord] = []
         for version in ["original", "current"] {

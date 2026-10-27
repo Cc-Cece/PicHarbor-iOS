@@ -20,6 +20,27 @@ struct HarborRootView: View {
         .tint(.blue)
         .preferredColorScheme(model.settings.appearance == "dark" ? .dark : model.settings.appearance == "light" ? .light : nil)
         .safeAreaInset(edge: .top) {
+          VStack(spacing: 0) {
+            if model.recoveryRequired {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(L10n.text("备份队列已安全保留"), systemImage: "pause.circle")
+                    Text(L10n.text("为避免恢复大量任务时卡顿，已暂缓自动备份。可以先查看任务，再继续备份。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button(L10n.text("继续备份")) { Task { await model.continueQueueRecovery() } }
+                        .disabled(model.switching || !model.initialized)
+                        .accessibilityIdentifier("queue.recover")
+                }.frame(maxWidth: .infinity, alignment: .leading).padding().background(.regularMaterial)
+            }
+            if model.enqueueing {
+                VStack(alignment: .leading, spacing: 8) {
+                    ProgressView(value: Double(model.enqueueProcessed), total: Double(max(1, model.enqueueTotal)))
+                    HStack {
+                        Text(L10n.text("正在加入备份队列 · {0}/{1}", [String(model.enqueueProcessed), String(model.enqueueTotal)]))
+                        Spacer()
+                        Button(L10n.text("停止加入")) { model.stopAddingTasks() }.accessibilityIdentifier("queue.stopAdding")
+                    }.font(.caption)
+                }.padding().background(.regularMaterial)
+            }
             if L10n.message(model.notice) == L10n.text("已加入备份队列。") {
                 HStack {
                     Label(L10n.text("已加入备份队列 · {0} 项", [String(describing: model.queueNoticeCount)]), systemImage: "checkmark.circle.fill").font(.subheadline)
@@ -28,6 +49,7 @@ struct HarborRootView: View {
                     Button { model.notice = "" } label: { Image(systemName: "xmark") }.accessibilityLabel(L10n.text("关闭备份提示"))
                 }.padding().background(.regularMaterial)
             }
+          }
         }
         .task(id: model.queueNoticeID) {
             guard L10n.message(model.notice) == L10n.text("已加入备份队列。") else { return }
@@ -73,11 +95,13 @@ struct BackupDashboard: View {
                         Spacer()
                         metric(L10n.text("可访问"), model.library.assets.count)
                     }
+                    if model.activeCount > 0 { BackupTransferMetrics() }
+                    PipelineActivitySummary()
                 }.padding(.vertical, 12)
             }
             Section {
                 Button { confirm = true } label: { Label(L10n.text("备份当前范围"), systemImage: "arrow.up.circle.fill").font(.headline) }
-                    .disabled(model.account.isEmpty || !model.initialized)
+                    .disabled(model.account.isEmpty || !model.initialized || model.enqueueing || model.recoveryRequired)
                 NavigationLink { BackupScopeView() } label: { Label(L10n.text("备份范围"), systemImage: "rectangle.stack") }
                 NavigationLink { BackupPreferencesView() } label: { Label(L10n.text("备份偏好"), systemImage: "slider.horizontal.3") }
             }
@@ -105,7 +129,44 @@ struct BackupDashboard: View {
     }
 }
 
+private struct BackupTransferMetrics: View {
+    @EnvironmentObject private var model: HarborModel
+    @ObservedObject private var language = LanguagePreferences.shared
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let summary = model.backupTransferSummary()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 24) {
+                    value(L10n.text("当前速度"), speed(summary.bytesPerSecond))
+                    value(L10n.text("剩余大小"), remaining(summary))
+                }
+                Text(summary.unknownSizeCount > 0
+                     ? L10n.text("另有 {0} 项待计算大小。", [String(summary.unknownSizeCount)])
+                     : summary.uploadFinished ? L10n.text("等待确认保存") : L10n.text("仅统计尚未上传的内容。"))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }.accessibilityIdentifier("backup.transferMetrics")
+    }
+    private func value(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(text).font(.subheadline.bold()).monospacedDigit()
+        }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
+    }
+    private func speed(_ bytes: Double?) -> String {
+        guard let bytes else { return L10n.text("计算中…") }
+        guard bytes > 0, bytes.isFinite else { return "0 KB/s" }
+        return ByteCountFormatter.string(fromByteCount: Int64(min(bytes, Double(Int64.max / 2))), countStyle: .file) + "/s"
+    }
+    private func remaining(_ summary: BackupTransferSummary) -> String {
+        if summary.remainingBytes == 0 && summary.unknownSizeCount > 0 { return L10n.text("计算中…") }
+        let size = summary.remainingBytes == 0 ? "0 KB" : ByteCountFormatter.string(fromByteCount: summary.remainingBytes, countStyle: .file)
+        return summary.unknownSizeCount > 0 ? L10n.text("至少 {0}", [size]) : size
+    }
+}
+
 struct JobRow: View {
+    @EnvironmentObject private var model: HarborModel
     @ObservedObject private var language = LanguagePreferences.shared
     let job: BackupJob
     var showDate = true
@@ -124,7 +185,7 @@ struct JobRow: View {
                 }
                 if showDate { Text(L10n.date(job.created)).font(.caption2).foregroundStyle(.secondary) }
                 Text(job.albumsPending ? L10n.text("已备份 · 等待相簿同步") : job.displayStatus).font(.caption).foregroundStyle(.secondary)
-                if job.state == .transferring { ProgressView(value: job.progress).accessibilityLabel(L10n.text("上传进度")) }
+                if job.state == .transferring { ProgressView(value: model.transferProgress[job.id] ?? job.progress).accessibilityLabel(L10n.text("上传进度")) }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 4)
         .sheet(isPresented: $filename) {

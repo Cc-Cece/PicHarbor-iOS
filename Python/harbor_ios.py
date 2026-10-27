@@ -2,13 +2,17 @@
 
 Only the caller's Keychain owns reusable credentials. SQLite stores account-scoped
 observations, never tokens. A hash lookup confirms content existence, not cleanup
-eligibility or original quality. All work is serialized by the native boundary.
+eligibility or original quality. Legacy database work is exclusive; protocol calls use isolated request contexts.
 """
 import base64
+import copy
+import threading
+from types import SimpleNamespace
 import hashlib
 import json
 import logging
 import os
+import re
 from pathlib import Path
 import sqlite3
 import time
@@ -16,6 +20,7 @@ import uuid
 from urllib.parse import parse_qs
 
 import requests
+from harbor_deadline import RequestBudget, DeadlineExceeded, DeadlineSession, current as current_budget, check as check_budget, cancel_request
 from gpmc.api import Api
 from gpmc.auth import authenticate
 from gpmc.exceptions import AuthenticationError, BrowserAuthenticationRequiredError
@@ -28,13 +33,18 @@ class Failure(Exception):
 class IOSApi(Api):
     def _new_session(self):
         # No inherited proxy/TLS override or hidden retry multiplication.
-        session = requests.Session()
+        budget = current_budget()
+        session = DeadlineSession(budget) if budget is not None else requests.Session()
         session.verify = True
         session.trust_env = False
+        if self.proxy:
+            session.proxies.update({"http": self.proxy, "https": self.proxy})
         return session
 
 
 def classify(error):
+    if isinstance(error, DeadlineExceeded):
+        return error.code
     if isinstance(error, Failure):
         return str(error)
     if isinstance(error, (AuthenticationError, BrowserAuthenticationRequiredError)):
@@ -72,6 +82,11 @@ class Service:
         self.home.mkdir(parents=True, exist_ok=True)
         self.staging = self.home / "Staging"
         self.staging.mkdir(exist_ok=True)
+        self.identity_condition = threading.Condition(threading.RLock())
+        self.active_protocol_calls = 0
+        self.changing_identity = False
+        self.protocol_pool = {}
+        self.identity_generation = 0
         self.api_factory, self.notify = api_factory, notify
         self.last_event = ("", 0.0)
         self.api, self.account = None, ""
@@ -85,6 +100,71 @@ class Service:
         self.db.execute("UPDATE records SET state='interrupted',error='INTERRUPTED' WHERE state='uploading'")
         self.db.commit()
         logging.disable(logging.CRITICAL)
+
+    def control_dispatch(self, action, value):
+        # Login/logout and the legacy observations database form an exclusive
+        # barrier. An in-flight request never changes its account or proxy.
+        with self.identity_condition:
+            while self.changing_identity:
+                check_budget(); self.identity_condition.wait(timeout=.5)
+            self.changing_identity = True
+            try:
+                while self.active_protocol_calls:
+                    check_budget(); self.identity_condition.wait(timeout=.5)
+                if self.api is not None:
+                    self.api.proxy = value.get("proxy_url", "")
+                result = self.dispatch(action, value)
+                if action in ("connect", "logout"):
+                    self.identity_generation += 1
+                    self.protocol_pool.clear()
+                return result
+            finally:
+                self.changing_identity = False
+                self.identity_condition.notify_all()
+
+    def protocol_dispatch(self, action, value):
+        from harbor_protocol import Protocol
+        with self.identity_condition:
+            while self.changing_identity:
+                check_budget(); self.identity_condition.wait(timeout=.5)
+            if self.api is None:
+                raise Failure("LOGIN_REQUIRED")
+            if value.get("account") != self.account:
+                raise Failure("ACCOUNT_CHANGED")
+            request_api = copy.copy(self.api)
+            request_api.proxy = value.get("proxy_url", "")
+            if hasattr(request_api, "auth_response_cache"):
+                request_api.auth_response_cache = dict(self.api.auth_response_cache)
+                # Serialize bearer renewal only, not the media protocol request.
+                _ = request_api.bearer_token
+                self.api.auth_response_cache = dict(request_api.auth_response_cache)
+            generation = self.identity_generation
+            identity = (generation, self.account, request_api.proxy)
+            pool = self.protocol_pool.get(identity, [])
+            context = pool.pop() if pool else Protocol(SimpleNamespace(api=request_api, staging=self.staging))
+            if not pool:
+                self.protocol_pool.pop(identity, None)
+            context.service.api = request_api
+            self.active_protocol_calls += 1
+        try:
+            check_budget()
+            result = context.dispatch(action, value)
+            check_budget()
+            return result
+        finally:
+            with self.identity_condition:
+                pool = self.protocol_pool.pop(identity, [])
+                pool.append(context)
+                self.protocol_pool[identity] = pool
+                # Retain only eight idle contexts in total, including across
+                # node changes. Library snapshots can be large on real accounts.
+                while sum(map(len, self.protocol_pool.values())) > 8:
+                    oldest = next(iter(self.protocol_pool))
+                    self.protocol_pool[oldest].pop(0)
+                    if not self.protocol_pool[oldest]:
+                        del self.protocol_pool[oldest]
+                self.active_protocol_calls -= 1
+                self.identity_condition.notify_all()
 
     def emit(self, phase, completed=0, total=0):
         previous, emitted = self.last_event
@@ -103,12 +183,13 @@ class Service:
         if not credential or len(credential) > 16384 or any(c in credential for c in "\r\n"):
             raise Failure("INVALID_CREDENTIAL")
         if "androidId=" not in credential:
-            credential = authenticate(credential, timeout=60)
+            credential = authenticate(credential, proxy=value.get("proxy_url", ""), timeout=60)
         fields = parse_qs(credential)
         account = fields.get("Email", [""])[0].strip().lower()
         if "@" not in account or any(c.isspace() for c in account):
             raise Failure("INVALID_CREDENTIAL")
         api = self.api_factory(credential, timeout=60)
+        api.proxy = value.get("proxy_url", "")
         _ = api.bearer_token
         self.api, self.account = api, account
         from harbor_protocol import Protocol
@@ -249,7 +330,25 @@ def dispatch(action, payload):
         request_id = value.get("request_id", "")
         if value.get("protocol_version", 2) != 2:
             raise Failure("PROTOCOL_VERSION")
-        return json.dumps({"ok": True, "protocol_version": 2, "request_id": request_id, **_service.dispatch(action, value)})
+        proxy = value.get("proxy_url", "")
+        if proxy:
+            match = re.fullmatch(r"http://127\.0\.0\.1:([0-9]{1,5})", proxy) if isinstance(proxy, str) else None
+            if not match or not 24500 <= int(match[1]) < 24564:
+                raise Failure("INVALID_PROXY")
+        seconds = value.get("timeout_seconds", 90 if action in ("commit_resource", "commit_pair_photo", "pair_apple") else 60)
+        if type(seconds) not in (int, float) or not .01 <= seconds <= 600:
+            raise Failure("INVALID_TIMEOUT")
+        with RequestBudget(request_id, seconds) as budget:
+            from harbor_protocol import Protocol
+            if isinstance(_service, Service):
+                result = _service.protocol_dispatch(action, value) if action in Protocol.actions else _service.control_dispatch(action, value)
+            else:
+                # Test doubles and older embedders retain the legacy boundary.
+                if _service.api is not None:
+                    _service.api.proxy = proxy
+                result = _service.dispatch(action, value)
+            budget.check()
+        return json.dumps({"ok": True, "protocol_version": 2, "request_id": request_id, **result})
     except Exception as error:
         code = classify(error)
         return json.dumps({"ok": False, "protocol_version": 2, "request_id": request_id, "error": code,

@@ -7,7 +7,6 @@ struct JobDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let id: String
     @State private var advanced = false
-    @State private var reprepare = false
     @State private var remove = false
     @State private var reupload = false
     var job: BackupJob? { model.jobs.first { $0.id == id } }
@@ -20,9 +19,10 @@ struct JobDetailView: View {
                     Text(job.verificationLevel == "strict" ? L10n.text("已确认动态处理完成") : job.verificationLevel == "standard" ? L10n.text("已确认云端保存") : job.state == .completed ? L10n.text("历史备份记录") : job.settings.requiresStrictConfirmation ? L10n.text("保存后继续等待动态处理") : L10n.text("云端保存确认后完成")).font(.caption).foregroundStyle(.secondary)
                 }
                 Section(L10n.text("备份流程")) { TaskFlowView(job: job) }
+                Section { NavigationLink(L10n.text("任务连接策略")) { TaskProxyPreferencesView(id: id) } }
                 Section(job.state == .failed || job.state == .attention ? L10n.text("需要处理") : L10n.text("当前状态")) {
                     Text(job.friendlyMessage).foregroundStyle(.secondary)
-                    if job.state == .transferring { ProgressView(value: job.progress).accessibilityLabel(L10n.text("上传进度")) }
+                    if job.state == .transferring { ProgressView(value: model.transferProgress[job.id] ?? job.progress).accessibilityLabel(L10n.text("上传进度")) }
                     if job.state == .completed { NavigationLink(L10n.text("前往 Google 相册释放空间")) { CleanupView() }.font(.footnote) }
                 }
                 Section {
@@ -37,10 +37,9 @@ struct JobDetailView: View {
                         }
                         if job.state.active || [.queued, .waiting].contains(job.state) {
                             Button(L10n.text("暂停"), systemImage: "pause") { Task { await model.pause(id) } }
-                        } else { Button(L10n.text("继续 / 重试"), systemImage: "play") { Task { await model.resume(id) } } }
+                        } else { Button(job.state == .paused ? L10n.text("继续") : L10n.text("重试"), systemImage: job.state == .paused ? "play" : "arrow.clockwise") { Task { await model.resume(id) } } }
                         Button(L10n.text("取消任务"), role: .destructive) { Task { await model.cancel(id) } }
                     }
-                    if [.failed, .attention, .paused].contains(job.state) { Button(L10n.text("重新准备此任务")) { reprepare = true } }
                     if job.state == .attention && job.error == "PREVIOUS_BACKUP_NOT_VISIBLE" { Button(L10n.text("仍要重新上传")) { reupload = true } }
                     if job.unfinished { Button(L10n.text("移除未完成任务"), role: .destructive) { remove = true } }
                 }
@@ -51,9 +50,6 @@ struct JobDetailView: View {
             NavigationStack { if let job { TaskAdvancedInformation(job: job) } }
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
-        .confirmationDialog(L10n.text("重新准备此任务？"), isPresented: $reprepare, titleVisibility: .visible) {
-            Button(L10n.text("重新读取原件并查重")) { Task { await model.reprepare(id) } }
-        } message: { Text(L10n.text("保留原任务设置及批次，重新读取照片并查重。旧任务保留为已取消，本机及云端照片均保留。")) }
         .confirmationDialog(L10n.text("移除此任务？"), isPresented: $remove, titleVisibility: .visible) {
             Button(L10n.text("停止并移除任务"), role: .destructive) { Task { await model.removeUnfinished([id]); dismiss() } }
         } message: { Text(L10n.text("本机及云端照片保留。仍可手动重新备份。")) }

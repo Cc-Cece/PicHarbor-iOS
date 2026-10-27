@@ -20,6 +20,7 @@ struct HarborSettingsView: View {
                 NavigationLink { BackupPreferencesView() } label: { Label(L10n.text("备份偏好"), systemImage: "icloud.and.arrow.up") }
                 NavigationLink { BackupScopeView() } label: { Label(L10n.text("备份范围"), systemImage: "rectangle.stack") }
                 NavigationLink { NetworkPreferencesView() } label: { Label(L10n.text("网络与后台"), systemImage: "wifi") }
+                NavigationLink { ProxyPreferencesView() } label: { Label(L10n.text("应用内代理"), systemImage: "network") }.accessibilityIdentifier("settings.proxy")
                 NavigationLink { ActivityArchiveSettingsView() } label: { Label(L10n.text("活动记录"), systemImage: "archivebox") }
             }
             Section(L10n.text("设备")) {
@@ -49,6 +50,13 @@ struct BackupPreferencesView: View {
     @EnvironmentObject private var model: HarborModel
     var body: some View {
         Form {
+            Section {
+                Picker(L10n.text("并发模式"), selection: Binding(get: { model.settings.pipelineMode ?? .automatic }, set: { value in
+                    if value == .custom && model.settings.pipelineOverrides == nil { model.settings.pipelineOverrides = PipelineProfiles.recommended(model.pipelineDevice) }
+                    model.settings.pipelineMode = value
+                })) { ForEach(PipelineMode.allCases, id: \.self) { Text($0.title).tag($0) } }.pickerStyle(.menu)
+                NavigationLink(L10n.text("高级配置")) { PipelineAdvancedView() }
+            }
             Section {
                 Picker(L10n.text("上传画质"), selection: $model.settings.quality) { ForEach(UploadQuality.allCases) { Text($0.title).tag($0) } }.pickerStyle(.menu).accessibilityIdentifier("preferences.quality")
             } header: { Text(L10n.text("上传画质")) } footer: { Text(L10n.text("是否占用空间，以 Google 相册显示为准。")) }
@@ -320,6 +328,10 @@ private struct AboutView: View {
             Section(L10n.text("开源组件")) {
                 Text(L10n.text("gpmc · GPL-3.0\nCPython · Python Software Foundation License\nblackboxprotobuf · MIT\nRequests 及依赖许可证随应用分发。"))
                 Link(L10n.text("项目源码与许可证"), destination: URL(string: "https://github.com/Cc-Cece/PicHarbor-iOS")!)
+                Text("Clash · GPL-3.0")
+                if let url = Bundle.main.url(forResource: "THIRD_PARTY_LICENSES", withExtension: "zip", subdirectory: "ProxyNotices") {
+                    ShareLink(item: url) { Text(L10n.text("代理组件开源许可")) }
+                }
             }
         }.navigationTitle(L10n.text("关于")).navigationBarTitleDisplayMode(.inline)
     }

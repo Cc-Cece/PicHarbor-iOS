@@ -1,1 +1,2 @@
 "NSPhotoLibraryUsageDescription" = "浏览并备份你允许访问的照片与视频。";
+"NSCameraUsageDescription" = "扫描二维码以添加代理订阅。";

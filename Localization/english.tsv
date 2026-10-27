@@ -1,5 +1,34 @@
 %.1f 秒|%.1f s
+并发模式|Concurrency mode
+自定义|Custom
+上传检查|Upload checks
+云端确认|Cloud confirmation
+使用自定义配置|Use custom settings
+保存与配对|Save and pair
+准备中 {0} · 上传中 {1} · 确认中 {2}|Preparing {0} · Uploading {1} · Confirming {2}
+准备照片 1–3，上传检查、保存与配对、云端确认 1–4，文件上传 1–12，缓存 128–8192 MB。|Photo preparation: 1–3. Upload checks, save and pair, cloud confirmation: 1–4. File uploads: 1–12. Buffer: 128–8192 MB.
+应用设置|Apply settings
+恢复自动管理|Restore automatic management
+文件上传|File uploads
+等待上传队列腾出空间。|Waiting for space in the upload queue.
+缓存上限（MB）|Buffer limit (MB)
+请输入范围内的整数。|Enter whole numbers within the allowed ranges.
+资源紧张时会自动降低并发。减少数量不会中断已开始的上传。单个大文件可能超过缓存上限。|Concurrency is reduced when resources are limited. Reducing it does not interrupt uploads already started. A large file may exceed the buffer limit.
+高级配置|Advanced configuration
 A · 运行环境|A · Runtime
+自动重试次数|Automatic retries
+查询超时（秒）|Query timeout (seconds)
+提交超时（秒）|Commit timeout (seconds)
+无进展超时（秒）|No-progress timeout (seconds)
+文件处理上限（分钟）|File time limit (minutes)
+云端等待上限（分钟）|Cloud wait limit (minutes)
+自定义任务保护|Customize task protection
+重试 0–10 次；查询 15–300 秒；提交 15–600 秒；无进展 30–1800 秒；文件处理 10–1440 分钟；云端等待 10–240 分钟。|Retries: 0–10. Queries: 15–300 s. Commits: 15–600 s. No progress: 30–1800 s. File processing: 10–1440 min. Cloud waiting: 10–240 min.
+本次处理超时，稍后会重试。|This attempt timed out. It will retry shortly.
+一段时间没有进展，稍后会重试。|No progress was detected for a while. It will retry shortly.
+多次尝试仍未成功，已暂停自动重试。可以稍后继续。|Automatic retries have stopped after repeated failures. You can resume later.
+任务长时间没有进展，已暂停。请稍后继续或查看高级信息。|This task was paused after making no progress for a long time. Resume later or view advanced information.
+云端确认等待较久，已暂停检查。请稍后重新检查。|Cloud confirmation is taking too long. Checks are paused; try again later.
 B · Google 账号|B · Google account
 Google 拒绝了应用内登录。可导入已有 gpmc 凭据验证，其余情况需要调整认证适配。|Google declined in-app sign-in. Try importing existing gpmc credentials.
 Google 登录跳转暂不受支持。请取消后导入已有凭据，或导出脱敏诊断。|This Google sign-in redirect is not supported. Import existing credentials or export diagnostics.
@@ -611,3 +640,175 @@ Google 相册备份|Google Photos backup
 移除未完成|Remove unfinished
 继续分享|Continue sharing
 此处会将照片和配对视频作为两个文件分享。如需分享为一张动态照片，请前往 iPhone 自带的“照片”应用。|The photo and paired video will be shared as two files. To share a single Live Photo, use the Photos app on your iPhone.
+暂停并等待|Pause and wait
+尝试备用节点|Try backup nodes
+备用节点失败后尝试直连|Try direct after backup nodes fail
+请先导入代理配置。|Import a proxy configuration first.
+验证版支持最多 64 个节点的 Clash YAML，暂不支持代理提供者或链式代理。|This preview supports Clash YAML with up to 64 nodes. Proxy providers and chained proxies are not supported yet.
+代理启动失败，请检查节点配置，或导入其他配置重试。|The proxy could not start. Check the nodes or import another configuration.
+允许的连接均不可用，正在等待代理恢复。|No permitted connection is available. Waiting for the proxy to recover.
+配置已导入，节点已就绪。|Configuration imported. Nodes are ready.
+仅代理 PicHarbor|Proxy PicHarbor only
+不创建系统 VPN。其他应用不使用此代理。验证阶段请保持应用在前台。|No system VPN is created. Other apps do not use this proxy. Keep PicHarbor in the foreground during testing.
+配置|Configuration
+导入 Clash 配置文件|Import a Clash configuration
+HTTPS 订阅链接|HTTPS subscription URL
+读取订阅|Read subscription
+验证版支持包含 proxies 的 YAML，最多 64 个节点。暂不支持 proxy-providers、链式代理或规则导入。首次订阅下载需要网络可达，也可从文件导入。|This preview supports YAML containing proxies, with up to 64 nodes. Proxy providers, chains and imported rules are not supported. The subscription must be reachable for the initial download; you can also import a file.
+节点|Nodes
+首选节点|Preferred node
+勾选最多 8 个备用节点。只在允许切换的策略下使用，按勾选顺序尝试。|Select up to 8 backup nodes. They are tried in selection order only when the policy permits switching.
+代理不可用时|When the proxy is unavailable
+全局兜底策略|Global fallback policy
+任务默认跟随全局，也可在任务详情单独设置。直连需要明确允许，失败后继续等待，不会标记完成。|Tasks follow the global policy unless overridden in task details. Direct access requires permission. Failed connections wait and do not mark a task complete.
+连接验证|Connection test
+测试当前连接|Test current connection
+代理连接测试通过。|The proxy connection test passed.
+当前策略使用直连。|The current policy uses a direct connection.
+请验证：关闭第三方 VPN 后登录并备份；两个任务使用不同兜底；断开节点后重试；锁屏后返回继续。应用被暂停时内置代理可能停止，后台持续上传尚未保证。|Test sign-in and backup with external VPN apps off, different task policies, node failures, and resuming after locking the screen. The embedded proxy may stop when iOS suspends the app; continuous background uploads are not guaranteed.
+代理组件开源许可|Proxy component licenses
+应用内代理（验证）|In-app proxy (preview)
+未能读取配置文件。|Could not read the configuration file.
+请输入有效的 HTTPS 订阅链接。|Enter a valid HTTPS subscription URL.
+订阅读取失败，请检查网络或改用文件导入。|The subscription could not be loaded. Check your connection or import a file.
+跟随全局|Follow global
+生效策略|Effective policy
+最近连接|Last connection
+直连|Direct
+只影响当前任务，随任务保存，不改变全局。修改会暂停当前传输并从文件边界重新连接，已提交内容仍先确认。|Applies only to this task and is saved with it. The global policy stays unchanged. Changing it reconnects the current transfer from the file boundary; submitted content is checked first.
+任务连接策略|Task connection policy
+HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
+首选节点 {0}：{1} 毫秒|Primary node {0}: {1} ms
+正在处理，请稍候…|Working, please wait…
+请输入有效的 HTTP 或 HTTPS 订阅链接。|Enter a valid HTTP or HTTPS subscription URL.
+正在读取订阅…|Downloading subscription…
+订阅已下载，正在导入…|Subscription downloaded. Importing…
+订阅已导入。|Subscription imported.
+原有配置|Existing configuration
+本地配置|Local configuration
+旧配置未能重新启动，请重新测试连接。|The previous configuration could not restart. Test the connection again.
+{0} 个节点 · 新增 {1}，修改 {2}，移除 {3}|{0} nodes: {1} added, {2} changed, {3} removed
+更新成功：{0}|Updated: {0}
+配置已切换。|Configuration switched.
+配置已移除。|Configuration removed.
+未能保存更新记录。|Could not save update history.
+配置与订阅|Configurations & Subscriptions
+正在使用：{0} · {1} 个节点|In use: {0} · {1} nodes
+添加订阅|Add Subscription
+从链接或文件导入，任选一种。一次使用一份配置，订阅需手动更新。|Import from a URL or file. Use one configuration at a time. Update subscriptions manually.
+正在导入…|Importing…
+已保存的配置|Saved Configurations
+{0} · {1} 个节点|{0} · {1} nodes
+本地文件|Local File
+订阅|Subscription
+尚未添加配置。|No configurations yet.
+请先暂停备份，再更新或切换配置。|Pause backups before updating or switching configurations.
+仅导入节点，不使用文件中的规则、系统 VPN 或 DNS 设置。最多保存 20 份配置，每份最多 64 个节点。|Only nodes are imported. Rules, system VPN and DNS settings are not used. Save up to 20 configurations with 64 nodes each.
+配置名称|Configuration Name
+链接仅保存在本机，不加入诊断报告。|The URL stays on this device and is excluded from diagnostics.
+下载并添加|Download & Add
+更新订阅|Update Subscription
+保存修改|Save Changes
+修改已保存，节点内容需更新后生效。|Changes saved. Update the subscription to refresh its nodes.
+正在使用|In Use
+使用此配置|Use This Configuration
+更新记录|Update History
+节点数|Node Count
+上次成功更新|Last Successful Update
+移除配置|Remove Configuration
+配置详情|Configuration Details
+移除此配置？正在使用的配置被移除后，应用内代理将关闭。|Remove this configuration? Removing the active configuration turns off the in-app proxy.
+订阅服务器未返回有效内容，请检查链接后重试。|The subscription server returned an invalid response. Check the URL and try again.
+最多保存 20 份配置，请先移除不用的配置。|You can save up to 20 configurations. Remove an unused configuration first.
+代理启动失败：{0}|Proxy startup failed: {0}
+可用 {0} 个，暂不可用 {1} 个。未通过的节点已保留，可重新检查。|{0} available, {1} unavailable. Unavailable nodes are retained for rechecking.
+订阅未提供可用节点，请确认链接支持 Clash Meta 格式。|The subscription returned no usable nodes. Check that it supports Clash Meta format.
+另有 {0} 个节点暂不可用，可在配置详情查看。|{0} more nodes are unavailable. See configuration details.
+订阅信息|Subscription Information
+暂不可用的节点|Unavailable Nodes
+这些节点已保留，不会用于连接。更新应用或配置后，可重新检查。|These nodes are retained and are not used for connections. Recheck after updating the app or configuration.
+重新检查兼容性|Recheck Compatibility
+正在检查节点…|Checking nodes…
+仅用于 PicHarbor 连接 Google，不影响其他应用。|Used only for PicHarbor connections to Google. Other apps are unaffected.
+从相册选择二维码|Choose QR Code from Photos
+任务默认跟随此设置，也可单独调整。仅在你允许时使用直连。|Tasks follow this setting unless individually overridden. Direct connections require your permission.
+前往系统设置|Open System Settings
+只用于此任务，不会改变全局设置。修改后会重新连接，并先检查已备份内容。|Applies only to this task. Changes reconnect and check existing backups first.
+图片中未找到二维码，请选择清晰、完整的二维码图片。|No QR code found. Choose a clear image showing the entire code.
+将订阅二维码放入取景框|Place the subscription QR code in the camera view
+应用内代理|In-App Proxy
+应用进入后台后，代理连接可能暂停；返回应用后可继续备份。|The proxy may pause in the background. Return to the app to continue backups.
+扫描 HTTP 或 HTTPS 订阅链接，确认后再添加。|Scan an HTTP or HTTPS subscription URL, then review before adding.
+扫码添加订阅|Scan Subscription QR Code
+支持 Clash Meta 配置，最多保存 20 份，每份最多 64 个节点。|Supports Clash Meta configurations. Save up to 20 configurations with 64 nodes each.
+无法读取图片，请选择另一张二维码图片。|Could not read the image. Choose another QR code image.
+暂不支持此配置，请使用最多 64 个节点的 Clash Meta 完整配置。|This configuration is unsupported. Use a complete Clash Meta configuration with up to 64 nodes.
+未能识别图片，请换一张清晰的二维码图片。|Could not recognize the image. Try a clearer QR code image.
+未获得相机权限，仍可从相册选择二维码。|Camera access is unavailable. You can still choose a QR code from Photos.
+正在识别二维码…|Reading QR code…
+此二维码不是有效的 HTTP 或 HTTPS 订阅链接。|This QR code does not contain a valid HTTP or HTTPS subscription URL.
+相机暂不可用，可从相册选择二维码。|Camera unavailable. Choose a QR code from Photos instead.
+继续扫描|Scan Again
+订阅 {0} · {1}|Subscription {0} · {1}
+请选择要添加的订阅。|Choose a subscription to add.
+这是单个节点链接，请使用订阅二维码或手动导入配置文件。|This is a single-node URL. Use a subscription QR code or import a configuration file.
+连接失败时|When Connection Fails
+连接测试|Connection Test
+{0} 毫秒|{0} ms
+不可用|Unavailable
+任务可单独设置。测速不会中断正在上传的文件；仅在允许时使用直连。|Tasks can override these settings. Tests do not interrupt uploads. Direct connections require permission.
+优先保持正常连接，失败后结合延时和近期表现选择其他节点。|Keep working connections. On failure, choose another node using latency and recent results.
+停止测速|Stop Testing
+允许直连|Allow Direct Connection
+可勾选最多 8 个备用节点，按勾选顺序尝试。|Select up to 8 backup nodes. They are tried in selection order.
+已测速 {0} / {1} 个节点|Tested {0} / {1} nodes
+当前节点|Current Node
+所有节点不可用时|When All Nodes Are Unavailable
+手动选择|Manual
+暂停等待|Pause and Wait
+未测速|Not Tested
+测试访问 Google 的请求延时，并非上传速度。自动模式会按需补测，结果有效期约 5 分钟。|Measures request latency to Google, not upload speed. Automatic mode refreshes results as needed. Results remain current for about 5 minutes.
+测速全部节点|Test All Nodes
+测速完成。|Testing complete.
+测速已停止。|Testing stopped.
+自动选择|Automatic
+节点测速|Node Tests
+节点选择|Node Selection
+节点选择与切换|Node Selection and Switching
+请选择节点|Choose a Node
+近期连接失败，稍后重试。|Connection recently failed. Retry shortly.
+连接时自动选择|Selected When Connecting
+重新测速：{0}|Retest: {0}
+连接正常|Connection Healthy
+备份队列已安全保留|Your backup queue has been kept
+为避免恢复大量任务时卡顿，已暂缓自动备份。可以先查看任务，再继续备份。|Automatic backups are on hold while you review the large queue. Review your tasks, then continue when ready.
+继续备份|Continue backups
+正在加入备份队列 · {0}/{1}|Adding to backup queue · {0}/{1}
+停止加入|Stop adding
+请先继续备份，或等待当前批次加入完成。|Continue backups first, or wait for the current batch to finish joining the queue.
+显示更多|Show more
+当前速度|Current speed
+预计时间|Estimated time
+计算中…|Calculating…
+等待确认保存|Waiting for save confirmation
+少于 1 分钟|Less than 1 min
+约 {0}|About {0}
+预计时间仅供参考，照片准备和云端处理可能需要更久。|Times are estimates. Preparing photos and cloud processing may take longer.
+剩余大小|Remaining size
+另有 {0} 项待计算大小。|The size of {0} more items is not yet known.
+仅统计尚未上传的内容。|Includes only content still waiting to upload.
+至少 {0}|At least {0}
+同时备份数量|Simultaneous backups
+{0} 个|{0} items
+默认同时备份 2 个项目。减少数量时，已开始的上传会继续完成。|Back up 2 items at once by default. Lowering the limit lets uploads already started finish.
+继续暂停任务|Resume paused tasks
+重试全部异常任务|Retry all failed tasks
+重试|Retry
+暂存文件不可用。点击重试，将重新读取照片并继续备份。|The temporary file is unavailable. Tap Retry to read the photo again and continue.
+照片内容已变化，无法继续原任务。请从照片页面重新备份；已有云端内容保留。|The photo has changed, so this task cannot continue. Back it up again from Photos. Existing cloud content is kept.
+上传结果暂不可用。点击重试，将检查云端并继续备份。|The upload result is unavailable. Tap Retry to check the cloud and continue.
+暂存文件发生变化。点击重试，将重新读取照片并核对内容。|The temporary file has changed. Tap Retry to read the photo again and check its contents.
+无法恢复此任务的照片版本。请从照片页面重新备份；已有云端内容保留。|This task's photo version cannot be recovered. Back it up again from Photos. Existing cloud content is kept.
+未备份|Not backed up
+备份状态|Backup status
+备份状态以当前账号的记录为准。|Backup status is based on this account's records.

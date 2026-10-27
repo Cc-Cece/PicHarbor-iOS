@@ -14,21 +14,48 @@ enum ActivityStatus: String, CaseIterable, Identifiable {
         self == .all || (self == .completed ? job.state == .completed : job.unfinished && job.state != .cancelled)
     }
 }
+enum ActivityTaskOrder {
+    static func priority(_ job: BackupJob, now: Date) -> Int {
+        switch job.state {
+        case .preparing, .transferring, .committing: return 0
+        case .confirming, .paired: return (job.retryAt ?? .distantPast) <= now ? 0 : 2
+        case .queued, .waiting: return (job.retryAt ?? .distantPast) <= now ? 1 : 2
+        case .paused, .failed, .attention: return 3
+        case .completed: return 4
+        case .cancelled: return 5
+        }
+    }
+    static func precedes(_ lhs: BackupJob, _ rhs: BackupJob, now: Date) -> Bool {
+        let left = priority(lhs, now: now), right = priority(rhs, now: now)
+        if left != right { return left < right }
+        if lhs.created != rhs.created { return left < 4 ? lhs.created < rhs.created : lhs.created > rhs.created }
+        return lhs.id < rhs.id
+    }
+}
+
 struct ActivityBatch: Identifiable {
     var id: String
     var allJobs: [BackupJob]
     var matching: [BackupJob]
     var isBatch: Bool { allJobs.count > 1 }
-    var created: Date { allJobs.map(\.created).min() ?? .distantPast }
+    var created: Date { allJobs.last?.created ?? .distantPast }
     var title: String { (allJobs.first?.origin?.title ?? L10n.text("历史备份")) + L10n.text("批次") }
-    static func make(_ jobs: [BackupJob], source: ActivitySource, status: ActivityStatus) -> [ActivityBatch] {
+    static func make(_ jobs: [BackupJob], source: ActivitySource, status: ActivityStatus, queueOrder: Bool = true, now: Date = Date()) -> [ActivityBatch] {
         let visible = jobs.filter { $0.activityHidden != true && source.matches($0) }
         let groups = Dictionary(grouping: visible) { $0.account + "|" + ($0.batchID ?? "single:" + $0.id) }
         return groups.compactMap { key, values in
             let sorted = values.sorted { $0.created > $1.created }
-            let matching = sorted.filter(status.matches)
+            let filtered = sorted.filter(status.matches)
+            let matching = queueOrder ? filtered.sorted { ActivityTaskOrder.precedes($0, $1, now: now) } : filtered
             return matching.isEmpty ? nil : ActivityBatch(id: key, allJobs: sorted, matching: matching)
-        }.sorted { $0.created == $1.created ? $0.id < $1.id : $0.created > $1.created }
+        }.sorted {
+            if queueOrder, let left = $0.matching.first, let right = $1.matching.first {
+                let lp = ActivityTaskOrder.priority(left, now: now), rp = ActivityTaskOrder.priority(right, now: now)
+                if lp != rp { return lp < rp }
+                if lp < 4 { return ActivityTaskOrder.precedes(left, right, now: now) }
+            }
+            return $0.created == $1.created ? $0.id < $1.id : $0.created > $1.created
+        }
     }
 }
 
@@ -40,6 +67,15 @@ extension BackupJob {
     var isVideo: Bool { !isLive && (mediaKind == "video" || (sources.isEmpty ? resources : sources).contains { $0.role.hasSuffix(".video") }) }
     var flowIndex: Int {
         if state == .completed { return flowSteps.count - 1 }
+        if let pipelineStage {
+            switch pipelineStage {
+            case .preparation: return 0
+            case .lookup: return 1
+            case .upload: return 2
+            case .commit: return 3
+            case .confirmation: return standardConfirmationPassed && isLive && settings.requiresStrictConfirmation ? 4 : 3
+            }
+        }
         if resources.isEmpty { return 0 }
         if standardConfirmationPassed { return isLive && settings.requiresStrictConfirmation ? 4 : 3 }
         if state == .committing { return 3 }
@@ -74,6 +110,10 @@ extension BackupJob {
     }
     var diagnosticText: String {
         let value: [String: Any] = ["task_reference": id, "state": state.rawValue,
+            "pipeline_stage": pipelineStage?.rawValue ?? "legacy", "pipeline_seconds": pipelineSeconds ?? [:],
+            "automatic_failures": recovery?.failures ?? 0, "last_attempt_error": lastAttemptError ?? "",
+            "active_without_progress_seconds": recovery?.activeWithoutProgress ?? 0, "handoffs_without_progress": recovery?.handoffs ?? 0,
+            "cloud_wait_seconds": recovery?.cloudSeconds ?? 0, "transfer_idle_seconds": transferWatch?.idle ?? 0,
             "stage": failureStage ?? "unknown", "error": error, "system_error": failureSystemCode ?? "",
             "resource_count": resources.count, "source_count": sources.count,
             "pair_confirmed": hasConfirmedPairs, "strict_requested": settings.requiresStrictConfirmation,
