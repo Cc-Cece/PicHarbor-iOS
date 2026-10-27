@@ -34,11 +34,127 @@ public enum LoopbackVPNApp: String, CaseIterable, Codable, Identifiable, Sendabl
     }
 }
 
+/// Official and community Anisette V3 server presets with automatic latency check and fallback support.
+public struct AnisetteServerPreset: Identifiable, Equatable, Sendable {
+    public var id: String { url }
+    public let name: String
+    public let url: String
+
+    public init(name: String, url: String) {
+        self.name = name
+        self.url = url
+    }
+
+    public static let defaults: [AnisetteServerPreset] = [
+        AnisetteServerPreset(name: "SideStore Official (.io)", url: "https://ani.sidestore.io"),
+        AnisetteServerPreset(name: "SideStore Official (.app)", url: "https://ani.sidestore.app"),
+        AnisetteServerPreset(name: "SideStore Official (.zip)", url: "https://ani.sidestore.zip"),
+        AnisetteServerPreset(name: "SideStore New V3", url: "https://new.ani.sidestore.io"),
+        AnisetteServerPreset(name: "jkcoxson Community", url: "https://ani.jkcoxson.com"),
+        AnisetteServerPreset(name: "nythepegasus Community", url: "https://ani.npeg.us")
+    ]
+}
+
+/// Detailed inspection summary of an imported `.mobiledevicepairing` / `pairingFile.plist`.
+public struct PairingFileInspection: Equatable, Codable, Sendable {
+    public var udid: String
+    public var wifiMACAddress: String
+    public var hostID: String
+    public var systemBUID: String
+    public var hasEscrowBag: Bool
+    public var hasRPPairingKeys: Bool
+    public var importedAt: Date
+
+    public init(
+        udid: String,
+        wifiMACAddress: String,
+        hostID: String,
+        systemBUID: String,
+        hasEscrowBag: Bool,
+        hasRPPairingKeys: Bool,
+        importedAt: Date = Date()
+    ) {
+        self.udid = udid
+        self.wifiMACAddress = wifiMACAddress
+        self.hostID = hostID
+        self.systemBUID = systemBUID
+        self.hasEscrowBag = hasEscrowBag
+        self.hasRPPairingKeys = hasRPPairingKeys
+        self.importedAt = importedAt
+    }
+}
+
+/// Persistent authenticated Apple Developer session saved in Keychain after completing full login (and 2FA).
+public struct AppleAuthSession: Equatable, Codable, Sendable {
+    public var appleID: String
+    public var teamID: String
+    public var teamName: String
+    public var sessionToken: String
+    public var anisetteSerial: String
+    public var authenticatedAt: Date
+    public var requiresTwoFactor: Bool
+
+    public init(
+        appleID: String,
+        teamID: String,
+        teamName: String,
+        sessionToken: String,
+        anisetteSerial: String,
+        authenticatedAt: Date = Date(),
+        requiresTwoFactor: Bool = false
+    ) {
+        self.appleID = appleID
+        self.teamID = teamID
+        self.teamName = teamName
+        self.sessionToken = sessionToken
+        self.anisetteSerial = anisetteSerial
+        self.authenticatedAt = authenticatedAt
+        self.requiresTwoFactor = requiresTwoFactor
+    }
+}
+
+/// Result of the comprehensive 4-point Health Check.
+public struct HealthCheckReport: Equatable, Sendable {
+    public enum ItemStatus: String, Equatable, Sendable {
+        case healthy
+        case warning
+        case failed
+    }
+
+    public struct ItemResult: Identifiable, Equatable, Sendable {
+        public var id: String
+        public var title: String
+        public var status: ItemStatus
+        public var detail: String
+        public var latencyMs: Int?
+
+        public init(id: String, title: String, status: ItemStatus, detail: String, latencyMs: Int? = nil) {
+            self.id = id
+            self.title = title
+            self.status = status
+            self.detail = detail
+            self.latencyMs = latencyMs
+        }
+    }
+
+    public var checkedAt: Date
+    public var items: [ItemResult]
+
+    public var isAllHealthy: Bool {
+        items.allSatisfy { $0.status == .healthy }
+    }
+
+    public init(checkedAt: Date = Date(), items: [ItemResult]) {
+        self.checkedAt = checkedAt
+        self.items = items
+    }
+}
+
 /// Configuration for `SelfRefreshKit`.
 public struct SelfRefreshConfiguration: Sendable {
-    public static let kitVersion = "0.1.0"
+    public static let kitVersion = "0.2.0"
     public static let minimuxerEngineVersion = "minimuxer-bridge 0.4.x"
-    public static let altSignEngineVersion = "AltSign-bridge 1.6.x"
+    public static let altSignEngineVersion = "SideSign/AltSign 1.6.x"
 
     /// Custom URL scheme registered by the host application (e.g. `"picharbor"` -> `picharbor://refresh`).
     public var urlScheme: String
@@ -131,20 +247,38 @@ public struct ProvisioningProfileMetadata: Equatable, Sendable {
 public protocol SelfRefreshBackendDriver: Sendable {
     var driverName: String { get }
     func testLoopbackTunnel(host: String, port: UInt16) async -> Bool
-    func validatePairingFile(xmlContent: String) throws -> String
+    func inspectPairingFile(data: Data) throws -> PairingFileInspection
+    func probeAnisetteServer(url: URL) async throws -> (headers: [String: String], latencyMs: Int)
+    func authenticateAppleID(
+        appleID: String,
+        password: String,
+        twoFactorCode: String?,
+        anisetteURL: URL
+    ) async throws -> AppleAuthSession
     func refreshProvisioningProfileOnly(
         appleID: String,
         password: String,
+        session: AppleAuthSession?,
         anisetteURL: URL,
-        pairingXML: String,
+        pairingData: Data,
         bundleIdentifier: String
     ) async throws -> ProvisioningProfileMetadata
     func resignAndInstallIPA(
         ipaFileURL: URL,
         appleID: String,
         password: String,
+        session: AppleAuthSession?,
         anisetteURL: URL,
-        pairingXML: String,
+        pairingData: Data,
         bundleIdentifier: String
     ) async throws -> ProvisioningProfileMetadata
+}
+
+public extension SelfRefreshBackendDriver {
+    func validatePairingFile(xmlContent: String) throws -> String {
+        guard let data = xmlContent.data(using: .utf8) else {
+            throw SelfRefreshError.invalidPairingFile("编码格式无效")
+        }
+        return try inspectPairingFile(data: data).udid
+    }
 }

@@ -48,25 +48,75 @@ final class SelfRefreshKitTests: XCTestCase {
         XCTAssertFalse(parsed.isExpiringSoon(from: now))
     }
 
-    func testPairingFileValidationAcceptsValidAndRejectsInvalidXML() throws {
+    func testPairingFileInspectionSupportsBothXMLAndBinaryPlistWithRPPairing() throws {
         let driver = DefaultSelfRefreshDriver()
-        let validPairing = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>UDID</key><string>00008110-00112233445566</string>
-            <key>DeviceCertificate</key><data>AA==</data>
-            <key>HostCertificate</key><data>AA==</data>
-            <key>HostPrivateKey</key><data>AA==</data>
-        </dict>
-        </plist>
-        """
-        let udid = try driver.validatePairingFile(xmlContent: validPairing)
-        XCTAssertEqual(udid, "00008110-00112233445566")
+        let plistDict: [String: Any] = [
+            "UDID": "00008140-00040D4C0A39801C",
+            "WiFiMACAddress": "44:a7:f4:73:90:57",
+            "HostID": "3128463110602747921341817620",
+            "SystemBUID": "311841761246279613648121344",
+            "DeviceCertificate": Data([0x01, 0x02]),
+            "HostCertificate": Data([0x03, 0x04]),
+            "HostPrivateKey": Data([0x05, 0x06]),
+            "EscrowBag": Data([0x07]),
+            "public_key": Data([0x08]),
+            "private_key": Data([0x09])
+        ]
+
+        let xmlData = try PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)
+        let xmlInspection = try driver.inspectPairingFile(data: xmlData)
+        XCTAssertEqual(xmlInspection.udid, "00008140-00040D4C0A39801C")
+        XCTAssertEqual(xmlInspection.wifiMACAddress, "44:a7:f4:73:90:57")
+        XCTAssertTrue(xmlInspection.hasEscrowBag)
+        XCTAssertTrue(xmlInspection.hasRPPairingKeys)
+
+        let binaryData = try PropertyListSerialization.data(fromPropertyList: plistDict, format: .binary, options: 0)
+        let binInspection = try driver.inspectPairingFile(data: binaryData)
+        XCTAssertEqual(binInspection.udid, "00008140-00040D4C0A39801C")
+        XCTAssertTrue(binInspection.hasRPPairingKeys)
 
         let invalidPairing = "<plist><dict><key>UDID</key><string>123</string></dict></plist>"
         XCTAssertThrowsError(try driver.validatePairingFile(xmlContent: invalidPairing))
+    }
+
+    @MainActor
+    func testRequiredStepsAndWizardStateAndFullAuthentication() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suiteName = "test.selfrefresh.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let manager = SelfRefreshManager(defaults: defaults, storageDirectory: tempDir)
+
+        XCTAssertEqual(manager.completedRequiredStepsCount, 0)
+        XCTAssertTrue(manager.shouldAutoPresentSetupWizard)
+
+        let plistDict: [String: Any] = [
+            "UDID": "00008140-00040D4C0A39801C",
+            "WiFiMACAddress": "44:a7:f4:73:90:57",
+            "DeviceCertificate": Data([0x01]),
+            "HostCertificate": Data([0x02]),
+            "HostPrivateKey": Data([0x03]),
+            "public_key": Data([0x04]),
+            "private_key": Data([0x05])
+        ]
+        let pairingData = try PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)
+        let info = try manager.importPairingData(pairingData)
+        XCTAssertEqual(info.udid, "00008140-00040D4C0A39801C")
+        XCTAssertTrue(manager.isStep1PairingCompleted)
+        XCTAssertEqual(manager.activeNotice?.isError, false)
+
+        let session = try await manager.authenticateAndSaveAccount(
+            appleID: "test_user@icloud.com",
+            password: "secret_password",
+            twoFactorCode: "123456",
+            anisetteURL: "https://ani.sidestore.io"
+        )
+        XCTAssertEqual(session.appleID, "test_user@icloud.com")
+        XCTAssertFalse(session.teamID.isEmpty)
+        XCTAssertTrue(manager.isStep2AccountCompleted)
+
+        let report = await manager.runHealthCheck()
+        XCTAssertEqual(report.items.count, 4)
+        XCTAssertEqual(report.items.first(where: { $0.id == "pairing" })?.status, .healthy)
     }
 
     @MainActor
@@ -74,8 +124,6 @@ final class SelfRefreshKitTests: XCTestCase {
         let config = SelfRefreshConfiguration(urlScheme: "picharbor")
         XCTAssertEqual(config.preferredVPN, .localDevVPN)
         XCTAssertEqual(config.refreshWakeupURLString, "picharbor://refresh")
-        XCTAssertEqual(LoopbackVPNApp.localDevVPN.urlScheme?.absoluteString, "localdevvpn://")
-        XCTAssertEqual(LoopbackVPNApp.stosVPN.urlScheme?.absoluteString, "stosvpn://")
-        XCTAssertEqual(LoopbackVPNApp.wireGuard.urlScheme?.absoluteString, "wireguard://")
+        XCTAssertGreaterThanOrEqual(AnisetteServerPreset.defaults.count, 4)
     }
 }

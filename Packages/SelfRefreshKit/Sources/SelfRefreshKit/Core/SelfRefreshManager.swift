@@ -7,27 +7,49 @@ import UIKit
 import AppIntents
 #endif
 
-/// Central state and operation coordinator for `SelfRefreshKit`.
+/// Central state, setup checklist, health checker, and operation coordinator for `SelfRefreshKit`.
 @MainActor
 public final class SelfRefreshManager: ObservableObject {
     public static let shared = SelfRefreshManager()
 
+    public struct FeedbackNotice: Identifiable, Equatable, Sendable {
+        public let id = UUID()
+        public let title: String
+        public let message: String
+        public let isError: Bool
+    }
+
     @Published public private(set) var configuration = SelfRefreshConfiguration()
     @Published public private(set) var profileMetadata: ProvisioningProfileMetadata?
+    @Published public private(set) var pairingInspection: PairingFileInspection?
+    @Published public private(set) var authSession: AppleAuthSession?
     @Published public private(set) var isLocalCertificateTakenOver: Bool = false
     @Published public private(set) var isTunnelConnected: Bool = false
-    @Published public private(set) var pairedDeviceIdentifier: String?
     @Published public var appleID: String = ""
-    @Published public var anisetteURLString: String = "https://ani.sidestore.io"
+    @Published public var anisetteURLString: String = "https://ani.sidestore.io" {
+        didSet {
+            defaults.set(anisetteURLString, forKey: Keys.anisetteURL)
+        }
+    }
     @Published public var selectedVPN: LoopbackVPNApp = .localDevVPN {
         didSet {
             defaults.set(selectedVPN.rawValue, forKey: Keys.selectedVPN)
         }
     }
+    @Published public var isSetupGuideSkipped: Bool = false {
+        didSet {
+            defaults.set(isSetupGuideSkipped, forKey: Keys.setupGuideSkipped)
+        }
+    }
+
     @Published public private(set) var isRefreshing: Bool = false
+    @Published public private(set) var isAuthenticating: Bool = false
+    @Published public private(set) var isCheckingHealth: Bool = false
+    @Published public private(set) var healthReport: HealthCheckReport?
     @Published public private(set) var lastRefreshDate: Date?
     @Published public var statusMessage: String = ""
     @Published public var lastError: String = ""
+    @Published public var activeNotice: FeedbackNotice?
     @Published public private(set) var latestOTATag: String?
     @Published public private(set) var latestOTADownloadURL: URL?
 
@@ -42,7 +64,7 @@ public final class SelfRefreshManager: ObservableObject {
         static let takenOver = "selfrefreshkit.takenOver"
         static let lastRefreshDate = "selfrefreshkit.lastRefreshDate"
         static let cachedExpirationDate = "selfrefreshkit.cachedExpirationDate"
-        static let pairedDeviceID = "selfrefreshkit.pairedDeviceID"
+        static let setupGuideSkipped = "selfrefreshkit.setupGuideSkipped"
     }
 
     public init(
@@ -65,7 +87,11 @@ public final class SelfRefreshManager: ObservableObject {
         }
         self.isLocalCertificateTakenOver = defaults.bool(forKey: Keys.takenOver)
         self.lastRefreshDate = defaults.object(forKey: Keys.lastRefreshDate) as? Date
-        self.pairedDeviceIdentifier = defaults.string(forKey: Keys.pairedDeviceID)
+        self.isSetupGuideSkipped = defaults.bool(forKey: Keys.setupGuideSkipped)
+        self.authSession = try? SelfRefreshKeychain.loadAuthSession()
+        if let session = self.authSession, self.appleID.isEmpty {
+            self.appleID = session.appleID
+        }
 
         reloadEmbeddedProfile()
         loadExistingPairingFileIfPresent()
@@ -102,13 +128,65 @@ public final class SelfRefreshManager: ObservableObject {
         storageDirectory.appendingPathComponent("pairing.mobiledevicepairing")
     }
 
+    public var pairedDeviceIdentifier: String? {
+        pairingInspection?.udid
+    }
+
+    // MARK: - Required Setup Checklist Status (3 Mandatory Steps)
+
+    /// Step 1: Device Pairing File Imported & Validated
+    public var isStep1PairingCompleted: Bool {
+        pairingInspection != nil
+    }
+
+    /// Step 2: Apple ID Authenticated & Developer Session Token Persisted
+    public var isStep2AccountCompleted: Bool {
+        authSession != nil && hasSavedCredentials
+    }
+
+    /// Step 3: Local Certificate Takeover Completed
+    public var isStep3TakeoverCompleted: Bool {
+        isLocalCertificateTakenOver
+    }
+
+    /// Number of completed mandatory setup steps (0...3).
+    public var completedRequiredStepsCount: Int {
+        [isStep1PairingCompleted, isStep2AccountCompleted, isStep3TakeoverCompleted].filter { $0 }.count
+    }
+
+    /// True when all 3 mandatory setup items are completed.
+    public var isAllRequiredSetupCompleted: Bool {
+        completedRequiredStepsCount == 3
+    }
+
+    /// Should present the interactive Setup Wizard automatically when entering `SelfRefreshView`.
+    public var shouldAutoPresentSetupWizard: Bool {
+        !isAllRequiredSetupCompleted && !isSetupGuideSkipped
+    }
+
     public var hasSavedCredentials: Bool {
         guard !appleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         let saved = try? SelfRefreshKeychain.loadPassword(for: appleID)
         return (saved?.isEmpty == false)
     }
 
-    // MARK: - Profile & Environment Inspection
+    // MARK: - Haptic & Alert Feedback
+
+    public func postNotice(title: String, message: String, isError: Bool = false) {
+        self.activeNotice = FeedbackNotice(title: title, message: message, isError: isError)
+        if isError {
+            self.lastError = message
+        } else {
+            self.lastError = ""
+            self.statusMessage = message
+        }
+        #if canImport(UIKit)
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(isError ? .error : .success)
+        #endif
+    }
+
+    // MARK: - Step 1: Pairing File Import (Supports XML & Binary Plist + Detailed Feedback)
 
     public func reloadEmbeddedProfile(in bundleURL: URL = Bundle.main.bundleURL) {
         if let parsed = ProfileInspector.inspectEmbeddedProfile(in: bundleURL) {
@@ -121,7 +199,7 @@ public final class SelfRefreshManager: ObservableObject {
                 name: bundleID,
                 appIDName: bundleID,
                 bundleIdentifier: bundleID,
-                teamIdentifier: "PERSONAL",
+                teamIdentifier: authSession?.teamID ?? "PERSONAL",
                 teamName: appleID.isEmpty ? "Personal Team" : appleID,
                 creationDate: lastRefreshDate ?? Date(),
                 expirationDate: cachedExp
@@ -131,51 +209,124 @@ public final class SelfRefreshManager: ObservableObject {
 
     public func loadExistingPairingFileIfPresent() {
         guard FileManager.default.fileExists(atPath: pairingFileURL.path),
-              let content = try? String(contentsOf: pairingFileURL, encoding: .utf8),
-              let udid = try? driver.validatePairingFile(xmlContent: content) else {
+              let data = try? Data(contentsOf: pairingFileURL),
+              let inspection = try? driver.inspectPairingFile(data: data) else {
             return
         }
-        self.pairedDeviceIdentifier = udid
-        defaults.set(udid, forKey: Keys.pairedDeviceID)
+        self.pairingInspection = inspection
     }
 
-    public func importPairingFile(from sourceURL: URL) throws {
+    @discardableResult
+    public func importPairingFile(from sourceURL: URL) throws -> PairingFileInspection {
         let accessed = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if accessed { sourceURL.stopAccessingSecurityScopedResource() }
         }
-        let xmlContent = try String(contentsOf: sourceURL, encoding: .utf8)
-        try importPairingXMLContent(xmlContent)
+        let data = try Data(contentsOf: sourceURL)
+        return try importPairingData(data)
+    }
+
+    @discardableResult
+    public func importPairingData(_ data: Data) throws -> PairingFileInspection {
+        do {
+            let inspection = try driver.inspectPairingFile(data: data)
+            try data.write(to: pairingFileURL, options: .atomic)
+            self.pairingInspection = inspection
+            let rpBadge = inspection.hasRPPairingKeys ? " (含 iOS 17+ RPPairing 密钥)" : ""
+            postNotice(
+                title: localized("配对文件导入成功"),
+                message: "UDID: \(inspection.udid)\nWiFi MAC: \(inspection.wifiMACAddress)\(rpBadge)",
+                isError: false
+            )
+            return inspection
+        } catch {
+            postNotice(
+                title: localized("配对文件导入失败"),
+                message: error.localizedDescription,
+                isError: true
+            )
+            throw error
+        }
     }
 
     public func importPairingXMLContent(_ xmlContent: String) throws {
-        let udid = try driver.validatePairingFile(xmlContent: xmlContent)
-        try xmlContent.write(to: pairingFileURL, atomically: true, encoding: .utf8)
-        self.pairedDeviceIdentifier = udid
-        defaults.set(udid, forKey: Keys.pairedDeviceID)
-        self.lastError = ""
-        self.statusMessage = localized("设备配对文件导入成功。")
+        guard let data = xmlContent.data(using: .utf8) else {
+            throw SelfRefreshError.invalidPairingFile("UTF-8 编码无效")
+        }
+        _ = try importPairingData(data)
     }
 
-    public func saveCredentials(appleID: String, password: String, anisetteURL: String) throws {
+    // MARK: - Step 2: Full Apple ID Login & Session Persistence (with 2FA Support)
+
+    @discardableResult
+    public func authenticateAndSaveAccount(
+        appleID: String,
+        password: String,
+        twoFactorCode: String? = nil,
+        anisetteURL: String
+    ) async throws -> AppleAuthSession {
+        isAuthenticating = true
+        defer { isAuthenticating = false }
+
         let trimmedID = appleID.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedURL = anisetteURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedID.isEmpty, !password.isEmpty else {
-            throw SelfRefreshError.missingAppleIDCredentials
+            let err = SelfRefreshError.missingAppleIDCredentials
+            postNotice(title: localized("登录失败"), message: localized(err.localizedDescription), isError: true)
+            throw err
         }
         guard let parsedURL = URL(string: trimmedURL),
               let scheme = parsedURL.scheme,
               ["http", "https"].contains(scheme.lowercased()) else {
-            throw SelfRefreshError.invalidAnisetteURL
+            let err = SelfRefreshError.invalidAnisetteURL
+            postNotice(title: localized("登录失败"), message: localized(err.localizedDescription), isError: true)
+            throw err
         }
-        try SelfRefreshKeychain.savePassword(password, for: trimmedID)
-        self.appleID = trimmedID
-        self.anisetteURLString = trimmedURL
-        defaults.set(trimmedID, forKey: Keys.appleID)
-        defaults.set(trimmedURL, forKey: Keys.anisetteURL)
-        self.lastError = ""
-        self.statusMessage = localized("Apple ID 凭据已保存到本机钥匙串。")
+
+        do {
+            let session = try await driver.authenticateAppleID(
+                appleID: trimmedID,
+                password: password,
+                twoFactorCode: twoFactorCode,
+                anisetteURL: parsedURL
+            )
+            try SelfRefreshKeychain.savePassword(password, for: trimmedID)
+            try SelfRefreshKeychain.saveAuthSession(session)
+
+            self.appleID = trimmedID
+            self.anisetteURLString = trimmedURL
+            self.authSession = session
+            defaults.set(trimmedID, forKey: Keys.appleID)
+            defaults.set(trimmedURL, forKey: Keys.anisetteURL)
+
+            postNotice(
+                title: localized("Apple ID 认证成功"),
+                message: "\(trimmedID)\nTeam ID: \(session.teamID) · 会话凭证已保存到本机钥匙串",
+                isError: false
+            )
+            return session
+        } catch {
+            postNotice(
+                title: localized("Apple ID 认证失败"),
+                message: error.localizedDescription,
+                isError: true
+            )
+            throw error
+        }
     }
+
+    public func signOutAppleID() {
+        if !appleID.isEmpty {
+            try? SelfRefreshKeychain.deletePassword(for: appleID)
+        }
+        try? SelfRefreshKeychain.deleteAuthSession()
+        self.authSession = nil
+        self.appleID = ""
+        defaults.removeObject(forKey: Keys.appleID)
+        postNotice(title: localized("已退出账号"), message: localized("已清除本机保存的 Apple ID 会话凭证。"))
+    }
+
+    // MARK: - Loopback VPN & 4-Point Health Check
 
     @discardableResult
     public func checkTunnelConnection() async -> Bool {
@@ -192,6 +343,124 @@ public final class SelfRefreshManager: ObservableObject {
             UIApplication.shared.open(storeURL)
         }
         #endif
+    }
+
+    /// Runs a comprehensive 4-point Health Check across Pairing File, Loopback VPN, Anisette V3 Server, and Apple Session.
+    @discardableResult
+    public func runHealthCheck() async -> HealthCheckReport {
+        isCheckingHealth = true
+        defer { isCheckingHealth = false }
+
+        var items: [HealthCheckReport.ItemResult] = []
+
+        // 1. Pairing File Health
+        if let info = pairingInspection {
+            let detail = "UDID: \(info.udid)" + (info.hasRPPairingKeys ? " · RPPairing 就绪" : "")
+            items.append(.init(
+                id: "pairing",
+                title: localized("设备配对文件"),
+                status: .healthy,
+                detail: detail
+            ))
+        } else {
+            items.append(.init(
+                id: "pairing",
+                title: localized("设备配对文件"),
+                status: .failed,
+                detail: localized("未导入有效的 .mobiledevicepairing / .plist 文件")
+            ))
+        }
+
+        // 2. Loopback VPN Tunnel Health
+        let tunnelOK = await checkTunnelConnection()
+        items.append(.init(
+            id: "tunnel",
+            title: "\(localized("本地回环隧道")) (\(selectedVPN.displayName))",
+            status: tunnelOK ? .healthy : .warning,
+            detail: tunnelOK
+                ? "10.7.0.1 虚拟网卡已连通"
+                : localized("未检测到 10.7.0.1 隧道（刷新前需开启 VPN）")
+        ))
+
+        // 3. Anisette V3 Server Health & Latency
+        if let url = URL(string: anisetteURLString) {
+            do {
+                let probe = try await driver.probeAnisetteServer(url: url)
+                let hasHeaders = probe.headers["X-Apple-I-MD"] != nil || !probe.headers.isEmpty
+                items.append(.init(
+                    id: "anisette",
+                    title: "Anisette V3 (\(url.host ?? anisetteURLString))",
+                    status: .healthy,
+                    detail: hasHeaders ? "V3 认证头正常 (\(probe.latencyMs) ms)" : "连接正常 (\(probe.latencyMs) ms)",
+                    latencyMs: probe.latencyMs
+                ))
+            } catch {
+                items.append(.init(
+                    id: "anisette",
+                    title: "Anisette V3",
+                    status: .warning,
+                    detail: error.localizedDescription
+                ))
+            }
+        } else {
+            items.append(.init(
+                id: "anisette",
+                title: "Anisette V3",
+                status: .failed,
+                detail: localized("Anisette URL 格式无效")
+            ))
+        }
+
+        // 4. Apple Developer Session & Profile Health
+        if let session = authSession, hasSavedCredentials {
+            let profileInfo: String
+            if let meta = profileMetadata {
+                let rem = meta.remainingDaysAndHours()
+                profileInfo = rem.isExpired ? localized("描述文件已过期") : "剩余 \(rem.days)d \(rem.hours)h"
+            } else {
+                profileInfo = isLocalCertificateTakenOver ? localized("本机证书已接管") : localized("待首次 IPA 接管")
+            }
+            items.append(.init(
+                id: "account",
+                title: localized("Apple 开发者凭证"),
+                status: isLocalCertificateTakenOver ? .healthy : .warning,
+                detail: "Team: \(session.teamID) · \(profileInfo)"
+            ))
+        } else {
+            items.append(.init(
+                id: "account",
+                title: localized("Apple 开发者凭证"),
+                status: .failed,
+                detail: localized("尚未完成 Apple ID 登录认证")
+            ))
+        }
+
+        let report = HealthCheckReport(checkedAt: Date(), items: items)
+        self.healthReport = report
+        return report
+    }
+
+    /// Automatically tests all preset Anisette V3 servers and switches to the fastest reachable one.
+    @discardableResult
+    public func selectFastestAnisetteServer() async -> String {
+        var bestURL = anisetteURLString
+        var bestLatency = Int.max
+        for preset in AnisetteServerPreset.defaults {
+            guard let url = URL(string: preset.url) else { continue }
+            if let result = try? await driver.probeAnisetteServer(url: url), result.latencyMs < bestLatency {
+                bestLatency = result.latencyMs
+                bestURL = preset.url
+            }
+        }
+        self.anisetteURLString = bestURL
+        if bestLatency < Int.max {
+            postNotice(
+                title: localized("已切换最快节点"),
+                message: "\(bestURL) (\(bestLatency) ms)",
+                isError: false
+            )
+        }
+        return bestURL
     }
 
     // MARK: - Mode A: 1-Second Profile-Only Refresh (No Crash / No IPA Needed)
@@ -219,16 +488,16 @@ public final class SelfRefreshManager: ObservableObject {
         #endif
 
         guard FileManager.default.fileExists(atPath: pairingFileURL.path),
-              let pairingXML = try? String(contentsOf: pairingFileURL, encoding: .utf8) else {
+              let pairingData = try? Data(contentsOf: pairingFileURL) else {
             let err = SelfRefreshError.missingPairingFile
-            lastError = localized(err.localizedDescription)
+            postNotice(title: localized("刷新失败"), message: localized(err.localizedDescription), isError: true)
             throw err
         }
 
         let tunnelReady = await checkTunnelConnection()
         guard tunnelReady else {
             let err = SelfRefreshError.tunnelDisconnected(selectedVPN)
-            lastError = localized(err.localizedDescription)
+            postNotice(title: localized("未开启本地隧道"), message: localized(err.localizedDescription), isError: true)
             throw err
         }
 
@@ -237,13 +506,13 @@ public final class SelfRefreshManager: ObservableObject {
               let password = try SelfRefreshKeychain.loadPassword(for: trimmedID),
               !password.isEmpty else {
             let err = SelfRefreshError.missingAppleIDCredentials
-            lastError = localized(err.localizedDescription)
+            postNotice(title: localized("缺少账号凭证"), message: localized(err.localizedDescription), isError: true)
             throw err
         }
 
         guard let anisetteURL = URL(string: anisetteURLString) else {
             let err = SelfRefreshError.invalidAnisetteURL
-            lastError = localized(err.localizedDescription)
+            postNotice(title: localized("配置错误"), message: localized(err.localizedDescription), isError: true)
             throw err
         }
 
@@ -251,8 +520,9 @@ public final class SelfRefreshManager: ObservableObject {
         let updatedProfile = try await driver.refreshProvisioningProfileOnly(
             appleID: trimmedID,
             password: password,
+            session: authSession,
             anisetteURL: anisetteURL,
-            pairingXML: pairingXML,
+            pairingData: pairingData,
             bundleIdentifier: bundleID
         )
 
@@ -261,7 +531,11 @@ public final class SelfRefreshManager: ObservableObject {
         self.lastRefreshDate = now
         defaults.set(now, forKey: Keys.lastRefreshDate)
         defaults.set(updatedProfile.expirationDate, forKey: Keys.cachedExpirationDate)
-        self.statusMessage = localized("描述文件已刷新，有效期已重置为 7 天。")
+        postNotice(
+            title: localized("刷新成功"),
+            message: localized("描述文件已刷新，有效期已重置为 7 天。"),
+            isError: false
+        )
     }
 
     // MARK: - Mode B: Full IPA Resign & Self-Install (Initial Takeover & Cloud OTA Update)
@@ -279,16 +553,16 @@ public final class SelfRefreshManager: ObservableObject {
         }
 
         guard FileManager.default.fileExists(atPath: pairingFileURL.path),
-              let pairingXML = try? String(contentsOf: pairingFileURL, encoding: .utf8) else {
+              let pairingData = try? Data(contentsOf: pairingFileURL) else {
             let err = SelfRefreshError.missingPairingFile
-            lastError = localized(err.localizedDescription)
+            postNotice(title: localized("重签安装失败"), message: localized(err.localizedDescription), isError: true)
             throw err
         }
 
         let tunnelReady = await checkTunnelConnection()
         guard tunnelReady else {
             let err = SelfRefreshError.tunnelDisconnected(selectedVPN)
-            lastError = localized(err.localizedDescription)
+            postNotice(title: localized("未开启本地隧道"), message: localized(err.localizedDescription), isError: true)
             throw err
         }
 
@@ -297,13 +571,13 @@ public final class SelfRefreshManager: ObservableObject {
               let password = try SelfRefreshKeychain.loadPassword(for: trimmedID),
               !password.isEmpty else {
             let err = SelfRefreshError.missingAppleIDCredentials
-            lastError = localized(err.localizedDescription)
+            postNotice(title: localized("缺少账号凭证"), message: localized(err.localizedDescription), isError: true)
             throw err
         }
 
         guard let anisetteURL = URL(string: anisetteURLString) else {
             let err = SelfRefreshError.invalidAnisetteURL
-            lastError = localized(err.localizedDescription)
+            postNotice(title: localized("配置错误"), message: localized(err.localizedDescription), isError: true)
             throw err
         }
 
@@ -312,8 +586,9 @@ public final class SelfRefreshManager: ObservableObject {
             ipaFileURL: ipaURL,
             appleID: trimmedID,
             password: password,
+            session: authSession,
             anisetteURL: anisetteURL,
-            pairingXML: pairingXML,
+            pairingData: pairingData,
             bundleIdentifier: bundleID
         )
 
@@ -324,7 +599,11 @@ public final class SelfRefreshManager: ObservableObject {
         defaults.set(true, forKey: Keys.takenOver)
         defaults.set(now, forKey: Keys.lastRefreshDate)
         defaults.set(updatedProfile.expirationDate, forKey: Keys.cachedExpirationDate)
-        self.statusMessage = localized("已完成本机签名接管与覆盖安装。")
+        postNotice(
+            title: localized("签名接管完成"),
+            message: localized("已完成本机签名接管与覆盖安装。后续只需 1 秒刷新描述文件。"),
+            isError: false
+        )
     }
 
     // MARK: - Cloud OTA Check (GitHub Releases)
@@ -391,8 +670,11 @@ public final class SelfRefreshManager: ObservableObject {
     // MARK: - Summary Text Helper for Host Settings Row
 
     public var summaryBadgeText: String {
+        if !isAllRequiredSetupCompleted {
+            return "\(localized("待配置")) (\(completedRequiredStepsCount)/3)"
+        }
         guard let meta = profileMetadata else {
-            return isLocalCertificateTakenOver ? localized("已接管") : localized("待激活")
+            return localized("已就绪")
         }
         let remaining = meta.remainingDaysAndHours()
         if remaining.isExpired {
@@ -403,8 +685,6 @@ public final class SelfRefreshManager: ObservableObject {
 }
 
 #if canImport(AppIntents)
-/// Built-in iOS Shortcuts `AppIntent` so users can add "Refresh App Provisioning Profile"
-/// directly inside the Apple Shortcuts app (`LocalDevVPN -> Refresh -> Disconnect`).
 @available(iOS 17.0, macOS 14.0, *)
 public struct SelfRefreshProfileIntent: AppIntent {
     public static var title: LocalizedStringResource = "刷新应用签名描述文件"
