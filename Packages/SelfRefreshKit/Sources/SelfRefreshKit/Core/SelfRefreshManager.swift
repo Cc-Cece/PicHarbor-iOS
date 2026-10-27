@@ -218,12 +218,60 @@ public final class SelfRefreshManager: ObservableObject {
 
     @discardableResult
     public func importPairingFile(from sourceURL: URL) throws -> PairingFileInspection {
+        let data = try Self.readSecurityScopedData(from: sourceURL)
+        return try importPairingData(data)
+    }
+
+    public static func readSecurityScopedData(from sourceURL: URL) throws -> Data {
         let accessed = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if accessed { sourceURL.stopAccessingSecurityScopedResource() }
         }
-        let data = try Data(contentsOf: sourceURL)
-        return try importPairingData(data)
+        var coordinatorError: NSError?
+        var readResult: Result<Data, Error>?
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(readingItemAt: sourceURL, options: [], error: &coordinatorError) { coordinatedURL in
+            do {
+                readResult = .success(try Data(contentsOf: coordinatedURL))
+            } catch {
+                readResult = .failure(error)
+            }
+        }
+        if let result = readResult {
+            return try result.get()
+        }
+        if let coordinatorError {
+            throw coordinatorError
+        }
+        return try Data(contentsOf: sourceURL)
+    }
+
+    public static func copySecurityScopedFileToTemp(from sourceURL: URL) throws -> URL {
+        let accessed = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { sourceURL.stopAccessingSecurityScopedResource() }
+        }
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Picked-\(UUID().uuidString)-\(sourceURL.lastPathComponent)")
+        try? FileManager.default.removeItem(at: tempURL)
+
+        var coordinatorError: NSError?
+        var copyError: Error?
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(readingItemAt: sourceURL, options: [], error: &coordinatorError) { coordinatedURL in
+            do {
+                try FileManager.default.copyItem(at: coordinatedURL, to: tempURL)
+            } catch {
+                copyError = error
+            }
+        }
+        if let copyError {
+            throw copyError
+        }
+        if let coordinatorError {
+            throw coordinatorError
+        }
+        return tempURL
     }
 
     @discardableResult

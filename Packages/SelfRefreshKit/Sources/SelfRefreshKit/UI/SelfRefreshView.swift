@@ -43,23 +43,23 @@ public struct SelfRefreshSection: View {
 }
 
 /// Pure native iOS `Form` (`.insetGrouped`) console with:
-/// - Top Notice Banner & Alert feedback
+/// - Top Notice Banner & Native `.alert` feedback
 /// - Strict separation of **Required Setup (1/3, 2/3, 3/3)** vs **Optional Actions**
 /// - Built-in **Health Check** section
-/// - Automatic **Setup Wizard** when mandatory steps are incomplete (with Skip option)
+/// - Fixed file importer state handling (`[.item, .data]`) so `.plist`, `.mobiledevicepairing`, and `.ipa` are always selectable and processed.
 public struct SelfRefreshView: View {
     @ObservedObject private var manager = SelfRefreshManager.shared
     @State private var showAccountSheet = false
     @State private var showPairingDetailSheet = false
     @State private var showShortcutGuide = false
     @State private var showAboutSheet = false
-    @State private var showSetupWizard = false
-    @State private var importingFileKind: ImportKind?
+    @State private var isFileImporterPresented = false
+    @State private var activeImportKind: ImportKind = .pairingFile
+    @State private var showFeedbackAlert = false
 
-    private enum ImportKind: Identifiable {
+    private enum ImportKind {
         case pairingFile
         case localIPA
-        var id: Self { self }
     }
 
     public init() {}
@@ -101,15 +101,6 @@ public struct SelfRefreshView: View {
                     value: "\(manager.completedRequiredStepsCount) / 3 \(manager.localized("已完成"))"
                 )
 
-                if !manager.isAllRequiredSetupCompleted {
-                    Button {
-                        showSetupWizard = true
-                    } label: {
-                        Label(manager.localized("打开首次配置引导向导"), systemImage: "sparkles")
-                    }
-                    .accessibilityIdentifier("selfRefresh.openWizard")
-                }
-
                 if manager.isRefreshing {
                     HStack {
                         ProgressView()
@@ -119,13 +110,20 @@ public struct SelfRefreshView: View {
                 } else {
                     Button {
                         if !manager.isStep1PairingCompleted {
-                            importingFileKind = .pairingFile
+                            presentFilePicker(for: .pairingFile)
                         } else if !manager.isStep2AccountCompleted {
                             showAccountSheet = true
                         } else if !manager.isStep3TakeoverCompleted {
-                            importingFileKind = .localIPA
+                            presentFilePicker(for: .localIPA)
                         } else {
-                            Task { try? await manager.refreshProfileOnly() }
+                            Task {
+                                do {
+                                    try await manager.refreshProfileOnly()
+                                } catch {
+                                    // Notice is already posted by manager
+                                }
+                                showFeedbackAlert = true
+                            }
                         }
                     } label: {
                         Text(primaryButtonTitle)
@@ -150,7 +148,7 @@ public struct SelfRefreshView: View {
                     if manager.isStep1PairingCompleted {
                         showPairingDetailSheet = true
                     } else {
-                        importingFileKind = .pairingFile
+                        presentFilePicker(for: .pairingFile)
                     }
                 } label: {
                     HStack(spacing: 10) {
@@ -201,7 +199,7 @@ public struct SelfRefreshView: View {
 
                 // Required 3: Local Certificate Takeover
                 Button {
-                    importingFileKind = .localIPA
+                    presentFilePicker(for: .localIPA)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: manager.isStep3TakeoverCompleted ? "checkmark.circle.fill" : "3.circle.fill")
@@ -237,6 +235,7 @@ public struct SelfRefreshView: View {
                                 title: manager.localized("本地隧道已连通"),
                                 message: "\(manager.selectedVPN.displayName) (10.7.0.1) 状态正常"
                             )
+                            showFeedbackAlert = true
                         }
                     }
                 } label: {
@@ -358,6 +357,7 @@ public struct SelfRefreshView: View {
                                     isError: true
                                 )
                             }
+                            showFeedbackAlert = true
                         }
                     } label: {
                         HStack {
@@ -375,7 +375,7 @@ public struct SelfRefreshView: View {
                 }
 
                 Button(manager.localized("选择本地 IPA 重签安装")) {
-                    importingFileKind = .localIPA
+                    presentFilePicker(for: .localIPA)
                 }
                 .disabled(manager.isRefreshing)
                 .accessibilityIdentifier("selfRefresh.localIPA")
@@ -407,33 +407,14 @@ public struct SelfRefreshView: View {
         .task {
             manager.reloadEmbeddedProfile()
             _ = await manager.runHealthCheck()
-            if manager.shouldAutoPresentSetupWizard {
-                showSetupWizard = true
-            }
         }
-        .sheet(isPresented: $showSetupWizard) {
-            NavigationStack {
-                SelfRefreshSetupWizardSheet(
-                    onImportPairing: {
-                        showSetupWizard = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            importingFileKind = .pairingFile
-                        }
-                    },
-                    onOpenAccountLogin: {
-                        showSetupWizard = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            showAccountSheet = true
-                        }
-                    },
-                    onImportIPA: {
-                        showSetupWizard = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            importingFileKind = .localIPA
-                        }
-                    }
-                )
-            }
+        .alert(
+            manager.activeNotice?.title ?? "SelfRefreshKit",
+            isPresented: $showFeedbackAlert
+        ) {
+            Button(manager.localized("好"), role: .cancel) {}
+        } message: {
+            Text(manager.activeNotice?.message ?? "")
         }
         .sheet(isPresented: $showPairingDetailSheet) {
             NavigationStack {
@@ -441,7 +422,7 @@ public struct SelfRefreshView: View {
                     onReimport: {
                         showPairingDetailSheet = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            importingFileKind = .pairingFile
+                            presentFilePicker(for: .pairingFile)
                         }
                     }
                 )
@@ -463,35 +444,49 @@ public struct SelfRefreshView: View {
             }
         }
         .fileImporter(
-            isPresented: Binding(
-                get: { importingFileKind != nil },
-                set: { if !$0 { importingFileKind = nil } }
-            ),
-            allowedContentTypes: allowedTypes(for: importingFileKind),
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: [.item, .data],
             allowsMultipleSelection: false
         ) { result in
-            let currentKind = importingFileKind
-            importingFileKind = nil
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                switch currentKind {
-                case .pairingFile:
-                    _ = try? manager.importPairingFile(from: url)
-                case .localIPA:
-                    Task {
-                        try? await manager.resignAndInstall(ipaURL: url)
+            handlePickedFileResult(result, kind: activeImportKind)
+        }
+    }
+
+    private func presentFilePicker(for kind: ImportKind) {
+        activeImportKind = kind
+        isFileImporterPresented = true
+    }
+
+    private func handlePickedFileResult(_ result: Result<[URL], Error>, kind: ImportKind) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            switch kind {
+            case .pairingFile:
+                _ = try? manager.importPairingFile(from: url)
+                Task { _ = await manager.runHealthCheck() }
+                showFeedbackAlert = true
+            case .localIPA:
+                Task {
+                    do {
+                        // Copy picked IPA to a local temporary file while security scope is active
+                        let localCopy = try SelfRefreshManager.copySecurityScopedFileToTemp(from: url)
+                        defer { try? FileManager.default.removeItem(at: localCopy) }
+                        try await manager.resignAndInstall(ipaURL: localCopy)
+                        _ = await manager.runHealthCheck()
+                    } catch {
+                        // Notice is already posted by manager
                     }
-                case .none:
-                    break
+                    showFeedbackAlert = true
                 }
-            case .failure(let error):
-                manager.postNotice(
-                    title: manager.localized("文件读取失败"),
-                    message: error.localizedDescription,
-                    isError: true
-                )
             }
+        case .failure(let error):
+            manager.postNotice(
+                title: manager.localized("文件读取失败"),
+                message: error.localizedDescription,
+                isError: true
+            )
+            showFeedbackAlert = true
         }
     }
 
@@ -519,24 +514,6 @@ public struct SelfRefreshView: View {
         return "\(info.days)d \(info.hours)h"
     }
 
-    private func allowedTypes(for kind: ImportKind?) -> [UTType] {
-        switch kind {
-        case .pairingFile:
-            var types: [UTType] = [.propertyList, .xml, .data]
-            if let mobilePairing = UTType(filenameExtension: "mobiledevicepairing") {
-                types.insert(mobilePairing, at: 0)
-            }
-            return types
-        case .localIPA:
-            if let ipaType = UTType(filenameExtension: "ipa") {
-                return [ipaType, .archive, .data]
-            }
-            return [.archive, .data]
-        case .none:
-            return [.data]
-        }
-    }
-
     private func copyWakeupURL() {
         #if canImport(UIKit)
         UIPasteboard.general.string = manager.configuration.refreshWakeupURLString
@@ -548,117 +525,7 @@ public struct SelfRefreshView: View {
     }
 }
 
-// MARK: - Sheet 1: Interactive Setup Wizard (Auto-Presented When Incomplete, Skippable)
-
-private struct SelfRefreshSetupWizardSheet: View {
-    @ObservedObject private var manager = SelfRefreshManager.shared
-    @Environment(\.dismiss) private var dismiss
-    let onImportPairing: () -> Void
-    let onOpenAccountLogin: () -> Void
-    let onImportIPA: () -> Void
-
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(manager.localized("欢迎使用应用自续签向导"))
-                        .font(.headline)
-                    Text(manager.localized("只需完成以下 3 项必需设置，本应用即可脱离电脑，在手机上每 7 天直接刷新描述文件（无需重装、不会闪退）。"))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            }
-
-            Section(manager.localized("第 1 步：设备配对文件")) {
-                HStack {
-                    Image(systemName: manager.isStep1PairingCompleted ? "checkmark.circle.fill" : "1.circle.fill")
-                        .foregroundStyle(manager.isStep1PairingCompleted ? .green : .blue)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(manager.localized("导入 pairingFile.plist / .mobiledevicepairing"))
-                            .font(.subheadline.weight(.medium))
-                        Text(
-                            manager.isStep1PairingCompleted
-                                ? "✓ UDID: \(manager.pairedDeviceIdentifier ?? "")"
-                                : manager.localized("在电脑上使用 idevice_pair 生成配对文件后传至手机导入。")
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                Button(manager.isStep1PairingCompleted ? manager.localized("重新选择配对文件") : manager.localized("选择配对文件导入")) {
-                    onImportPairing()
-                }
-            }
-
-            Section(manager.localized("第 2 步：登录 Apple 开发者账号")) {
-                HStack {
-                    Image(systemName: manager.isStep2AccountCompleted ? "checkmark.circle.fill" : "2.circle.fill")
-                        .foregroundStyle(manager.isStep2AccountCompleted ? .green : .blue)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(manager.localized("验证 Apple ID 并保存开发者会话凭证"))
-                            .font(.subheadline.weight(.medium))
-                        Text(
-                            manager.isStep2AccountCompleted
-                                ? "✓ \(manager.authSession?.appleID ?? "") (Team: \(manager.authSession?.teamID ?? ""))"
-                                : manager.localized("连接 Anisette V3 服务完成登录（支持双重认证验证码），保存长期凭证到本机钥匙串。")
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                Button(manager.isStep2AccountCompleted ? manager.localized("更换或重新验证账号") : manager.localized("前往登录 Apple ID")) {
-                    onOpenAccountLogin()
-                }
-            }
-
-            Section(manager.localized("第 3 步：开启隧道与首次接管")) {
-                HStack {
-                    Image(systemName: manager.isStep3TakeoverCompleted ? "checkmark.circle.fill" : "3.circle.fill")
-                        .foregroundStyle(manager.isStep3TakeoverCompleted ? .green : .blue)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(manager.localized("开启 LocalDevVPN 并导入 IPA 接管签名"))
-                            .font(.subheadline.weight(.medium))
-                        Text(
-                            manager.isStep3TakeoverCompleted
-                                ? manager.localized("✓ 已接管本机证书")
-                                : manager.localized("首次安装由电脑签名，需在开启 LocalDevVPN 后选择本应用未签名 IPA 覆盖安装一次。")
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                Button(manager.localized("开启 LocalDevVPN")) {
-                    manager.openPreferredVPNApp()
-                }
-                Button(manager.localized("选择本应用 IPA 执行首次接管")) {
-                    onImportIPA()
-                }
-                .disabled(!manager.isStep1PairingCompleted || !manager.isStep2AccountCompleted)
-            }
-        }
-        .navigationTitle(manager.localized("首次配置向导"))
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button(manager.localized("跳过引导")) {
-                    manager.isSetupGuideSkipped = true
-                    dismiss()
-                }
-                .accessibilityIdentifier("selfRefresh.skipWizard")
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button(manager.localized("稍后")) {
-                    dismiss()
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Sheet 2: Pairing File Inspection & Backup Export Sheet
+// MARK: - Sheet 1: Pairing File Inspection & Backup Export Sheet
 
 private struct SelfRefreshPairingDetailSheet: View {
     @ObservedObject private var manager = SelfRefreshManager.shared
@@ -701,7 +568,7 @@ private struct SelfRefreshPairingDetailSheet: View {
     }
 }
 
-// MARK: - Sheet 3: Full Apple ID Authentication Sheet (with 2FA & Anisette Presets)
+// MARK: - Sheet 2: Full Apple ID Authentication Sheet (with 2FA & Anisette Presets)
 
 private struct SelfRefreshAccountSheet: View {
     @ObservedObject private var manager = SelfRefreshManager.shared
@@ -787,6 +654,7 @@ private struct SelfRefreshAccountSheet: View {
                                 twoFactorCode: showTwoFactorField ? twoFactorCode : nil,
                                 anisetteURL: anisetteURL
                             )
+                            _ = await manager.runHealthCheck()
                             dismiss()
                         } catch {
                             errorText = manager.localized(error.localizedDescription)
@@ -828,7 +696,7 @@ private struct SelfRefreshAccountSheet: View {
     }
 }
 
-// MARK: - Sheet 4: Shortcuts Guide & About Component
+// MARK: - Sheet 3: Shortcuts Guide & About Component
 
 private struct SelfRefreshShortcutGuideSheet: View {
     @ObservedObject private var manager = SelfRefreshManager.shared
