@@ -16,6 +16,14 @@ Native iOS client for Google Photos backup.
   <b>English</b> | <a href="README_ZH.md">简体中文</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/Cc-Cece/PicHarbor-iOS">GitHub Repository</a> · <a href="https://github.com/Cc-Cece/PicHarbor-iOS/releases">Releases</a>
+</p>
+
+<p align="center">
+  Related: <a href="https://github.com/Cc-Cece/PicHarbor">Desktop</a> · <a href="https://github.com/Cc-Cece/PicHarbor-Android">Android</a>
+</p>
+
 </div>
 
 ---

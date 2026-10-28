@@ -16,6 +16,14 @@
   <a href="README.md">English</a> | <b>简体中文</b>
 </p>
 
+<p align="center">
+  <a href="https://github.com/Cc-Cece/PicHarbor-iOS">GitHub 仓库</a> · <a href="https://github.com/Cc-Cece/PicHarbor-iOS/releases">发布版本</a>
+</p>
+
+<p align="center">
+  相关项目：<a href="https://github.com/Cc-Cece/PicHarbor">Desktop</a> · <a href="https://github.com/Cc-Cece/PicHarbor-Android">Android</a>
+</p>
+
 </div>
 
 ---
