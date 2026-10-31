@@ -1,2 +1,3 @@
 "NSPhotoLibraryUsageDescription" = "Browse and back up photos and videos you allow.";
-"NSCameraUsageDescription" = "Scan QR codes to add proxy subscriptions.";
+"NSCameraUsageDescription" = "Scan QR codes to add proxy subscriptions or connect to a computer on the same network.";
+"NSLocalNetworkUsageDescription" = "Connects to a PicHarbor computer on the same local network to send photos directly. Nothing is relayed over the internet.";

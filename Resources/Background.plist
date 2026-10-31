@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>NSCameraUsageDescription</key><string>扫描二维码以添加代理订阅。</string>
+  <key>NSCameraUsageDescription</key><string>扫描二维码以添加代理订阅，或连接同一网络上的电脑。</string>
+  <key>NSLocalNetworkUsageDescription</key><string>用于连接同一局域网中正在运行的 PicHarbor 电脑并直接传输照片。不会通过互联网转发。</string>
   <!-- Subscription hosts are user supplied. Google requests retain HTTPS and certificate validation. -->
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
   <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>

@@ -102,6 +102,8 @@ struct BackupDashboard: View {
             Section {
                 Button { confirm = true } label: { Label(L10n.text("备份当前范围"), systemImage: "arrow.up.circle.fill").font(.headline) }
                     .disabled(model.account.isEmpty || !model.initialized || model.enqueueing || model.recoveryRequired)
+                NavigationLink { LiveLinkView() } label: { Label(L10n.text("传到这台电脑"), systemImage: "desktopcomputer") }
+                    .accessibilityIdentifier("link.open")
                 NavigationLink { BackupScopeView() } label: { Label(L10n.text("备份范围"), systemImage: "rectangle.stack") }
                 NavigationLink { BackupPreferencesView() } label: { Label(L10n.text("备份偏好"), systemImage: "slider.horizontal.3") }
             }

@@ -185,6 +185,11 @@ final class HarborAppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        if identifier == LiveLinkBackground.identifier {
+            LiveLinkBackground.shared.backgroundCompletion = completionHandler
+            LiveLinkBackground.shared.activate()
+            return
+        }
         guard identifier == BackgroundTransfer.identifier else { completionHandler(); return }
         BackgroundTransfer.shared.backgroundCompletion = completionHandler
         BackgroundTransfer.shared.activate()

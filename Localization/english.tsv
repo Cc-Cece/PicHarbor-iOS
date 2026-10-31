@@ -812,3 +812,35 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 未备份|Not backed up
 备份状态|Backup status
 备份状态以当前账号的记录为准。|Backup status is based on this account's records.
+传到这台电脑|Send to this computer
+扫描电脑上的二维码，或手动输入地址和配对码。|Scan the QR code on the computer, or enter the address and pairing code.
+允许从 iCloud 下载|Allow download from iCloud
+已跳过 {0} 项仅保存在 iCloud 的原件|Skipped {0} originals that are only in iCloud
+发送期间请保持 PicHarbor 在前台。锁屏后传输会停止，因为后台传输无法校验这台电脑的自签名证书。下一批也需要打开 PicHarbor。|Keep PicHarbor in the foreground while sending. Transfers stop when the screen locks, because background transfer cannot verify this computer's self-signed certificate. The next batch also needs PicHarbor open.
+配对码或证书不一致|The pairing code or certificate does not match
+电脑|Computer
+配对码|Pairing code
+证书前 16 位|First 16 of the certificate
+端口|Port
+开始发送|Start sending
+扫描电脑二维码|Scan the computer QR code
+地址|Address
+已保存的电脑|Saved computer
+连接已保存的电脑|Connect to the saved computer
+忘记这台电脑|Forget this computer
+将发送当前照片范围，不需要 Google 账号。|This sends the current photo scope and does not need a Google account.
+当前范围 {0} 项|Current scope: {0} items
+正在准备并核对文件…|Preparing and checking files…
+正在发送 {0}/{1}|Sending {0}/{1}
+已发送 {0}，电脑已有 {1}，跳过 {2}。|Sent {0}, already on the computer {1}, skipped {2}.
+发送完成|Sending finished
+停止发送|Stop sending
+这不是连接电脑的二维码。|This QR code does not connect to a computer.
+请填写局域网地址、端口、证书前 16 位和 6 位配对码。|Enter the LAN address, port, the first 16 characters of the certificate, and the 6-digit pairing code.
+正在连接电脑…|Connecting to the computer…
+已连接 {0}|Connected to {0}
+未能发送 {0} 项。|Could not send {0} items.
+将电脑上的连接二维码放入取景框|Place the computer connection QR code in the frame
+没有可发送的照片或视频。|There are no photos or videos to send.
+电脑拒绝了这次传输。|The computer rejected this transfer.
+仅在同一局域网内直接传输，不经过互联网。|Sends directly on the same local network. Nothing goes over the internet.

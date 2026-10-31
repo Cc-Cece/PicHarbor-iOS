@@ -104,7 +104,7 @@ private final class QRPreview: UIView {
     }
 }
 
-private struct QRCodeCamera: UIViewRepresentable {
+struct QRCodeCamera: UIViewRepresentable {
     let onCode: (String) -> Void
     let onFailure: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(onCode: onCode, onFailure: onFailure) }

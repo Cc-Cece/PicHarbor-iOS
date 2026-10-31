@@ -1,2 +1,3 @@
 "NSPhotoLibraryUsageDescription" = "瀏覽同備份你允許取用嘅相片同影片。";
-"NSCameraUsageDescription" = "掃描二維碼加入代理訂閱。";
+"NSCameraUsageDescription" = "掃描二維碼加入代理訂閱，或連接同一網絡上的電腦。";
+"NSLocalNetworkUsageDescription" = "用於連接同一區域網絡上正在運行的 PicHarbor 電腦，並直接傳送相片。不會經互聯網轉發。";
