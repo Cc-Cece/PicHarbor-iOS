@@ -95,7 +95,7 @@ struct SubscriptionScannerView: View {
     }
 }
 
-private final class QRPreview: UIView {
+final class QRPreview: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var preview: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     override func layoutSubviews() {
