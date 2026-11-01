@@ -1,5 +1,7 @@
 import XCTest
+#if !LINK_SCOPE_STANDALONE
 @testable import PicHarbor
+#endif
 final class LiveLinkScopeTests: XCTestCase {
     func testVersionedScopeRoundtripAndUnknownVersionsFailClosed() throws {
         var scope = LiveLinkScope(); scope.mode = "advanced"; scope.albums = ["stable-id"]

@@ -106,7 +106,8 @@ jobs:
           if [ "$TEST_SCOPE" = native-proxy ]; then
             FILTER=(test -only-testing:PicHarborTests -only-testing:PicHarborUITests/HarborFlowTests/testProxyPreviewSettingsAreOffByDefaultAndHavePolicyControls)
           elif [ "$TEST_SCOPE" = paired-link ]; then
-            FILTER=(test -only-testing:PicHarborTests/LiveLinkScopeTests)
+            SCHEME=PicHarborLinkScope
+            FILTER=(test -only-testing:PicHarborLinkScopeTests/LiveLinkScopeTests)
           fi
           xcodebuild \
             "${FILTER[@]}" \
