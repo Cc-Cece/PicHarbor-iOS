@@ -11,7 +11,7 @@ on:
         description: Tests to run
         type: choice
         default: full
-        options: [full, native-proxy]
+        options: [full, native-proxy, paired-link]
   pull_request:
     branches: [main]
     paths-ignore:
@@ -99,16 +99,20 @@ jobs:
       - name: Run tests
         env:
           SCHEME: ${{ steps.app.outputs.name }}
+          PROJECT_NAME: ${{ steps.app.outputs.name }}
           TEST_SCOPE: ${{ inputs.test_scope || 'full' }}
         run: |
           set -euo pipefail
-          FILTER=()
+          FILTER=(test)
           if [ "$TEST_SCOPE" = native-proxy ]; then
-            FILTER=(-only-testing:PicHarborTests -only-testing:PicHarborUITests/HarborFlowTests/testProxyPreviewSettingsAreOffByDefaultAndHavePolicyControls)
+            FILTER=(test -only-testing:PicHarborTests -only-testing:PicHarborUITests/HarborFlowTests/testProxyPreviewSettingsAreOffByDefaultAndHavePolicyControls)
+          elif [ "$TEST_SCOPE" = paired-link ]; then
+            SCHEME=PicHarborLinkScope
+            FILTER=(test -only-testing:PicHarborLinkScopeTests/LiveLinkScopeTests)
           fi
-          xcodebuild test \
+          xcodebuild \
             "${FILTER[@]}" \
-            -project "${SCHEME}.xcodeproj" \
+            -project "${PROJECT_NAME}.xcodeproj" \
             -scheme "$SCHEME" \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
             -parallel-testing-enabled NO \

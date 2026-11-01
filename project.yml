@@ -34,7 +34,7 @@ settings:
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGN_IDENTITY: ""
     MARKETING_VERSION: "0.2.30"
-    CURRENT_PROJECT_VERSION: "33"
+    CURRENT_PROJECT_VERSION: "34"
 
 targets:
   PicHarbor:
@@ -91,6 +91,18 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cccece.picharbor.tests
         GENERATE_INFOPLIST_FILE: "YES"
 
+  PicHarborLinkScopeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Sources/Core/LiveLinkScopeRules.swift
+      - path: Tests/LiveLinkScopeTests.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cccece.picharbor.linkscope.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) LINK_SCOPE_STANDALONE"
+
   PicHarborUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -119,3 +131,12 @@ schemes:
         - PicHarborUITests
     archive:
       config: Release
+
+  PicHarborLinkScope:
+    build:
+      targets:
+        PicHarborLinkScopeTests: [test]
+    test:
+      config: Debug
+      targets:
+        - PicHarborLinkScopeTests

@@ -262,11 +262,14 @@ final class LiveLinkController: ObservableObject {
             }
             status = L10n.text("将发送 {0} 项到电脑", [String(assets.count)])
             try await http.accept(connection: link, offerId: offerId)
-            if !assets.isEmpty {
-                try await transfer(link, assets: assets, allowCloud: allowCloud)
+            do {
+                if !assets.isEmpty { try await transfer(link, assets: assets, allowCloud: allowCloud) }
+                try? await http.finish(connection: link, offerId: offerId, success: failedCount == 0 && skipped == 0, error: failedCount > 0 || skipped > 0 ? L10n.text("部分原件未能发送，请检查权限及云端原件设置后重试。") : nil)
+            } catch {
+                try? await http.finish(connection: link, offerId: offerId, success: false, error: error.localizedDescription)
+                throw error
             }
-            try? await http.finish(connection: link, offerId: offerId)
-            status = L10n.text("发送完成")
+            status = failedCount > 0 || skipped > 0 ? L10n.text("部分原件未能发送，可重新发起重试。") : L10n.text("发送完成")
             fraction = 1
         }
     }
@@ -336,9 +339,14 @@ final class LiveLinkController: ObservableObject {
                 message = L10n.text("电脑没有确认")
                 return
             }
-            try await transfer(link, assets: assets, allowCloud: allowCloud)
-            try? await http.finish(connection: link, offerId: offerId)
-            status = L10n.text("发送完成")
+            do {
+                try await transfer(link, assets: assets, allowCloud: allowCloud)
+                try? await http.finish(connection: link, offerId: offerId, success: failedCount == 0 && skipped == 0, error: failedCount > 0 || skipped > 0 ? L10n.text("部分原件未能发送，请检查权限及云端原件设置后重试。") : nil)
+            } catch {
+                try? await http.finish(connection: link, offerId: offerId, success: false, error: error.localizedDescription)
+                throw error
+            }
+            status = failedCount > 0 || skipped > 0 ? L10n.text("部分原件未能发送，可重新发起重试。") : L10n.text("发送完成")
             fraction = 1
         }
     }
@@ -430,6 +438,9 @@ final class LiveLinkController: ObservableObject {
         }
     }
 
+    private var catalogRevision: Int64 = -1
+    private var catalogAt = Date.distantPast
+    private var catalogAuthorization = PHAuthorizationStatus.notDetermined
     private func checkIn(_ link: LiveLinkConnection) async throws {
         LiveLinkIdentityFile.prepare()
         let report = LiveLinkIdentityFile.report()
@@ -446,9 +457,38 @@ final class LiveLinkController: ObservableObject {
             conflictShown = true
             message = L10n.text("这台手机的身份和电脑上的记录不一致。请确认是不是连错了设备。")
         }
+        if !busy, let request = try? await http.catalogRequest(connection: link), (request.revision != catalogRevision || Date().timeIntervalSince(catalogAt) > 15 || catalogAuthorization != PHPhotoLibrary.authorizationStatus(for: .readWrite)) {
+            do {
+                let criteria = try LiveLinkScope.parse(request.scope)
+                let groups = LiveLinkScope.groups()
+                let all = await Self.assets(matching: "all")
+                let selected = criteria.select(all, groups: groups)
+                let known = LiveLinkScope.knownSizes(all)
+                let albums = groups.map { group -> LiveLinkAlbum in
+                    var value = group.album; value.bytes = group.ids.compactMap { known[$0] }.reduce(0, +); return value
+                }
+                var withoutDates = criteria; withoutDates.dateEnabled = false
+                let unknownDate = criteria.dateEnabled ? withoutDates.select(all, groups: groups).filter { $0.creationDate == nil && $0.modificationDate == nil }.count : 0
+                let report = LiveLinkCatalogReport(revision: request.revision, timeZone: TimeZone.current.identifier,
+                    albums: albums, count: selected.count, bytes: selected.compactMap { known[$0.localIdentifier] }.reduce(0, +), unknownSize: selected.filter { known[$0.localIdentifier] == nil }.count, unknownDate: unknownDate)
+                try await http.reportCatalog(connection: link, report: report)
+                catalogRevision = request.revision
+                catalogAt = Date()
+                catalogAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            } catch {
+                let report = LiveLinkCatalogReport(revision: request.revision, timeZone: TimeZone.current.identifier,
+                    albums: [], count: 0, bytes: 0, unknownSize: 0, unknownDate: 0, error: L10n.text("不支持此备份范围，请更新 PicHarbor。"))
+                try? await http.reportCatalog(connection: link, report: report)
+            }
+        }
         guard !busy, !responding, incomingId == nil else { return }
         let listed = try await http.offers(connection: link)
         guard let offer = listed.offers.first(where: { $0.direction == "computer-to-phone" }) else { return }
+        guard (try? LiveLinkScope.parse(offer.scope ?? "all")) != nil else {
+            message = L10n.text("不支持此备份范围，请更新 PicHarbor。")
+            try? await http.reject(connection: link, offerId: offer.id)
+            return
+        }
         incomingId = offer.id
         incomingScope = offer.scope ?? "all"
     }
@@ -456,7 +496,7 @@ final class LiveLinkController: ObservableObject {
     func prepareIncoming(_ assets: [PHAsset]) {
         incomingAssets = assets
         incomingCount = assets.count
-        incomingTitle = L10n.text("将发送 {0} 项到电脑", [String(assets.count)])
+        incomingTitle = L10n.text("将发送 {0} 项到电脑", [String(assets.count)]) + "\n" + ((try? LiveLinkScope.parse(incomingScope ?? "all"))?.summary ?? "")
         incomingReady = true
     }
 
@@ -473,22 +513,8 @@ final class LiveLinkController: ObservableObject {
     }
 
     static func matching(_ assets: [PHAsset], scope: String) -> [PHAsset] {
-        guard scope.hasPrefix("range:") else { return assets }
-        let parts = scope.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        let from = parts.count > 1 ? formatter.date(from: parts[1]) : nil
-        let to = parts.count > 2 ? formatter.date(from: parts[2]) : nil
-        let end = to.flatMap { Calendar.current.date(byAdding: .day, value: 1, to: $0) }
-        return assets.filter { asset in
-            guard let date = asset.creationDate else { return false }
-            if let from, date < from { return false }
-            if let end, date >= end { return false }
-            return true
-        }
+        guard let criteria = try? LiveLinkScope.parse(scope) else { return [] }
+        return criteria.select(assets, groups: criteria.mode == "default" || criteria.mode == "advanced" ? LiveLinkScope.groups() : [])
     }
 
     private func transfer(_ link: LiveLinkConnection, assets: [PHAsset], allowCloud: Bool) async throws {
@@ -505,17 +531,25 @@ final class LiveLinkController: ObservableObject {
             if prepared.isEmpty { continue }
             status = L10n.text("正在发送 {0}/{1}", [String(index + 1), String(total)])
             let response = try await http.manifest(connection: link, model: model, items: prepared.map(\.item))
-            for file in prepared {
-                currentFile = file.item.name
-                if response.need.contains(file.item.id) {
-                    try await upload(file, connection: link, done: index, total: total)
-                    sentCount += 1
-                } else if response.have.contains(file.item.id) {
-                    hadCount += 1
-                } else {
-                    failedCount += 1
+            guard prepared.allSatisfy({ response.need.contains($0.item.id) || response.have.contains($0.item.id) }) else {
+                failedCount += 1
+                for file in prepared { try? FileManager.default.removeItem(at: file.url) }
+                continue
+            }
+            var sentAsset = false
+            do {
+                for file in prepared {
+                    currentFile = file.item.name
+                    if response.need.contains(file.item.id) {
+                        try await upload(file, connection: link, done: index, total: total)
+                        sentAsset = true
+                    }
+                    try? FileManager.default.removeItem(at: file.url)
                 }
-                try? FileManager.default.removeItem(at: file.url)
+                if sentAsset { sentCount += 1 } else { hadCount += 1 }
+            } catch {
+                failedCount += 1
+                throw error
             }
             fraction = Double(index + 1) / Double(max(total, 1))
         }
@@ -525,6 +559,7 @@ final class LiveLinkController: ObservableObject {
     /// One asset, or both parts of one Live Photo, is exported and manifested together.
     private func prepare(_ asset: PHAsset, directory: URL, allowCloud: Bool) async throws -> [LiveLinkFiles.Prepared] {
         let parts = LiveLinkFiles.parts(asset)
+        let skippedBefore = skipped
         if parts.isEmpty { failedCount += 1; return [] }
         var prepared: [LiveLinkFiles.Prepared] = []
         var failedPart = false
@@ -537,8 +572,7 @@ final class LiveLinkController: ObservableObject {
             let url = ext.isEmpty ? base : base.appendingPathExtension(ext)
             do {
                 try await LiveLinkFiles.export(resource: resource, to: url, network: allowCloud)
-                let stamp = asset.modificationDate.map { $0.timeIntervalSince1970.bitPattern } ?? 0
-                let key = asset.localIdentifier + "\n" + String(stamp) + "\n" + role
+                let key = LiveLinkScope.resourceKey(asset, role: role)
                 let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
                 let size = (attributes[.size] as? NSNumber)?.int64Value ?? -1
                 guard size > 0 else { throw LiveLinkFailure.file }
@@ -565,7 +599,13 @@ final class LiveLinkController: ObservableObject {
                 else { failedPart = true }
             }
         }
-        if failedPart { failedCount += 1 }
+        if prepared.count != parts.count {
+            if failedPart { failedCount += 1; skipped = skippedBefore }
+            else { skipped = skippedBefore + 1 }
+            // A Live Photo is transferred whole, including when only one resource is cloud-only or inaccessible.
+            for file in prepared { try? FileManager.default.removeItem(at: file.url) }
+            return []
+        }
         return prepared
     }
 
