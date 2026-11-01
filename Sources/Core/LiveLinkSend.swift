@@ -194,6 +194,7 @@ enum LiveLinkFiles {
 
 @MainActor
 final class LiveLinkController: ObservableObject {
+    static let shared = LiveLinkController()
     @Published var saved: SavedComputer?
     @Published var busy = false
     @Published var status = ""
@@ -205,9 +206,19 @@ final class LiveLinkController: ObservableObject {
     @Published var hadCount = 0
     @Published var failedCount = 0
     @Published var started = false
+    @Published var allowCloud = false
+    @Published var incomingCount = 0
+    @Published var incomingTitle = ""
+    @Published var incomingScope: String?
+    @Published var incomingReady = false
     private var task: Task<Void, Never>?
+    private var presenceTask: Task<Void, Never>?
     private var run = 0
     private var connection: LiveLinkConnection?
+    private var incomingId: String?
+    private var incomingAssets: [PHAsset] = []
+    private var conflictShown = false
+    private var responding = false
     private let http = LiveLinkHTTP()
     private let cache = LiveLinkHashCache()
 
@@ -222,6 +233,62 @@ final class LiveLinkController: ObservableObject {
 
     func stop() { task?.cancel() }
 
+    func startPresence() {
+        LiveLinkIdentityFile.prepare()
+        guard presenceTask == nil else { return }
+        presenceTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.checkIn()
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
+    }
+
+    func stopPresence() {
+        presenceTask?.cancel()
+        presenceTask = nil
+    }
+
+    func confirmIncoming() {
+        guard let offerId = incomingId, incomingReady, !busy else { return }
+        let assets = incomingAssets
+        responding = true
+        clearIncoming()
+        begin(trackSend: true) { [self] in
+            defer { responding = false }
+            guard let link = try await refreshedConnection() else {
+                message = L10n.text("请再配对一次这台电脑。")
+                return
+            }
+            status = L10n.text("将发送 {0} 项到电脑", [String(assets.count)])
+            try await http.accept(connection: link, offerId: offerId)
+            if !assets.isEmpty {
+                try await transfer(link, assets: assets, allowCloud: allowCloud)
+            }
+            try? await http.finish(connection: link, offerId: offerId)
+            status = L10n.text("发送完成")
+            fraction = 1
+        }
+    }
+
+    func declineIncoming() {
+        guard !responding else { return }
+        let offerId = incomingId
+        let link = connection
+        clearIncoming()
+        guard let offerId, let link else { return }
+        Task { try? await http.reject(connection: link, offerId: offerId) }
+    }
+
+    private func clearIncoming() {
+        incomingId = nil
+        incomingTitle = ""
+        incomingCount = 0
+        incomingAssets = []
+        incomingScope = nil
+        incomingReady = false
+    }
+
     func connectSaved() {
         guard let saved, !busy else { return }
         begin(trackSend: false) { [self] in
@@ -231,18 +298,46 @@ final class LiveLinkController: ObservableObject {
         }
     }
 
-    func send(host: String, port: String, prefix: String, code: String, scanned: String?, assets: [PHAsset], allowCloud: Bool) {
+    func send(host: String, port: String, prefix: String, code: String, scanned: String?, assets: [PHAsset], allowCloud: Bool, alts: [String] = []) {
         guard !busy else { return }
+        self.allowCloud = allowCloud
+        let paired = LiveLinkStore.computer() != nil
+        let usable = LiveLinkIdentityFile.report().usable
+        let formEmpty = host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !usable && !paired && formEmpty {
+            message = L10n.text("请先配对这台电脑，再用数据线连接一次。")
+            return
+        }
+        if usable && !paired && formEmpty {
+            message = L10n.text("请再配对一次这台电脑。")
+            return
+        }
+        if assets.isEmpty && usable && paired {
+            message = L10n.text("没有可发送的照片或视频。")
+            return
+        }
         begin(trackSend: true) { [self] in
-            let target = try resolve(host: host, portText: port, prefixText: prefix, codeText: code, scanned: scanned)
+            let target = try resolve(host: host, portText: port, prefixText: prefix, codeText: code, scanned: scanned, alts: alts)
             status = L10n.text("正在连接电脑…")
+            let link = try await open(target)
+            message = L10n.text("已连接 {0}", [link.name])
+            try await checkIn(link)
+            if let blocked = LiveLinkIdentityFile.block(paired: true) {
+                message = blocked
+                return
+            }
             guard !assets.isEmpty else {
                 message = L10n.text("没有可发送的照片或视频。")
                 return
             }
-            let link = try await open(target)
-            message = L10n.text("已连接 {0}", [link.name])
+            status = L10n.text("正在等待电脑确认…")
+            let offerId = try await http.offer(connection: link, scope: "library", count: assets.count)
+            guard try await http.waitForComputer(connection: link, offerId: offerId) else {
+                message = L10n.text("电脑没有确认")
+                return
+            }
             try await transfer(link, assets: assets, allowCloud: allowCloud)
+            try? await http.finish(connection: link, offerId: offerId)
             status = L10n.text("发送完成")
             fraction = 1
         }
@@ -283,27 +378,28 @@ final class LiveLinkController: ObservableObject {
         }
     }
 
-    private func resolve(host: String, portText: String, prefixText: String, codeText: String, scanned: String?) throws -> LiveLinkTarget {
+    private func resolve(host: String, portText: String, prefixText: String, codeText: String, scanned: String?, alts: [String]) throws -> LiveLinkTarget {
         let hostTrim = host.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefix = prefixText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let codeRaw = codeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let extras = alts.filter { LiveLinkCheck.isIPv4($0) && $0 != hostTrim }
         if hostTrim.isEmpty, prefix.isEmpty, codeRaw.isEmpty, let saved {
             return LiveLinkTarget(host: saved.host, port: saved.port, pin: .full(saved.fingerprint), code: "")
         }
         guard LiveLinkCheck.isIPv4(hostTrim), let port = LiveLinkCheck.port(portText) else { throw LiveLinkFailure.form }
         if let scannedFull = scanned?.lowercased(), LiveLinkCheck.isHex(scannedFull, count: 64), !prefix.isEmpty, scannedFull.hasPrefix(prefix) {
-            if codeRaw.isEmpty { return LiveLinkTarget(host: hostTrim, port: port, pin: .full(scannedFull), code: "") }
+            if codeRaw.isEmpty { return LiveLinkTarget(host: hostTrim, port: port, pin: .full(scannedFull), code: "", alts: extras) }
             guard let code = LiveLinkCheck.pairingCode(codeRaw) else { throw LiveLinkFailure.form }
-            return LiveLinkTarget(host: hostTrim, port: port, pin: .full(scannedFull), code: code)
+            return LiveLinkTarget(host: hostTrim, port: port, pin: .full(scannedFull), code: code, alts: extras)
         }
         guard prefix.count == 16 || prefix.count == 64, LiveLinkCheck.isHex(prefix) else { throw LiveLinkFailure.form }
         let pin: LiveLinkPin = prefix.count == 64 ? .full(prefix) : .prefix(prefix)
         if codeRaw.isEmpty {
             guard let saved, saved.host == hostTrim, saved.port == port, pin.accepts(saved.fingerprint) else { throw LiveLinkFailure.form }
-            return LiveLinkTarget(host: saved.host, port: saved.port, pin: .full(saved.fingerprint), code: "")
+            return LiveLinkTarget(host: saved.host, port: saved.port, pin: .full(saved.fingerprint), code: "", alts: extras)
         }
         guard let code = LiveLinkCheck.pairingCode(codeRaw) else { throw LiveLinkFailure.form }
-        return LiveLinkTarget(host: hostTrim, port: port, pin: pin, code: code)
+        return LiveLinkTarget(host: hostTrim, port: port, pin: pin, code: code, alts: extras)
     }
 
     private func open(_ target: LiveLinkTarget) async throws -> LiveLinkConnection {
@@ -315,6 +411,84 @@ final class LiveLinkController: ObservableObject {
         connection = link
         saved = LiveLinkStore.computer()
         return link
+    }
+
+    private func refreshedConnection() async throws -> LiveLinkConnection? {
+        if let connection { return connection }
+        guard let saved else { return nil }
+        return try await open(LiveLinkTarget(host: saved.host, port: saved.port, pin: .full(saved.fingerprint), code: ""))
+    }
+
+    private func checkIn() async {
+        guard LiveLinkStore.computer() != nil || connection != nil else { return }
+        LiveLinkIdentityFile.prepare()
+        do {
+            guard let link = try await refreshedConnection() else { return }
+            try await checkIn(link)
+        } catch {
+            connection = nil
+        }
+    }
+
+    private func checkIn(_ link: LiveLinkConnection) async throws {
+        LiveLinkIdentityFile.prepare()
+        let report = LiveLinkIdentityFile.report()
+        let result = try await http.hello(
+            connection: link,
+            archiveId: report.usable ? report.value : nil,
+            directoryReady: report.directoryReady,
+            unreadable: report.unreadable,
+            name: LiveLinkDevice.name())
+        if let deliver = result.deliver, LiveLinkIdentityFile.write(deliver) {
+            _ = try? await http.hello(connection: link, archiveId: deliver, directoryReady: true, unreadable: false, name: LiveLinkDevice.name())
+        }
+        if result.conflict, !conflictShown {
+            conflictShown = true
+            message = L10n.text("这台手机的身份和电脑上的记录不一致。请确认是不是连错了设备。")
+        }
+        guard !busy, !responding, incomingId == nil else { return }
+        let listed = try await http.offers(connection: link)
+        guard let offer = listed.offers.first(where: { $0.direction == "computer-to-phone" }) else { return }
+        incomingId = offer.id
+        incomingScope = offer.scope ?? "all"
+    }
+
+    func prepareIncoming(_ assets: [PHAsset]) {
+        incomingAssets = assets
+        incomingCount = assets.count
+        incomingTitle = L10n.text("将发送 {0} 项到电脑", [String(assets.count)])
+        incomingReady = true
+    }
+
+    static func assets(matching scope: String) async -> [PHAsset] {
+        let fetched = await Task.detached(priority: .userInitiated) { () -> [PHAsset] in
+            let options = PHFetchOptions()
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            options.predicate = NSPredicate(format: "mediaType == %d OR mediaType == %d", PHAssetMediaType.image.rawValue, PHAssetMediaType.video.rawValue)
+            var values: [PHAsset] = []
+            PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in values.append(asset) }
+            return values
+        }.value
+        return matching(fetched, scope: scope)
+    }
+
+    static func matching(_ assets: [PHAsset], scope: String) -> [PHAsset] {
+        guard scope.hasPrefix("range:") else { return assets }
+        let parts = scope.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        let from = parts.count > 1 ? formatter.date(from: parts[1]) : nil
+        let to = parts.count > 2 ? formatter.date(from: parts[2]) : nil
+        let end = to.flatMap { Calendar.current.date(byAdding: .day, value: 1, to: $0) }
+        return assets.filter { asset in
+            guard let date = asset.creationDate else { return false }
+            if let from, date < from { return false }
+            if let end, date >= end { return false }
+            return true
+        }
     }
 
     private func transfer(_ link: LiveLinkConnection, assets: [PHAsset], allowCloud: Bool) async throws {

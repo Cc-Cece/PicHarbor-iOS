@@ -182,6 +182,21 @@ enum LiveLinkStore {
 /// Foreground TLS sessions. Each call uses a new URLSession so each request is a new connection.
 final class LiveLinkHTTP: @unchecked Sendable {
     func establish(_ target: LiveLinkTarget, identity: LiveLinkIdentity, deviceName: String) async throws -> LiveLinkConnection {
+        let hosts = [target.host] + target.alts.filter { $0 != target.host && LiveLinkCheck.isIPv4($0) }
+        var last: Error = LiveLinkFailure.network
+        for (index, host) in hosts.enumerated() {
+            var attempt = target
+            attempt.host = host
+            do {
+                return try await establishHost(attempt, identity: identity, deviceName: deviceName)
+            } catch LiveLinkFailure.network where index + 1 < hosts.count {
+                last = LiveLinkFailure.network
+            }
+        }
+        throw last
+    }
+
+    private func establishHost(_ target: LiveLinkTarget, identity: LiveLinkIdentity, deviceName: String) async throws -> LiveLinkConnection {
         let fingerprint: String
         switch target.pin {
         case .full(let value):
@@ -201,6 +216,66 @@ final class LiveLinkHTTP: @unchecked Sendable {
         }
         guard target.code.count == 6 else { throw LiveLinkFailure.rejected }
         return try await pair(host: target.host, port: target.port, fingerprint: fingerprint, code: target.code, identity: identity, deviceName: deviceName)
+    }
+
+    func hello(connection: LiveLinkConnection, archiveId: String?, directoryReady: Bool, unreadable: Bool, name: String) async throws -> (deliver: String?, conflict: Bool) {
+        let body = try JSONEncoder().encode(LiveLinkHelloBody(archiveId: archiveId, name: name, platform: "ios", directory: directoryReady, unreadable: unreadable))
+        let (status, data, _) = try await send(method: "POST", path: "/v1/hello", host: connection.host, port: connection.port,
+                                               pin: .full(connection.fingerprint), token: connection.token, body: body,
+                                               contentType: "application/json", timeout: 20)
+        guard status == 200, let decoded = try? JSONDecoder().decode(LiveLinkHelloResponse.self, from: data) else { throw LiveLinkFailure.rejected }
+        return (decoded.deliver, decoded.conflict == true)
+    }
+
+    func offer(connection: LiveLinkConnection, scope: String, count: Int) async throws -> String {
+        let body = try JSONEncoder().encode(LiveLinkOfferBody(direction: "phone-to-computer", scope: scope, count: count))
+        let (status, data, _) = try await send(method: "POST", path: "/v1/offers", host: connection.host, port: connection.port,
+                                               pin: .full(connection.fingerprint), token: connection.token, body: body,
+                                               contentType: "application/json", timeout: 20)
+        guard status == 200, let decoded = try? JSONDecoder().decode(LiveLinkOfferWire.self, from: data), !decoded.id.isEmpty else { throw LiveLinkFailure.rejected }
+        return decoded.id
+    }
+
+    func offers(connection: LiveLinkConnection) async throws -> (upload: Bool, offers: [LiveLinkOfferWire]) {
+        let (status, data, _) = try await send(method: "GET", path: "/v1/offers", host: connection.host, port: connection.port,
+                                               pin: .full(connection.fingerprint), token: connection.token, body: nil,
+                                               contentType: nil, timeout: 20)
+        guard status == 200, let decoded = try? JSONDecoder().decode(LiveLinkOfferList.self, from: data) else { throw LiveLinkFailure.rejected }
+        return (decoded.upload, decoded.offers)
+    }
+
+    func accept(connection: LiveLinkConnection, offerId: String) async throws {
+        let (status, _, _) = try await send(method: "POST", path: "/v1/offers/\(offerId)/accept", host: connection.host, port: connection.port,
+                                            pin: .full(connection.fingerprint), token: connection.token, body: Data(),
+                                            contentType: "application/json", timeout: 20)
+        guard status == 200 else { throw LiveLinkFailure.rejected }
+    }
+
+    func reject(connection: LiveLinkConnection, offerId: String) async throws {
+        let (status, _, _) = try await send(method: "POST", path: "/v1/offers/\(offerId)/reject", host: connection.host, port: connection.port,
+                                            pin: .full(connection.fingerprint), token: connection.token, body: Data(),
+                                            contentType: "application/json", timeout: 20)
+        guard status == 200 else { throw LiveLinkFailure.rejected }
+    }
+
+    func finish(connection: LiveLinkConnection, offerId: String) async throws {
+        let (status, _, _) = try await send(method: "POST", path: "/v1/offers/\(offerId)/finish", host: connection.host, port: connection.port,
+                                            pin: .full(connection.fingerprint), token: connection.token, body: Data(),
+                                            contentType: "application/json", timeout: 20)
+        guard status == 200 else { throw LiveLinkFailure.rejected }
+    }
+
+    /// Poll until the computer confirms, or the request disappears.
+    func waitForComputer(connection: LiveLinkConnection, offerId: String) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(120)
+        while Date() < deadline {
+            try Task.checkCancellation()
+            let listed = try await offers(connection: connection)
+            if listed.upload { return true }
+            if !listed.offers.contains(where: { $0.id == offerId }) { return false }
+            try await Task.sleep(for: .seconds(1))
+        }
+        return false
     }
 
     func manifest(connection: LiveLinkConnection, model: String, items: [LiveLinkManifestItem]) async throws -> (need: Set<String>, have: Set<String>) {
@@ -435,6 +510,38 @@ private struct LiveLinkSessionBody: Codable {
     var deviceId: String
     var nonce: String
     var signature: String
+}
+
+private struct LiveLinkHelloBody: Codable {
+    var archiveId: String?
+    var name: String
+    var platform: String
+    var directory: Bool
+    var unreadable: Bool
+}
+
+private struct LiveLinkHelloResponse: Codable {
+    var archiveId: String?
+    var deliver: String?
+    var conflict: Bool?
+}
+
+private struct LiveLinkOfferBody: Codable {
+    var direction: String
+    var scope: String
+    var count: Int
+}
+
+struct LiveLinkOfferWire: Codable {
+    var id: String
+    var direction: String?
+    var scope: String?
+    var count: Int?
+}
+
+private struct LiveLinkOfferList: Codable {
+    var offers: [LiveLinkOfferWire]
+    var upload: Bool
 }
 
 private struct LiveLinkManifestBody: Codable {

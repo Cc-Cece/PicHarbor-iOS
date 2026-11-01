@@ -842,3 +842,12 @@
 "默认关闭。开启后，照片和视频保存成功后还会等待动态处理完成。蓝色对勾表示已保存，仍在等待处理。" = "Off by default. When enabled, backup also waits for motion processing after saving. A blue check means saved but still processing.";
 "默认同时备份 2 个项目。减少数量时，已开始的上传会继续完成。" = "Back up 2 items at once by default. Lowering the limit lets uploads already started finish.";
 "默认收起 14 天前已完成的记录，照片和备份状态会保留。取消归档后，会重新等待设定天数。此设置适用于本机所有账号。" = "By default, completed records are archived after 14 days. Photos and backup status are kept. Unarchiving restarts the waiting period. This setting applies to all accounts on this device.";
+"用数据线连接，并打开电脑上的 PicHarbor。" = "Connect with a cable and open PicHarbor on the computer.";
+"请先配对这台电脑，再用数据线连接一次。" = "Pair with this computer first, then connect the cable once.";
+"请再配对一次这台电脑。" = "Pair with this computer again.";
+"将发送 {0} 项到电脑" = "{0} items will be sent to the computer";
+"正在等待电脑确认…" = "Waiting for the computer to confirm…";
+"电脑没有确认" = "The computer did not confirm";
+"这台手机的身份和电脑上的记录不一致。请确认是不是连错了设备。" = "This phone identity does not match the record on the computer. Check that the right device is connected.";
+"确认发送" = "Confirm send";
+"拒绝" = "Decline";

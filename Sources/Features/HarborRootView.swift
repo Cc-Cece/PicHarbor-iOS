@@ -5,6 +5,7 @@ struct HarborRootView: View {
     @ObservedObject private var language = LanguagePreferences.shared
     @StateObject private var model = HarborModel.shared
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var link = LiveLinkController.shared
     @State private var welcome = false
     @State private var selectedTab = 0
     var body: some View {
@@ -69,9 +70,29 @@ struct HarborRootView: View {
             Button(L10n.text("好")) { model.notice = "" }
         } message: { Text(L10n.message(model.notice)) }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await model.library.refresh(); await model.pump() } }
+            if phase == .active {
+                link.startPresence()
+                Task { await model.library.refresh(); await model.pump() }
+            } else {
+                link.stopPresence()
+            }
             if phase == .background { HarborAppDelegate.schedule() }
         }
+        .onChange(of: link.incomingScope) { _, scope in
+            guard let scope else { return }
+            Task {
+                let assets = await LiveLinkController.assets(matching: scope)
+                guard link.incomingScope == scope else { return }
+                link.prepareIncoming(assets)
+            }
+        }
+        .alert(L10n.text("传到这台电脑"), isPresented: Binding(get: { link.incomingReady }, set: { if !$0 { link.declineIncoming() } })) {
+            Button(L10n.text("确认发送")) { link.confirmIncoming() }
+            Button(L10n.text("拒绝"), role: .cancel) { link.declineIncoming() }
+        } message: {
+            Text(link.incomingTitle.isEmpty ? L10n.text("将发送 {0} 项到电脑", ["0"]) : link.incomingTitle)
+        }
+        .onAppear { link.startPresence() }
     }
 }
 

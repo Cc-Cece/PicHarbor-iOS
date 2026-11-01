@@ -844,3 +844,12 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 没有可发送的照片或视频。|There are no photos or videos to send.
 电脑拒绝了这次传输。|The computer rejected this transfer.
 仅在同一局域网内直接传输，不经过互联网。|Sends directly on the same local network. Nothing goes over the internet.
+用数据线连接，并打开电脑上的 PicHarbor。|Connect with a cable and open PicHarbor on the computer.
+请先配对这台电脑，再用数据线连接一次。|Pair with this computer first, then connect the cable once.
+请再配对一次这台电脑。|Pair with this computer again.
+将发送 {0} 项到电脑|{0} items will be sent to the computer
+正在等待电脑确认…|Waiting for the computer to confirm…
+电脑没有确认|The computer did not confirm
+这台手机的身份和电脑上的记录不一致。请确认是不是连错了设备。|This phone identity does not match the record on the computer. Check that the right device is connected.
+确认发送|Confirm send
+拒绝|Decline

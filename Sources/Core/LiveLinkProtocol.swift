@@ -44,6 +44,7 @@ struct LiveLinkTarget: Equatable {
     var port: Int
     var pin: LiveLinkPin
     var code: String
+    var alts: [String] = []
 }
 
 enum LiveLinkCheck {
@@ -98,7 +99,8 @@ enum LiveLinkCheck {
               let fingerprint = query["fp"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               isHex(fingerprint, count: 64),
               let code = pairingCode(query["code"] ?? "") else { return nil }
-        return LiveLinkTarget(host: host, port: port, pin: .full(fingerprint), code: code)
+        let alts = (query["alts"] ?? "").split(separator: ",").map { String($0) }.filter { isIPv4($0) && $0 != host }
+        return LiveLinkTarget(host: host, port: port, pin: .full(fingerprint), code: code, alts: alts)
     }
 }
 

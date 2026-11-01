@@ -6,15 +6,16 @@ import AVFoundation
 struct LiveLinkView: View {
     @ObservedObject private var language = LanguagePreferences.shared
     @EnvironmentObject private var model: HarborModel
-    @StateObject private var link = LiveLinkController()
+    @ObservedObject private var link = LiveLinkController.shared
     @State private var scan = false
     @State private var host = ""
     @State private var port = ""
     @State private var fingerprint = ""
     @State private var code = ""
     @State private var scanned = ""
+    @State private var scannedHost = ""
+    @State private var altHosts: [String] = []
     @State private var filling = false
-    @State private var allowCloud = false
 
     private var scopeCount: Int { model.library.scope(model.settings).count }
 
@@ -49,7 +50,7 @@ struct LiveLinkView: View {
                 Text(L10n.text("将发送当前照片范围，不需要 Google 账号。"))
                     .font(.footnote).foregroundStyle(.secondary)
                 Text(L10n.text("当前范围 {0} 项", [String(scopeCount)]))
-                Toggle(L10n.text("允许从 iCloud 下载"), isOn: $allowCloud).disabled(link.busy)
+                Toggle(L10n.text("允许从 iCloud 下载"), isOn: $link.allowCloud).disabled(link.busy)
                 if model.library.status != .authorized && model.library.status != .limited {
                     Button(L10n.text("允许访问相册")) { Task { await model.library.authorize() } }
                 }
@@ -97,6 +98,8 @@ struct LiveLinkView: View {
                 host = target.host
                 port = String(target.port)
                 code = target.code
+                scannedHost = target.host
+                altHosts = target.alts
                 if case .full(let value) = target.pin {
                     scanned = value
                     fingerprint = String(value.prefix(16))
@@ -107,12 +110,10 @@ struct LiveLinkView: View {
     }
 
     private func start() {
-        if scopeCount == 0 {
-            link.message = L10n.text("没有可发送的照片或视频。")
-            return
-        }
+        let typed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let extras = typed == scannedHost ? altHosts : []
         link.send(host: host, port: port, prefix: fingerprint, code: code, scanned: scanned.isEmpty ? nil : scanned,
-                  assets: model.library.scope(model.settings), allowCloud: allowCloud)
+                  assets: model.library.scope(model.settings), allowCloud: link.allowCloud, alts: extras)
     }
 }
 
