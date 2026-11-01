@@ -531,17 +531,25 @@ final class LiveLinkController: ObservableObject {
             if prepared.isEmpty { continue }
             status = L10n.text("正在发送 {0}/{1}", [String(index + 1), String(total)])
             let response = try await http.manifest(connection: link, model: model, items: prepared.map(\.item))
-            for file in prepared {
-                currentFile = file.item.name
-                if response.need.contains(file.item.id) {
-                    try await upload(file, connection: link, done: index, total: total)
-                    sentCount += 1
-                } else if response.have.contains(file.item.id) {
-                    hadCount += 1
-                } else {
-                    failedCount += 1
+            guard prepared.allSatisfy({ response.need.contains($0.item.id) || response.have.contains($0.item.id) }) else {
+                failedCount += 1
+                for file in prepared { try? FileManager.default.removeItem(at: file.url) }
+                continue
+            }
+            var sentAsset = false
+            do {
+                for file in prepared {
+                    currentFile = file.item.name
+                    if response.need.contains(file.item.id) {
+                        try await upload(file, connection: link, done: index, total: total)
+                        sentAsset = true
+                    }
+                    try? FileManager.default.removeItem(at: file.url)
                 }
-                try? FileManager.default.removeItem(at: file.url)
+                if sentAsset { sentCount += 1 } else { hadCount += 1 }
+            } catch {
+                failedCount += 1
+                throw error
             }
             fraction = Double(index + 1) / Double(max(total, 1))
         }
@@ -551,6 +559,7 @@ final class LiveLinkController: ObservableObject {
     /// One asset, or both parts of one Live Photo, is exported and manifested together.
     private func prepare(_ asset: PHAsset, directory: URL, allowCloud: Bool) async throws -> [LiveLinkFiles.Prepared] {
         let parts = LiveLinkFiles.parts(asset)
+        let skippedBefore = skipped
         if parts.isEmpty { failedCount += 1; return [] }
         var prepared: [LiveLinkFiles.Prepared] = []
         var failedPart = false
@@ -590,8 +599,9 @@ final class LiveLinkController: ObservableObject {
                 else { failedPart = true }
             }
         }
-        if failedPart { failedCount += 1 }
         if prepared.count != parts.count {
+            if failedPart { failedCount += 1; skipped = skippedBefore }
+            else { skipped = skippedBefore + 1 }
             // A Live Photo is transferred whole, including when only one resource is cloud-only or inaccessible.
             for file in prepared { try? FileManager.default.removeItem(at: file.url) }
             return []

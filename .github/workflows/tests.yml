@@ -11,7 +11,7 @@ on:
         description: Tests to run
         type: choice
         default: full
-        options: [full, native-proxy]
+        options: [full, native-proxy, paired-link]
   pull_request:
     branches: [main]
     paths-ignore:
@@ -102,11 +102,13 @@ jobs:
           TEST_SCOPE: ${{ inputs.test_scope || 'full' }}
         run: |
           set -euo pipefail
-          FILTER=()
+          FILTER=(test)
           if [ "$TEST_SCOPE" = native-proxy ]; then
-            FILTER=(-only-testing:PicHarborTests -only-testing:PicHarborUITests/HarborFlowTests/testProxyPreviewSettingsAreOffByDefaultAndHavePolicyControls)
+            FILTER=(test -only-testing:PicHarborTests -only-testing:PicHarborUITests/HarborFlowTests/testProxyPreviewSettingsAreOffByDefaultAndHavePolicyControls)
+          elif [ "$TEST_SCOPE" = paired-link ]; then
+            FILTER=(test -only-testing:PicHarborTests/LiveLinkScopeTests)
           fi
-          xcodebuild test \
+          xcodebuild \
             "${FILTER[@]}" \
             -project "${SCHEME}.xcodeproj" \
             -scheme "$SCHEME" \
