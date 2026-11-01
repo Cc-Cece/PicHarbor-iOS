@@ -227,6 +227,19 @@ final class LiveLinkHTTP: @unchecked Sendable {
         return (decoded.deliver, decoded.conflict == true)
     }
 
+    func catalogRequest(connection: LiveLinkConnection) async throws -> LiveLinkCatalogRequest {
+        let (status, data, _) = try await send(method: "GET", path: "/v1/catalog", host: connection.host, port: connection.port,
+            pin: .full(connection.fingerprint), token: connection.token, body: nil, contentType: nil, timeout: 20)
+        guard status == 200 else { throw LiveLinkFailure.rejected }
+        return try JSONDecoder().decode(LiveLinkCatalogRequest.self, from: data)
+    }
+    func reportCatalog(connection: LiveLinkConnection, report: LiveLinkCatalogReport) async throws {
+        let body = try JSONEncoder().encode(report)
+        let (status, _, _) = try await send(method: "POST", path: "/v1/catalog", host: connection.host, port: connection.port,
+            pin: .full(connection.fingerprint), token: connection.token, body: body, contentType: "application/json", timeout: 20)
+        guard status == 200 else { throw LiveLinkFailure.rejected }
+    }
+
     func offer(connection: LiveLinkConnection, scope: String, count: Int) async throws -> String {
         let body = try JSONEncoder().encode(LiveLinkOfferBody(direction: "phone-to-computer", scope: scope, count: count))
         let (status, data, _) = try await send(method: "POST", path: "/v1/offers", host: connection.host, port: connection.port,
@@ -258,9 +271,10 @@ final class LiveLinkHTTP: @unchecked Sendable {
         guard status == 200 else { throw LiveLinkFailure.rejected }
     }
 
-    func finish(connection: LiveLinkConnection, offerId: String) async throws {
+    func finish(connection: LiveLinkConnection, offerId: String, success: Bool = true, error: String? = nil) async throws {
+        let body = try JSONEncoder().encode(LiveLinkFinishBody(success: success, error: error))
         let (status, _, _) = try await send(method: "POST", path: "/v1/offers/\(offerId)/finish", host: connection.host, port: connection.port,
-                                            pin: .full(connection.fingerprint), token: connection.token, body: Data(),
+                                            pin: .full(connection.fingerprint), token: connection.token, body: body,
                                             contentType: "application/json", timeout: 20)
         guard status == 200 else { throw LiveLinkFailure.rejected }
     }
@@ -518,6 +532,7 @@ private struct LiveLinkHelloBody: Codable {
     var platform: String
     var directory: Bool
     var unreadable: Bool
+    var capabilities: [String] = ["scope2", "catalog2"]
 }
 
 private struct LiveLinkHelloResponse: Codable {
@@ -602,3 +617,5 @@ final class LiveLinkBackground: NSObject, URLSessionTaskDelegate {
         }
     }
 }
+
+private struct LiveLinkFinishBody: Codable { var success: Bool; var error: String? }
