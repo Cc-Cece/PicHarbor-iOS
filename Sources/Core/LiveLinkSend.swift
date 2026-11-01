@@ -264,12 +264,12 @@ final class LiveLinkController: ObservableObject {
             try await http.accept(connection: link, offerId: offerId)
             do {
                 if !assets.isEmpty { try await transfer(link, assets: assets, allowCloud: allowCloud) }
-                try? await http.finish(connection: link, offerId: offerId, success: failedCount == 0 && skipped == 0, error: failedCount > 0 || skipped > 0 ? "部分原件未能发送，请检查权限及云端原件设置后重试。" : nil)
+                try? await http.finish(connection: link, offerId: offerId, success: failedCount == 0 && skipped == 0, error: failedCount > 0 || skipped > 0 ? L10n.text("部分原件未能发送，请检查权限及云端原件设置后重试。") : nil)
             } catch {
                 try? await http.finish(connection: link, offerId: offerId, success: false, error: error.localizedDescription)
                 throw error
             }
-            status = failedCount > 0 || skipped > 0 ? "部分原件未能发送，可重新发起重试。" : L10n.text("发送完成")
+            status = failedCount > 0 || skipped > 0 ? L10n.text("部分原件未能发送，可重新发起重试。") : L10n.text("发送完成")
             fraction = 1
         }
     }
@@ -341,12 +341,12 @@ final class LiveLinkController: ObservableObject {
             }
             do {
                 try await transfer(link, assets: assets, allowCloud: allowCloud)
-                try? await http.finish(connection: link, offerId: offerId, success: failedCount == 0 && skipped == 0, error: failedCount > 0 || skipped > 0 ? "部分原件未能发送，请检查权限及云端原件设置后重试。" : nil)
+                try? await http.finish(connection: link, offerId: offerId, success: failedCount == 0 && skipped == 0, error: failedCount > 0 || skipped > 0 ? L10n.text("部分原件未能发送，请检查权限及云端原件设置后重试。") : nil)
             } catch {
                 try? await http.finish(connection: link, offerId: offerId, success: false, error: error.localizedDescription)
                 throw error
             }
-            status = failedCount > 0 || skipped > 0 ? "部分原件未能发送，可重新发起重试。" : L10n.text("发送完成")
+            status = failedCount > 0 || skipped > 0 ? L10n.text("部分原件未能发送，可重新发起重试。") : L10n.text("发送完成")
             fraction = 1
         }
     }
@@ -467,7 +467,8 @@ final class LiveLinkController: ObservableObject {
                 let albums = groups.map { group -> LiveLinkAlbum in
                     var value = group.album; value.bytes = group.ids.compactMap { known[$0] }.reduce(0, +); return value
                 }
-                let unknownDate = criteria.dateEnabled ? all.filter { $0.creationDate == nil && $0.modificationDate == nil }.count : 0
+                var withoutDates = criteria; withoutDates.dateEnabled = false
+                let unknownDate = criteria.dateEnabled ? withoutDates.select(all, groups: groups).filter { $0.creationDate == nil && $0.modificationDate == nil }.count : 0
                 let report = LiveLinkCatalogReport(revision: request.revision, timeZone: TimeZone.current.identifier,
                     albums: albums, count: selected.count, bytes: selected.compactMap { known[$0.localIdentifier] }.reduce(0, +), unknownSize: selected.filter { known[$0.localIdentifier] == nil }.count, unknownDate: unknownDate)
                 try await http.reportCatalog(connection: link, report: report)
@@ -476,7 +477,7 @@ final class LiveLinkController: ObservableObject {
                 catalogAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             } catch {
                 let report = LiveLinkCatalogReport(revision: request.revision, timeZone: TimeZone.current.identifier,
-                    albums: [], count: 0, bytes: 0, unknownSize: 0, unknownDate: 0, error: "Unsupported backup scope")
+                    albums: [], count: 0, bytes: 0, unknownSize: 0, unknownDate: 0, error: L10n.text("不支持此备份范围，请更新 PicHarbor。"))
                 try? await http.reportCatalog(connection: link, report: report)
             }
         }
@@ -484,7 +485,7 @@ final class LiveLinkController: ObservableObject {
         let listed = try await http.offers(connection: link)
         guard let offer = listed.offers.first(where: { $0.direction == "computer-to-phone" }) else { return }
         guard (try? LiveLinkScope.parse(offer.scope ?? "all")) != nil else {
-            message = "Unsupported backup scope. Update PicHarbor."
+            message = L10n.text("不支持此备份范围，请更新 PicHarbor。")
             try? await http.reject(connection: link, offerId: offer.id)
             return
         }

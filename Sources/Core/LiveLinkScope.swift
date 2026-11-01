@@ -93,9 +93,17 @@ struct LiveLinkScope: Codable {
         }
     }
     var summary: String {
-        let type = photos && videos ? "Photos and videos" : photos ? "Photos (including Live Photos)" : "Videos"
-        return "\(mode) · \(type)" + (dateEnabled ? " · \(from ?? "") – \(to ?? "")" : "")
+        let selected: String
+        switch mode {
+        case "default": selected = L10n.text("默认范围：系统照片图库与截图")
+        case "advanced": selected = L10n.text("已选相册 {0} 个", [String(albums.count)])
+        default: selected = L10n.text("全部可访问媒体")
+        }
+        let type = photos && videos ? L10n.text("照片和视频") : photos ? L10n.text("照片（含实况）") : L10n.text("视频")
+        let dates = dateEnabled ? L10n.text("日期：{0} 至 {1}", [from?.isEmpty == false ? from! : "…", to?.isEmpty == false ? to! : "…"]) : L10n.text("不限日期")
+        return [selected, type, dates, ignoreSmallImages ? L10n.text("小图阈值 {0} KB，大小未知的原件仍保留", [String(minImageKb)]) : ""].filter { !$0.isEmpty }.joined(separator: " · ")
     }
+
 }
 struct LiveLinkAlbum: Codable { var id: String; var name: String; var count: Int; var bytes: Int64; var isDefault: Bool }
 struct LiveLinkCatalogRequest: Codable { var revision: Int64; var scope: String }

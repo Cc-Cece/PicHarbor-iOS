@@ -851,3 +851,14 @@
 "这台手机的身份和电脑上的记录不一致。请确认是不是连错了设备。" = "This phone identity does not match the record on the computer. Check that the right device is connected.";
 "确认发送" = "Confirm send";
 "拒绝" = "Decline";
+"部分原件未能发送，请检查权限及云端原件设置后重试。" = "Some originals could not be sent. Check access and cloud-original settings, then retry.";
+"部分原件未能发送，可重新发起重试。" = "Some originals could not be sent. Start again to retry.";
+"不支持此备份范围，请更新 PicHarbor。" = "This backup scope is unsupported. Update PicHarbor.";
+"默认范围：系统照片图库与截图" = "Default: system photo library and screenshots";
+"已选相册 {0} 个" = "{0} albums selected";
+"全部可访问媒体" = "All accessible media";
+"照片和视频" = "Photos and videos";
+"照片（含实况）" = "Photos (including Live Photos)";
+"日期：{0} 至 {1}" = "Dates: {0} to {1}";
+"不限日期" = "All dates";
+"小图阈值 {0} KB，大小未知的原件仍保留" = "Small-image threshold: {0} KB; originals with unknown size stay included";
