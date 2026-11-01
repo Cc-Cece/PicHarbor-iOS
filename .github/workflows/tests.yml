@@ -99,6 +99,7 @@ jobs:
       - name: Run tests
         env:
           SCHEME: ${{ steps.app.outputs.name }}
+          PROJECT_NAME: ${{ steps.app.outputs.name }}
           TEST_SCOPE: ${{ inputs.test_scope || 'full' }}
         run: |
           set -euo pipefail
@@ -111,7 +112,7 @@ jobs:
           fi
           xcodebuild \
             "${FILTER[@]}" \
-            -project "${SCHEME}.xcodeproj" \
+            -project "${PROJECT_NAME}.xcodeproj" \
             -scheme "$SCHEME" \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
             -parallel-testing-enabled NO \
