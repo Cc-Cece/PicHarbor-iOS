@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "source": "Cc-Cece/gpmc",
+  "source_base_commit": "ec2d2f20b489a246d3c4b120e106eafe953054d6",
+  "note": "Content tree is authoritative; base commit may precede local integration changes. Do not edit vendored snapshots.",
+  "source_tree_sha256": "aabab4a560f043975e097530ba88c8f726df9781b7a23ea2d1de5f0849063fba",
+  "files": {
+    "__init__.py": "00c357d41820c1c00fb2f7beec0a1461ee6f88635ac4b7bbb82076841107e0c7",
+    "_licenses/GPMC-MIT.txt": "a477cba1ae1b4779086f7f7122b87cabb86f13c66cdfbe2050d2352a7bba6db9",
+    "_licenses/LIVE-PAIR-REFERENCE-MIT.txt": "4f1264ec8444a93ab02f7368952bd3011fc6bf3c5cb3c079e4c88e0a5ee4d8fb",
+    "_licenses/PICHARBOR-GPL-3.0.txt": "283f7343bad5e795307c59db7dd2d92a529545278e776ca8978bd098897ea47f",
+    "api.py": "aa1591d370320bc52b4db007b49e063e52417e086ac9401d007516782a477d6b",
+    "auth.py": "49c78e0b9645f8ef881e60437025660db178535785146020eba7a3fa4383795c",
+    "cli.py": "e01255dc92e9e782a3c65060a351ebe349184307f54ece46d5eb694170206bed",
+    "client.py": "0046b0a05f0d429bb7c51333d01a328589c832da5d73c321ac32c164ebdbe358",
+    "db.py": "2ed1ca97000eb6d38f124f1d967f8084aa6621069f658b7b08bc7ced269d8d62",
+    "db_update_parser.py": "19629e3f73d0488e0c8b5191155c1c5fe54547565e271d56f0be333af4c8f307",
+    "deadline.py": "043cfddc95321d41f935ead7a1ffdf048c48e402031f44e96a09ca7667e27940",
+    "errors.py": "9dbeb2388aa25b8a5afb1468db8f25556efc9c907d734ed9a156f48681ecde74",
+    "exceptions.py": "1a929e4a671dbc592b7bce18bbaea6e21e4e1ba2f935218c33c9f3d7b24ea647",
+    "hash_handler.py": "e52af0f8385de5f8ae37ff153f8d8e5d312324e3216fe3ff602b43a0a97e967f",
+    "live.py": "df24d5fe414542222532dccc9ca7279ef2dd31ab8d3b287e4e5f01e70569b99b",
+    "media_access.py": "88dad509d517dc2b5265eb51ea08c0c63fbfdad0623afc4557207097faff11f9",
+    "message_types.py": "808bfb732cc8d9df1c077322f68ee330afa676ebb3277d083e9f3e676123c3a1",
+    "models.py": "f3e15d30b0bd9add20169d6df07192b82099521d9ea93c17f4399bbb2ba1d7e8",
+    "NOTICE.md": "a6a186cd6229d0cf28d24587676aa7c6016e04e4244791bf35eafe2048a38d9d",
+    "protocol.py": "d1a719292ecc219d5ced1f69cad135cc6514f7640f2f1eab087d042aa3ad5973",
+    "utils.py": "8c803c32d6e6fd86a1534fbd92139407673d347c9e16e77e5ba08e1f13b5bcbe"
+  },
+  "integration_files": {
+    "tools/sync_gpmc.py": "ef3f6eb5b947b1ce3dcad500441fce51b116946206818fec30b3813a8f8185b1"
+  }
+}

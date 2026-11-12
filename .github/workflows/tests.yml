@@ -13,7 +13,6 @@ on:
         default: full
         options: [full, native-proxy, paired-link]
   pull_request:
-    branches: [main]
     paths-ignore:
       - "docs/**"
       - "**.md"

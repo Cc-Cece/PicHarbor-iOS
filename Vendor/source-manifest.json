@@ -1,8 +1,8 @@
 {
-  "source": "PicHarbor Android working-tree snapshot",
+  "source": "Canonical gpmc snapshot plus separately pinned blackboxprotobuf",
   "upstream": "https://github.com/xob0t/gpmc",
   "android_source_commit": null,
-  "note": "Android reference has no .git. SHA-256 hashes pin actual copied files; this is not claimed to be pristine upstream. mobile.py is an Android extension unused by the iOS adapter. Original baseline preserved separately.",
+  "note": "gpmc provenance/version is gpmc.lock.json; mobile.py is no longer vendored.",
   "files": [
     {
       "path": "blackboxprotobuf/__init__.py",
@@ -78,55 +78,87 @@
     },
     {
       "path": "gpmc/__init__.py",
-      "sha256": "46d83009d4bba69fa7ceac990381e518b5714edc090f3d0b7cf22757373aa0a5"
+      "sha256": "00c357d41820c1c00fb2f7beec0a1461ee6f88635ac4b7bbb82076841107e0c7"
+    },
+    {
+      "path": "gpmc/_licenses/GPMC-MIT.txt",
+      "sha256": "a477cba1ae1b4779086f7f7122b87cabb86f13c66cdfbe2050d2352a7bba6db9"
+    },
+    {
+      "path": "gpmc/_licenses/LIVE-PAIR-REFERENCE-MIT.txt",
+      "sha256": "4f1264ec8444a93ab02f7368952bd3011fc6bf3c5cb3c079e4c88e0a5ee4d8fb"
+    },
+    {
+      "path": "gpmc/_licenses/PICHARBOR-GPL-3.0.txt",
+      "sha256": "283f7343bad5e795307c59db7dd2d92a529545278e776ca8978bd098897ea47f"
     },
     {
       "path": "gpmc/api.py",
-      "sha256": "ea7ad5a9358999683e0ae54d11a0cb93df6c08e14b7d5978c47cc574092dbe9b"
+      "sha256": "aa1591d370320bc52b4db007b49e063e52417e086ac9401d007516782a477d6b"
     },
     {
       "path": "gpmc/auth.py",
-      "sha256": "9b3e784affe4de76993bb8f5f4d04905a74995a876fb5ba31996b07b2c40d7e5"
+      "sha256": "49c78e0b9645f8ef881e60437025660db178535785146020eba7a3fa4383795c"
     },
     {
       "path": "gpmc/cli.py",
-      "sha256": "ab55f74e3f349bc860c8e82b72c1dd9c6fb4ec79b6e4c852e448fa3596afa93f"
+      "sha256": "e01255dc92e9e782a3c65060a351ebe349184307f54ece46d5eb694170206bed"
     },
     {
       "path": "gpmc/client.py",
-      "sha256": "ad56898ee5d76702ef42206ecd9c95ffa8450ceafa8c6a335bd5b7d513ae6ec2"
+      "sha256": "0046b0a05f0d429bb7c51333d01a328589c832da5d73c321ac32c164ebdbe358"
     },
     {
       "path": "gpmc/db.py",
-      "sha256": "7208115c6e843a37ed7b1fbee0603f13cacb39964d842e977cc6beaf137b035d"
+      "sha256": "2ed1ca97000eb6d38f124f1d967f8084aa6621069f658b7b08bc7ced269d8d62"
     },
     {
       "path": "gpmc/db_update_parser.py",
-      "sha256": "50c177691d57c325eacba3da9fce07b633537350154d12984620b5c26fcf5c2b"
+      "sha256": "19629e3f73d0488e0c8b5191155c1c5fe54547565e271d56f0be333af4c8f307"
+    },
+    {
+      "path": "gpmc/deadline.py",
+      "sha256": "043cfddc95321d41f935ead7a1ffdf048c48e402031f44e96a09ca7667e27940"
+    },
+    {
+      "path": "gpmc/errors.py",
+      "sha256": "9dbeb2388aa25b8a5afb1468db8f25556efc9c907d734ed9a156f48681ecde74"
     },
     {
       "path": "gpmc/exceptions.py",
-      "sha256": "619874a8d7130e712b6a166b04c1da9b80ca8933bd6f8d8db27ce3d46f990587"
+      "sha256": "1a929e4a671dbc592b7bce18bbaea6e21e4e1ba2f935218c33c9f3d7b24ea647"
     },
     {
       "path": "gpmc/hash_handler.py",
-      "sha256": "70853b6ef6971ebecce0882d896965148aa14ba68a3920c4bdae18446cc7d5c0"
+      "sha256": "e52af0f8385de5f8ae37ff153f8d8e5d312324e3216fe3ff602b43a0a97e967f"
+    },
+    {
+      "path": "gpmc/live.py",
+      "sha256": "df24d5fe414542222532dccc9ca7279ef2dd31ab8d3b287e4e5f01e70569b99b"
+    },
+    {
+      "path": "gpmc/media_access.py",
+      "sha256": "88dad509d517dc2b5265eb51ea08c0c63fbfdad0623afc4557207097faff11f9"
     },
     {
       "path": "gpmc/message_types.py",
-      "sha256": "9e3f4e30aec02573218f545558a4e95670946e9716ee05bbed7ec808b02390c5"
-    },
-    {
-      "path": "gpmc/mobile.py",
-      "sha256": "6bc5f989f794d0b228426437e2be07e14f8115ba8384807761eb74ff94e6f75a"
+      "sha256": "808bfb732cc8d9df1c077322f68ee330afa676ebb3277d083e9f3e676123c3a1"
     },
     {
       "path": "gpmc/models.py",
-      "sha256": "81b03a3360308a21aad434fddbf9bdd850ddbbdbfd3b9c871e0272d559541046"
+      "sha256": "f3e15d30b0bd9add20169d6df07192b82099521d9ea93c17f4399bbb2ba1d7e8"
+    },
+    {
+      "path": "gpmc/NOTICE.md",
+      "sha256": "a6a186cd6229d0cf28d24587676aa7c6016e04e4244791bf35eafe2048a38d9d"
+    },
+    {
+      "path": "gpmc/protocol.py",
+      "sha256": "d1a719292ecc219d5ced1f69cad135cc6514f7640f2f1eab087d042aa3ad5973"
     },
     {
       "path": "gpmc/utils.py",
-      "sha256": "1e1239cb71c53497381d37305fc7752cdabef253178157444f0a784c1541b586"
+      "sha256": "8c803c32d6e6fd86a1534fbd92139407673d347c9e16e77e5ba08e1f13b5bcbe"
     }
   ]
 }

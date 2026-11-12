@@ -18,3 +18,7 @@ class SyncCycleError(CustomError):
     """Raised when sync token doesn't change between iterations, indicating an infinite sync loop."""
 
     pass
+
+
+class ProtocolError(CustomError):
+    """Stable protocol error code, with no platform or credential dependency."""

@@ -7,11 +7,13 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+from sync_gpmc import check as check_gpmc
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    check_gpmc(ROOT)
     lock = json.loads((ROOT / "tools/runtime-lock.json").read_text())
     cache = ROOT / ".runtime-cache"
     cache.mkdir(exist_ok=True)

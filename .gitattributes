@@ -15,3 +15,10 @@ VERSION text eol=lf
 
 # Pin copied upstream bytes exactly; source-manifest.json hashes raw files.
 Vendor/** -text
+
+Vendor/gpmc/** text eol=lf
+
+tools/sync_gpmc.py text eol=lf
+gpmc.lock.json text eol=lf
+
+Vendor/source-manifest.json text eol=lf

@@ -1,4 +1,5 @@
 import time
+import threading
 from collections.abc import Generator, Sequence
 from pathlib import Path
 from typing import IO, Any, Literal
@@ -26,6 +27,7 @@ class Api:
         """
         Initialize the Google Photos mobile api.
         """
+        self._auth_lock = threading.RLock()
         self.proxy = proxy
         self.timeout = timeout
         self.android_api_version = 28
@@ -40,11 +42,12 @@ class Api:
     @property
     def bearer_token(self) -> str:
         """Property that automatically checks and renews the auth token if expired."""
-        if int(self.auth_response_cache.get("Expiry", "0")) <= int(time.time()):
-            self.auth_response_cache = self._get_auth_token()
-        if token := self.auth_response_cache.get("Auth", ""):
-            return token
-        raise RuntimeError("Auth response does not contain bearer token")
+        with self._auth_lock:
+            if int(self.auth_response_cache.get("Expiry", "0")) <= int(time.time()):
+                self.auth_response_cache = self._get_auth_token()
+            if token := self.auth_response_cache.get("Auth", ""):
+                return token
+            raise RuntimeError("Auth response does not contain bearer token")
 
     def _new_session(self) -> requests.Session:
         """Create a new request session with retry mechanism"""
@@ -58,8 +61,8 @@ class Api:
             "http": self.proxy,
             "https": self.proxy,
         }
-        if self.proxy:
-            s.verify = False
+        s.verify = True
+        s.trust_env = False
         return s
 
     def _get_auth_token(self) -> dict[str, str]:
