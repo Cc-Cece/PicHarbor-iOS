@@ -49,14 +49,26 @@ final class HarborFlowTests: XCTestCase {
         app.tabBars.buttons["设置"].tap(); app.buttons["活动记录"].tap()
         let days = app.textFields["archive.days"]
         XCTAssertTrue(days.waitForExistence(timeout: 5)); XCTAssertEqual(days.value as? String, "14")
-        days.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap(); days.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "91")
+        replaceArchiveDays(days, with: "91", in: app)
         app.buttons["archive.save"].tap()
         XCTAssertTrue(app.staticTexts["请输入 1–90 的整数。"].exists)
-        days.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap(); days.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "14")
+        replaceArchiveDays(days, with: "14", in: app)
         app.buttons["archive.save"].tap()
         XCTAssertFalse(app.staticTexts["请输入 1–90 的整数。"].exists)
         app.buttons["归档记录"].tap()
         XCTAssertTrue(app.navigationBars["归档记录"].waitForExistence(timeout: 5)); capture("archive-empty")
+    }
+    private func replaceArchiveDays(_ field: XCUIElement, with value: String, in app: XCUIApplication) {
+        field.doubleTap()
+        let selectAll = app.buttons["全选"]
+        if selectAll.waitForExistence(timeout: 3) { selectAll.tap() }
+        else {
+            let menuItem = app.menuItems["全选"]
+            XCTAssertTrue(menuItem.waitForExistence(timeout: 3))
+            menuItem.tap()
+        }
+        field.typeText(value)
+        XCTAssertEqual(field.value as? String, value)
     }
     func testLanguageSwitchingPersistsWithoutLeavingSettings() {
         let app = localizedApp(); app.launch()
