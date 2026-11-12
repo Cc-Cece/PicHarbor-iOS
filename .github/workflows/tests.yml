@@ -85,8 +85,7 @@ jobs:
         id: sim
         run: |
           set -euo pipefail
-          ID=$(xcrun simctl list devices available -j | python -c 'import json,sys; print(next(d["udid"] for devices in json.load(sys.stdin)["devices"].values() for d in devices if d["name"].startswith("iPhone")))')
-          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          python tools/select_simulator.py >> "$GITHUB_OUTPUT"
 
       - name: Build native test products before booting the simulator
         timeout-minutes: 20
