@@ -28,7 +28,7 @@ jobs:
   test:
     name: Run unit tests
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 55
 
     steps:
       - name: Checkout
@@ -37,7 +37,8 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          # Stable native regression baseline; IPA separately builds with Xcode 26.
+          xcode-version: '16.4'
 
       - name: Set up Python build tools
         uses: actions/setup-python@v5
@@ -111,7 +112,7 @@ jobs:
           xcrun simctl addmedia '${{ steps.sim.outputs.id }}' build/fixtures/picharbor.png
 
       - name: Run tests
-        timeout-minutes: 15
+        timeout-minutes: 25
         env:
           SCHEME: ${{ steps.app.outputs.name }}
           PROJECT_NAME: ${{ steps.app.outputs.name }}

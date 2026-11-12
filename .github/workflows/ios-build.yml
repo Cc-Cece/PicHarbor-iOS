@@ -38,7 +38,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.3'
 
       - name: Set up Python build tools
         uses: actions/setup-python@v5

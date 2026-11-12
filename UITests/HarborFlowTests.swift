@@ -61,7 +61,7 @@ final class HarborFlowTests: XCTestCase {
     private func replaceArchiveDays(_ field: XCUIElement, with value: String) {
         // The value is one numeric word. Select it rather than guessing where
         // a coordinate tap placed the insertion cursor in a trailing field.
-        field.doubleTap()
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).doubleTap()
         field.typeText(value)
         XCTAssertEqual(field.value as? String, value)
     }
