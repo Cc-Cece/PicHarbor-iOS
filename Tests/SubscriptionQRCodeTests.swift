@@ -19,8 +19,13 @@ final class SubscriptionQRCodeTests: XCTestCase {
         let value = "https://example.invalid/subscribe?token=synthetic"
         let filter = try XCTUnwrap(CIFilter(name: "CIQRCodeGenerator"))
         filter.setValue(Data(value.utf8), forKey: "inputMessage")
-        let image = try XCTUnwrap(filter.outputImage).transformed(by: CGAffineTransform(scaleX: 8, y: 8))
-        let cgImage = try XCTUnwrap(CIContext().createCGImage(image, from: image.extent))
+        let code = try XCTUnwrap(filter.outputImage)
+        // Real QR images include a four-module quiet zone. Keep the fixture
+        // opaque and render on CPU so headless simulator GPUs are not required.
+        let bounds = code.extent.insetBy(dx: -4, dy: -4)
+        let image = code.composited(over: CIImage(color: CIColor.white).cropped(to: bounds))
+            .transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        let cgImage = try XCTUnwrap(CIContext(options: [.useSoftwareRenderer: true]).createCGImage(image, from: image.extent))
         let data = NSMutableData()
         let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
         CGImageDestinationAddImage(destination, cgImage, [kCGImagePropertyOrientation: 6] as CFDictionary)

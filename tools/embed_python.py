@@ -9,6 +9,7 @@ from pathlib import Path
 import plistlib
 import shutil
 import subprocess
+from sync_gpmc import check as check_gpmc
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,6 +20,7 @@ def copy_tree(source, target):
 
 
 def main():
+    check_gpmc(ROOT)
     app = Path(os.environ["TARGET_BUILD_DIR"]) / os.environ["WRAPPER_NAME"]
     runtime = ROOT / "Runtime/Python.xcframework"
     simulator = os.environ["EFFECTIVE_PLATFORM_NAME"] == "-iphonesimulator"

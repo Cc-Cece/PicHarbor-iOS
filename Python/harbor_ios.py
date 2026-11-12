@@ -26,8 +26,7 @@ from gpmc.auth import authenticate
 from gpmc.exceptions import AuthenticationError, BrowserAuthenticationRequiredError
 
 
-class Failure(Exception):
-    pass
+from gpmc.exceptions import ProtocolError as Failure
 
 
 class IOSApi(Api):
@@ -42,22 +41,7 @@ class IOSApi(Api):
         return session
 
 
-def classify(error):
-    if isinstance(error, DeadlineExceeded):
-        return error.code
-    if isinstance(error, Failure):
-        return str(error)
-    if isinstance(error, (AuthenticationError, BrowserAuthenticationRequiredError)):
-        return "LOGIN_REQUIRED"
-    if isinstance(error, requests.HTTPError):
-        code = error.response.status_code if error.response is not None else 0
-        return "LOGIN_REQUIRED" if code in (401, 403) else "NETWORK_ERROR"
-    if isinstance(error, requests.RequestException):
-        return "NETWORK_ERROR"
-    if isinstance(error, OSError):
-        return "FILE_ACCESS"
-    # Never expose exception text, HTTP URLs, response bodies or tracebacks.
-    return "ENGINE_ERROR"
+from gpmc.errors import classify
 
 
 class Reader:

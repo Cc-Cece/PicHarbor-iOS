@@ -1,5 +1,13 @@
 # 来源与许可证
 
+## 2026-11-12 起的统一来源
+
+gpmc 现由独立 `Cc-Cece/gpmc` 仓库统一维护，实际版本以根目录 `gpmc.lock.json` 的内容哈希为准；`Vendor/source-manifest.json` 同时用于核验发行包。包内 `gpmc/NOTICE.md` 与 `_licenses/` 保留原 MIT、导入的 PicHarbor GPL-3.0 及 Live Photo 参考许可。
+
+`Python/harbor_protocol.py`、`harbor_live.py`、`harbor_deadline.py` 现在仅为统一模块的兼容导入。旧安卓 `Vendor/gpmc/mobile.py` 已移除。以下来源快照说明是历史记录，不再表示当前 gpmc 的维护方式。
+
+## 历史来源记录
+
 - SwiftUI 项目骨架来自 hoangnd107/ios-swiftui-app-template，原 MIT 许可保留于 `Vendor/TEMPLATE-LICENSE-MIT.txt`。
 - gpmc 与 blackboxprotobuf 从只读的 PicHarbor 安卓项目工作树复制。上游线索为 https://github.com/xob0t/gpmc 。实际文件由 `Vendor/source-manifest.json` 中 SHA-256 固定，不声称为未经修改的上游提交。
 - 安卓项目来源基线保留于 `Vendor/android-engine-baseline.json`；其中的旧来源提交不代表当前快照的完整内容。安卓目录没有可读取的 Git 仓库，本次不虚构其提交。

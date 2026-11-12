@@ -5,11 +5,13 @@ import plistlib
 from pathlib import Path
 import sys
 import zipfile
+from sync_gpmc import check as check_gpmc
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def inspect(path):
+    check_gpmc(ROOT)
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         app = next(name for name in names if name.startswith("Payload/") and name.endswith(".app/Info.plist")).rsplit("/", 1)[0] + "/"
