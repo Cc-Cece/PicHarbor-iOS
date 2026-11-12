@@ -49,24 +49,19 @@ final class HarborFlowTests: XCTestCase {
         app.tabBars.buttons["设置"].tap(); app.buttons["活动记录"].tap()
         let days = app.textFields["archive.days"]
         XCTAssertTrue(days.waitForExistence(timeout: 5)); XCTAssertEqual(days.value as? String, "14")
-        replaceArchiveDays(days, with: "91", in: app)
+        replaceArchiveDays(days, with: "91")
         app.buttons["archive.save"].tap()
         XCTAssertTrue(app.staticTexts["请输入 1–90 的整数。"].exists)
-        replaceArchiveDays(days, with: "14", in: app)
+        replaceArchiveDays(days, with: "14")
         app.buttons["archive.save"].tap()
         XCTAssertFalse(app.staticTexts["请输入 1–90 的整数。"].exists)
         app.buttons["归档记录"].tap()
         XCTAssertTrue(app.navigationBars["归档记录"].waitForExistence(timeout: 5)); capture("archive-empty")
     }
-    private func replaceArchiveDays(_ field: XCUIElement, with value: String, in app: XCUIApplication) {
+    private func replaceArchiveDays(_ field: XCUIElement, with value: String) {
+        // The value is one numeric word. Select it rather than guessing where
+        // a coordinate tap placed the insertion cursor in a trailing field.
         field.doubleTap()
-        let selectAll = app.buttons["全选"]
-        if selectAll.waitForExistence(timeout: 3) { selectAll.tap() }
-        else {
-            let menuItem = app.menuItems["全选"]
-            XCTAssertTrue(menuItem.waitForExistence(timeout: 3))
-            menuItem.tap()
-        }
         field.typeText(value)
         XCTAssertEqual(field.value as? String, value)
     }
