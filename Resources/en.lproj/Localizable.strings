@@ -282,7 +282,7 @@
 "封装文件已确认，但云端未返回可识别的回收站状态，将继续检查。" = "The file is saved, but its trash status is unclear. Checking will continue.";
 "封装文件已确认，完整云端图库暂未索引到此项目，将自动继续检查。" = "The file is saved but is not yet indexed in the cloud library. Checking will continue automatically.";
 "封装文件已确认，谷歌相册仍在处理动态资源，将自动继续检查。" = "The file is saved. Google Photos is still processing the motion. Checking will continue automatically.";
-"将 iPhone 照片与视频备份到 Google Photos。原生浏览，持续记录进度，由你决定何时清理。" = "Back up iPhone photos and videos to Google Photos. Browse your library, track progress, and choose when to free up space.";
+"将 iPhone 照片与视频备份到 Google Photos。原生浏览，持续记录进度；备份完成后可前往 Google 相册释放空间。" = "Back up iPhone photos and videos to Google Photos. Browse natively and track progress. Once backed up, you can free up space in Google Photos.";
 "将分享照片和配对视频，保留原有信息。能否作为动态照片接收，取决于接收应用。" = "The photo and paired video will be shared with their original metadata. Live Photo support depends on the receiving app.";
 "将原始照片和动态视频一起备份。" = "Back up the original photo and its motion video together.";
 "将发送当前照片范围，不需要 Google 账号。" = "This sends the current photo scope and does not need a Google account.";
@@ -453,6 +453,7 @@
 "暂时无法直达释放空间" = "Unable to open Free up space";
 "曝光时间" = "Exposure time";
 "曝光补偿" = "Exposure compensation";
+"更多操作" = "More actions";
 "更新成功：{0}" = "Updated: {0}";
 "更新订阅" = "Update Subscription";
 "更新记录" = "Update History";
@@ -580,7 +581,7 @@
 "照片可能已从本机删除，或尚未允许访问。" = "The photo may have been deleted from this iPhone, or access has not been allowed.";
 "照片和视频均包含在范围中。选中相簿按成员合并去重，不重复上传同一个项目。" = "Includes photos and videos. Content shared by selected albums is backed up once.";
 "照片和视频已上传，Google 相册的 Live Photo 验证通常需等待 10–20 分钟。" = "The photo and video have been uploaded. Google Photos verification of the Live Photo usually takes 10–20 minutes.";
-"照片和视频已保存，但暂时无法完成动态视频的额外检查。原件已保留，可在空间清理核验中查看检查选项。" = "The photo and video are saved, but extra checks for the motion video are unavailable. Originals are kept. Review options in Cleanup verification.";
+"照片和视频已保存，但暂时无法完成动态视频的额外检查。原件已保留；备份确认完成后，可前往 Google 相册释放空间。" = "The photo and video are saved, but extra checks for the motion video are unavailable. Originals are kept. Once the backup is confirmed, you can free up space in Google Photos.";
 "照片和视频已保存，正在等待云端完成动态处理。" = "Photo and video saved. Waiting for cloud motion processing.";
 "照片和视频虽已保存，但尚未确认能完整保存回 iPhone。清理后可能需要手动重新配对，部分动态效果可能无法恢复。" = "The photo and video are saved, but a complete return to iPhone has not been verified. After cleanup, manual pairing may be needed and some motion effects may not restore.";
 "照片或视频" = "Photo or video";

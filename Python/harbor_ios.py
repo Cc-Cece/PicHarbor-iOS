@@ -295,6 +295,30 @@ class Service:
         raise Failure("UNKNOWN_OPERATION")
 
 
+def _dispatch_core(action, payload, request_id):
+    """Pass a core_* action to the shared business core (gpmc.harbor_core).
+
+    Local-only: no login, account or proxy is needed. The core's own
+    reply already carries ``ok`` / ``error``; protocol_version and
+    request_id are added so the Swift envelope check still holds.
+    A missing harbor_core module is RUNTIME_UNAVAILABLE, never a
+    fabricated success.
+    """
+    try:
+        from gpmc import harbor_core
+    except ImportError:
+        return json.dumps({"ok": False, "protocol_version": 2, "request_id": request_id,
+                           "error": "RUNTIME_UNAVAILABLE",
+                           "failure": {"code": "RUNTIME_UNAVAILABLE", "retryable": False}})
+    try:
+        result = json.loads(harbor_core.dispatch_json(action, payload))
+    except Exception:
+        result = {"ok": False, "error": "ENGINE_ERROR"}
+    if not isinstance(result, dict):
+        result = {"ok": False, "error": "ENGINE_ERROR"}
+    return json.dumps({"protocol_version": 2, "request_id": request_id, **result})
+
+
 _service = None
 
 
@@ -312,6 +336,8 @@ def dispatch(action, payload):
     try:
         value = json.loads(payload)
         request_id = value.get("request_id", "")
+        if action.startswith("core_"):
+            return _dispatch_core(action[5:], payload, request_id)
         if value.get("protocol_version", 2) != 2:
             raise Failure("PROTOCOL_VERSION")
         proxy = value.get("proxy_url", "")

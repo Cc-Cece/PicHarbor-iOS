@@ -200,7 +200,7 @@ oauth_token 或 gpmc auth_data|oauth_token or gpmc auth_data
 封装文件已确认，但云端未返回可识别的回收站状态，将继续检查。|The file is saved, but its trash status is unclear. Checking will continue.
 封装文件已确认，完整云端图库暂未索引到此项目，将自动继续检查。|The file is saved but is not yet indexed in the cloud library. Checking will continue automatically.
 封装文件已确认，谷歌相册仍在处理动态资源，将自动继续检查。|The file is saved. Google Photos is still processing the motion. Checking will continue automatically.
-将 iPhone 照片与视频备份到 Google Photos。原生浏览，持续记录进度，由你决定何时清理。|Back up iPhone photos and videos to Google Photos. Browse your library, track progress, and choose when to free up space.
+将 iPhone 照片与视频备份到 Google Photos。原生浏览，持续记录进度；备份完成后可前往 Google 相册释放空间。|Back up iPhone photos and videos to Google Photos. Browse natively and track progress. Once backed up, you can free up space in Google Photos.
 将原始照片和动态视频一起备份。|Back up the original photo and its motion video together.
 将备份|To back up
 将本机相簿同步到 Google 相册。从本机相簿移除照片，不会删除云端内容。只对新任务生效。|Sync local albums to Google Photos. Removing an album member does not delete cloud content. Applies to new tasks only.
@@ -358,7 +358,7 @@ oauth_token 或 gpmc auth_data|oauth_token or gpmc auth_data
 照片仍在准备或发生变化，正在等待相册资源稳定；无需重新选择照片。|The photo is still being prepared or changed. Waiting for Photos; you do not need to select it again.
 照片可能已从本机删除，或尚未允许访问。|The photo may have been deleted from this iPhone, or access has not been allowed.
 照片和视频均包含在范围中。选中相簿按成员合并去重，不重复上传同一个项目。|Includes photos and videos. Content shared by selected albums is backed up once.
-照片和视频已保存，但暂时无法完成动态视频的额外检查。原件已保留，可在空间清理核验中查看检查选项。|The photo and video are saved, but extra checks for the motion video are unavailable. Originals are kept. Review options in Cleanup verification.
+照片和视频已保存，但暂时无法完成动态视频的额外检查。原件已保留；备份确认完成后，可前往 Google 相册释放空间。|The photo and video are saved, but extra checks for the motion video are unavailable. Originals are kept. Once the backup is confirmed, you can free up space in Google Photos.
 照片和视频已保存，正在等待云端完成动态处理。|Photo and video saved. Waiting for cloud motion processing.
 照片和视频虽已保存，但尚未确认能完整保存回 iPhone。清理后可能需要手动重新配对，部分动态效果可能无法恢复。|The photo and video are saved, but a complete return to iPhone has not been verified. After cleanup, manual pairing may be needed and some motion effects may not restore.
 照片或视频|Photo or video
@@ -864,3 +864,4 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 日期：{0} 至 {1}|Dates: {0} to {1}
 不限日期|All dates
 小图阈值 {0} KB，大小未知的原件仍保留|Small-image threshold: {0} KB; originals with unknown size stay included
+更多操作|More actions

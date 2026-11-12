@@ -7,6 +7,9 @@ import UIKit
 final class HarborModel: ObservableObject {
     static let shared = HarborModel()
     let engine = Engine()
+    /// Shared business core adapter (harbor_core). Created lazily; every
+    /// call is a no-op until boot() probes the core successfully.
+    lazy var coreAdapter = HarborCoreAdapter(home: engine.home)
     let library = PhotoLibrary()
     let network = NetworkStatus()
     @Published private(set) var jobs: [BackupJob] = [] {
@@ -302,6 +305,13 @@ final class HarborModel: ObservableObject {
             catch { accounts = []; credentialStorageAvailable = false; engine.message = error.localizedDescription }
             try await loadSettings()
             refreshRecovery()
+            // Unified core (overnight unification): probe once per boot.
+            // When the core is unavailable (harbor_core not yet synced)
+            // every adapter call is a no-op and the legacy path runs.
+            // restore() marks in-flight core tasks interrupted; the
+            // native restore loop below aligns the native jobs.
+            _ = await coreAdapter.probe()
+            _ = await coreAdapter.restore()
             let capabilities = try await engine.invoke("capabilities")
             applePairAvailable = capabilities["apple_pair"] as? Bool == true
             transfer.activate()
@@ -899,10 +909,20 @@ final class HarborModel: ObservableObject {
                 }
                 if job.hasConfirmedPairs { job.pairedAt = job.pairedAt ?? Date() }
             } else {
+                // Legacy upload path (deprecated-by-unification): kept as
+                // the fallback when the shared core is unavailable. New
+                // decisions for ordinary photos go through
+                // HarborCoreAdapter; this branch still moves the bytes.
                 for index in job.resources.indices where !job.resources[index].confirmed {
                     try checkpoint(job)
                     let resource = job.resources[index]
                     var request = payload(resource, account: job.account)
+                    // Unified core: create the core task (or re-sync it)
+                    // for an ordinary photo before any upload decision.
+                    // A nil result means the core is unavailable or the
+                    // asset is invalid; the legacy path below runs.
+                    let coreTask = coreAdapter.isPhotoCoreJob(job)
+                        ? await coreAdapter.ensureTask(job: job, resource: resource) : nil
                     // After an uncertain commit, query first; never label a submitted key confirmed.
                     if resource.submitted {
                         try await handoff(.confirmation, jobID: job.id)
@@ -913,6 +933,10 @@ final class HarborModel: ObservableObject {
                         guard result["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
                         job.resources[index].confirmed = true
                         job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
+                        if coreTask != nil {
+                            _ = await coreAdapter.transition(jobID: job.id, to: "confirming",
+                                                           remoteKey: job.resources[index].remoteKey)
+                        }
                         try await persist(job); continue
                     }
                     stage = "source_read"
@@ -930,6 +954,10 @@ final class HarborModel: ObservableObject {
                         let result = try await engine.invoke("commit_resource", request)
                         try checkpoint(job)
                         job.resources[index].remoteKey = result["remote_key"] as? String ?? ""
+                        if coreTask != nil {
+                            _ = await coreAdapter.transition(jobID: job.id, to: "submitting",
+                                                           remoteKey: job.resources[index].remoteKey)
+                        }
                         try await persist(job)
                         try await handoff(.confirmation, jobID: job.id)
                         stage = "confirmation"
@@ -937,7 +965,12 @@ final class HarborModel: ObservableObject {
                         try checkpoint(job)
                         guard confirmation["confirmed"] as? Bool == true else { throw HarborError("REMOTE_NOT_VISIBLE") }
                         job.resources[index].remoteKey = confirmation["remote_key"] as? String ?? ""
-                        job.resources[index].confirmed = true; try await persist(job)
+                        job.resources[index].confirmed = true
+                        if coreTask != nil {
+                            _ = await coreAdapter.transition(jobID: job.id, to: "confirming",
+                                                           remoteKey: job.resources[index].remoteKey)
+                        }
+                        try await persist(job)
                     } else {
                         stage = "prepare_upload"
                         job.state = .confirming; job.failureStage = stage; try await persist(job)
@@ -950,6 +983,10 @@ final class HarborModel: ObservableObject {
                             guard prior["confirmed"] as? Bool == true,
                                   let key = prior["remote_key"] as? String, !key.isEmpty else { throw HarborError("PREVIOUS_BACKUP_NOT_VISIBLE") }
                             job.resources[index].remoteKey = key; job.resources[index].confirmed = true
+                            if coreTask != nil,
+                               await coreAdapter.decidePrepare(job: job, resource: resource, remoteKey: key) == true {
+                                _ = await coreAdapter.transition(jobID: job.id, to: "dedup_hit", remoteKey: key)
+                            }
                             job.resources[index].reused = true; try await persist(job); continue
                         }
                         try await handoff(.lookup, jobID: job.id)
@@ -958,8 +995,22 @@ final class HarborModel: ObservableObject {
                         if plan["exists"] as? Bool == true {
                             job.resources[index].reused = true
                             job.resources[index].remoteKey = plan["remote_key"] as? String ?? ""
-                            job.resources[index].confirmed = true; try await persist(job)
+                            job.resources[index].confirmed = true
+                            if coreTask != nil {
+                                let key = job.resources[index].remoteKey
+                                if await coreAdapter.decidePrepare(job: job, resource: resource,
+                                                                 remoteKey: key.isEmpty ? nil : key) == true {
+                                    _ = await coreAdapter.transition(jobID: job.id, to: "dedup_hit", remoteKey: key)
+                                }
+                            }
+                            try await persist(job)
                         } else {
+                            if coreTask != nil {
+                                // The lookup already decided: no remote copy.
+                                // Record the decision, then upload.
+                                _ = await coreAdapter.decidePrepare(job: job, resource: resource, remoteKey: nil)
+                                _ = await coreAdapter.transition(jobID: job.id, to: "uploading")
+                            }
                             try await queueUpload(job, resource: resource, plan: plan)
                             return
                         }
@@ -1004,6 +1055,17 @@ final class HarborModel: ObservableObject {
                 try await synchronizeAlbums(job)
                 try checkpoint(job); job.albumsPending = false
             }
+            // Unified core: only a cloud-confirmed job may become done in
+            // the core, and only then is the official-cleanup guidance
+            // eligibility decided. The native confirmation check above
+            // stays authoritative; a core failure changes nothing here.
+            if coreAdapter.isPhotoCoreJob(job) {
+                if let resource = job.resources.first {
+                    _ = await coreAdapter.ensureTask(job: job, resource: resource)
+                }
+                await coreAdapter.finishPhotoJob(job)
+                job.cleanupEligible = await coreAdapter.decideCleanupEligibility(job: job)
+            }
             job.state = .completed; job.completedAt = Date(); job.progress = 1; job.error = ""; job.retryAt = nil
             if (job.proxyPort ?? -1) > 0 { ProxyManager.shared.recordOutcome(node: job.proxyLastNode, errorCode: nil, scope: job.proxyScope ?? "legacy") }
             try await persist(job)
@@ -1043,6 +1105,9 @@ final class HarborModel: ObservableObject {
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "PREVIOUS_BACKUP_NOT_VISIBLE", "STAGE_TIMEOUT", "NO_PROGRESS_TIMEOUT", "PROXY_UNAVAILABLE"].contains(code) {
                 job.retryFailure(code, policy: BackupExecutionContext.lease?.policy ?? settings.executionPolicy)
             } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "SOURCE_RECOVERY_MISMATCH", "SOURCE_SNAPSHOT_LOCKED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
+            // Unified core: mirror the failure / pause / network outcome.
+            // Best effort; an illegal core edge changes nothing.
+            if coreAdapter.isPhotoCoreJob(job) { await coreAdapter.mirrorNativeState(job) }
             try? await persist(job, recoveryBudget: job.recovery)
         }
     }
@@ -1333,7 +1398,9 @@ final class HarborModel: ObservableObject {
         guard var job = lookupJob(id), job.account == account, job.state != .completed, job.state != .cancelled else { return }
         exports[id]?.cancel("JOB_PAUSED")
         executionLeases[id]?.cancel("JOB_PAUSED")
-        job.state = .paused; try? await persist(job); await transfer.pause(jobID: id)
+        job.state = .paused; try? await persist(job)
+        await coreAdapter.mirrorNativeState(job)
+        await transfer.pause(jobID: id)
     }
     func pauseAll() async {
         await pauseJobs(Set(jobs.lazy.filter { $0.account == self.account && ($0.state.active || $0.state == .queued || $0.state == .waiting) }.map(\.id)))
@@ -1409,6 +1476,9 @@ final class HarborModel: ObservableObject {
         } else {
             job.state = .queued; try? await persist(job, recoveryBudget: job.recovery)
         }
+        // Unified core: a resumed core task returns to queued; the next
+        // pipeline run walks it forward.
+        await coreAdapter.resumeCoreJob(job)
         await pump()
     }
     func allowReuploadAfterMissingHistory(_ id: String) async {

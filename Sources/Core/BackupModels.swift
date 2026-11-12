@@ -183,6 +183,9 @@ struct BackupJob: Codable, Identifiable {
     var albumsPending = false
     var progress: Double = 0
     var evidence: CleanupEvidence?
+    // Unified core: whether decide_cleanup found the cloud evidence fresh
+    // enough to show the official-cleanup guidance; nil = unknown / legacy path.
+    var cleanupEligible: Bool?
     var dedupKey: String { "\(account)|\(assetID)|\(assetRevision)|\(settings.mediaPolicy)" }
     func discoveryKey(origin: BackupOrigin) -> String {
         origin == .automatic ? "\(account)|\(assetID)|\(assetRevision)" : dedupKey

@@ -205,7 +205,7 @@ struct ConnectionView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Image(systemName: "icloud.and.arrow.up.fill").font(.system(size: 48)).foregroundStyle(.blue)
                     Text(L10n.text("回忆有处安放")).font(.largeTitle.bold())
-                    Text(L10n.text("将 iPhone 照片与视频备份到 Google Photos。原生浏览，持续记录进度，由你决定何时清理。")).foregroundStyle(.secondary)
+                    Text(L10n.text("将 iPhone 照片与视频备份到 Google Photos。原生浏览，持续记录进度；备份完成后可前往 Google 相册释放空间。")).foregroundStyle(.secondary)
                 }.padding(.vertical, 20)
                 Button(L10n.text("连接 Google 账号")) { loginError = ""; web = true }
                     .disabled(unavailable || !model.engine.ready).accessibilityIdentifier("connection.google")
@@ -288,6 +288,12 @@ struct ActivityArchiveSettingsView: View {
                 LabeledContent(L10n.text("归档天数")) {
                     TextField(L10n.text("归档天数"), text: $days).keyboardType(.numberPad).focused($editingDays).multilineTextAlignment(.trailing).frame(width: 80).accessibilityIdentifier("archive.days")
                 }
+                // Tapping the label side of a LabeledContent row in a Form
+                // does not always move focus into the embedded field, so a
+                // coordinate tap can leave the field without a keyboard.
+                // Make the whole row focus the field; the field itself
+                // keeps its native tap-to-focus behaviour.
+                .onTapGesture { editingDays = true }
                 Button(L10n.text("保存")) {
                     editingDays = false
                     invalid = !prefs.setDays(days)
