@@ -84,8 +84,7 @@ targets:
       - path: Tests
     dependencies:
       - target: PicHarbor
-      - package: SelfRefreshKit
-        product: SelfRefreshKit
+      # The host app already links SelfRefreshKit; linking it again duplicates SideSign.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cccece.picharbor.tests
