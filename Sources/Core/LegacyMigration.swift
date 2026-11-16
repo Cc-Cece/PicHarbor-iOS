@@ -26,9 +26,9 @@ struct LegacyMigrationReport {
     var accounts: [String]
     var settingsAccounts: [String]
     var summary: String {
-        "旧任务 \(totalJobs) 项，可迁移 \(migratedJobs) 项" +
-        (unknownStates.isEmpty ? "" : "，未知状态 \(unknownStates.count) 项将记为失败待人工处理") +
-        "；账号 \(accounts.count) 个，设置 \(settingsAccounts.count) 个。仅预览，未写入、未删除、未转换。"
+        L10n.text("旧任务 {0} 项，可迁移 {1} 项", [String(describing: totalJobs), String(describing: migratedJobs)]) +
+        (unknownStates.isEmpty ? "" : L10n.text("，未知状态 {0} 项将记为失败待人工处理", [String(describing: unknownStates.count)])) +
+        L10n.text("；账号 {0} 个，设置 {1} 个。仅预览，未写入、未删除、未转换。", [String(describing: accounts.count), String(describing: settingsAccounts.count)])
     }
 }
 

@@ -865,3 +865,6 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 不限日期|All dates
 小图阈值 {0} KB，大小未知的原件仍保留|Small-image threshold: {0} KB; originals with unknown size stay included
 更多操作|More actions
+旧任务 {0} 项，可迁移 {1} 项|{0} legacy jobs, {1} migratable
+，未知状态 {0} 项将记为失败待人工处理|, {0} with unknown states will be marked failed for manual review
+；账号 {0} 个，设置 {1} 个。仅预览，未写入、未删除、未转换。|; {0} accounts, {1} in settings. Preview only — nothing written, deleted, or converted.

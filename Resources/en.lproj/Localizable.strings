@@ -429,6 +429,7 @@
 "无法读取图片，请选择另一张二维码图片。" = "Could not read the image. Choose another QR code image.";
 "无法读取这项照片，请检查相册访问权限。" = "This photo could not be read. Check Photos access.";
 "无进展超时（秒）" = "No-progress timeout (seconds)";
+"旧任务 {0} 项，可迁移 {1} 项" = "{0} legacy jobs, {1} migratable";
 "旧版记录" = "Earlier records";
 "旧配置未能重新启动，请重新测试连接。" = "The previous configuration could not restart. Test the connection again.";
 "时长" = "Duration";
@@ -863,3 +864,5 @@
 "日期：{0} 至 {1}" = "Dates: {0} to {1}";
 "不限日期" = "All dates";
 "小图阈值 {0} KB，大小未知的原件仍保留" = "Small-image threshold: {0} KB; originals with unknown size stay included";
+"，未知状态 {0} 项将记为失败待人工处理" = ", {0} with unknown states will be marked failed for manual review";
+"；账号 {0} 个，设置 {1} 个。仅预览，未写入、未删除、未转换。" = "; {0} accounts, {1} in settings. Preview only — nothing written, deleted, or converted.";
