@@ -1,4 +1,5 @@
 import Foundation
+import Photos
 
 struct LiveLinkScope: Codable {
     var mode: String = "all"

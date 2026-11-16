@@ -35,7 +35,7 @@ enum ResourceReuse {
     /// guessing from local history alone.
     static func confirmedReuseKeys(for job: BackupJob, history: [BackupJob],
                                    adapter: HarborCoreAdapter) async -> [String: String]? {
-        guard adapter.available else { return nil }
+        guard await adapter.available else { return nil }
         let derived = evidence(for: job, history: history)
         guard !derived.isEmpty else { return [:] }
         var confirmed: [String: String] = [:]

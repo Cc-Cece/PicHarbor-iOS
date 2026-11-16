@@ -172,7 +172,10 @@ final class HarborCoreAdapter {
     /// media item (`motion_photo`); Apple-paired Live Photos are
     /// `live_photo`; video is `video`; everything else is `photo`.
     /// The core accepts exactly these four kinds.
-    static func mediaKind(for job: BackupJob) -> String {
+    /// Pure computation on the passed-in job, no adapter state, so it
+    /// is `nonisolated`: callers outside the main actor (e.g. the
+    /// sync `legacyRecord(for:)`) can use it without hopping.
+    nonisolated static func mediaKind(for job: BackupJob) -> String {
         if job.isLive {
             return job.settings.live == .motion ? "motion_photo" : "live_photo"
         }
