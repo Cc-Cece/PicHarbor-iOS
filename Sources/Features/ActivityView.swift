@@ -132,7 +132,12 @@ struct ActivityActionsMenu: View {
                 removal = Set(jobs.filter(\.unfinished).map(\.id)); removing = true
             }.disabled(!jobs.contains(where: \.unfinished)) }
             }
-        } label: { Image(systemName: "ellipsis.circle") }.accessibilityIdentifier("activity.menu")
+        } label: {
+            // Icon-only label with an explicit accessibility label: a bare
+            // Image gives the menu trigger no spoken identity, which also
+            // makes it harder to operate through the accessibility tree.
+            Label(L10n.text("更多操作"), systemImage: "ellipsis.circle").labelStyle(.iconOnly)
+        }.accessibilityIdentifier("activity.menu")
         .sheet(isPresented: $archives) {
             NavigationStack { ActivityView(archived: true).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { archives = false } } } }
         }

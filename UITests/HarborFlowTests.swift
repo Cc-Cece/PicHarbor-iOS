@@ -47,6 +47,15 @@ final class HarborFlowTests: XCTestCase {
         let app = localizedApp(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap(); app.buttons["活动记录"].tap()
+        // The archive field first exists — and reports hittable with its
+        // final frame — while the push transition is still animating, so a
+        // tap issued right away lands where the field will be, not where
+        // it is: the 80-wide trailing field is shifted off its tap point
+        // mid-animation. Existence / hittability alone do not prove the
+        // transition has settled, so wait it out (~0.35s push) before
+        // touching the field. Three earlier tap styles all failed
+        // identically because they all fired inside this window.
+        sleep(1)
         let days = app.textFields["archive.days"]
         XCTAssertTrue(days.waitForExistence(timeout: 5)); XCTAssertEqual(days.value as? String, "14")
         replaceArchiveDays(days, with: "91")
@@ -59,8 +68,20 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["归档记录"].waitForExistence(timeout: 5)); capture("archive-empty")
     }
     private func replaceArchiveDays(_ field: XCUIElement, with value: String) {
-        // The value is one numeric word. Select it rather than guessing where
-        // a coordinate tap placed the insertion cursor in a trailing field.
+        // The field's AX frame spans the whole LabeledContent row, so a
+        // centre tap lands on the label side, not the text field — and a
+        // tap gesture on the row would swallow the field's native tap
+        // anyway. Tap the trailing edge where the text actually sits, and
+        // only once the push transition has settled (existence alone
+        // returns while the page is still sliding in). The value is one
+        // numeric word; select it with a double-tap only once focus is
+        // established, rather than guessing where a coordinate tap placed
+        // the insertion cursor in a trailing field.
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 5), .completed)
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 5), .completed)
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).doubleTap()
         field.typeText(value)
         XCTAssertEqual(field.value as? String, value)
@@ -182,7 +203,11 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["已归档"].exists)
         XCTAssertTrue(app.buttons["移除未完成"].exists)
         capture("activity-filtered-actions")
-        app.navigationBars["活动"].staticTexts["活动"].tap()
+        // The open menu dims the page, so the navigation-bar title is not
+        // hittable and tapping it fails to scroll into view. Dismiss the
+        // menu with a tap outside it (top-left of the navigation bar) and
+        // keep the existing check that we are still on the Activity page.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.08)).tap()
         XCTAssertTrue(app.navigationBars["活动"].exists)
     }
     func testPhotoKitExportAfterSystemAuthorization() {

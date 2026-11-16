@@ -48,33 +48,48 @@ final class BackupCoreTests: XCTestCase {
         var old = BackupSettings(); old.live = .motion; old.quality = .saver; old.edits = .current
         old.automatic = true; old.scopeConfirmed = true; old.selectedAlbums = ["album"]
         old.wifiOnly = false; old.syncAlbums = true; old.strictLiveConfirmation = true
-        old.cloudState = false; old.originalAccess = false; old.allowUnverifiedLiveCleanup = true; old.appearance = "dark"
+        old.appearance = "dark"
         let job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: old)
         let defaults = old.restoringDefaults()
         XCTAssertEqual(defaults.live, .applePair); XCTAssertEqual(defaults.quality, .original); XCTAssertEqual(defaults.edits, .both)
         XCTAssertFalse(defaults.automatic); XCTAssertNil(defaults.scopeConfirmed); XCTAssertTrue(defaults.selectedAlbums.isEmpty)
         XCTAssertTrue(defaults.wifiOnly); XCTAssertFalse(defaults.syncAlbums)
-        XCTAssertFalse(defaults.requiresStrictConfirmation); XCTAssertFalse(defaults.allowsUnverifiedLiveCleanup)
-        XCTAssertTrue(defaults.cloudState); XCTAssertTrue(defaults.originalAccess); XCTAssertEqual(defaults.appearance, "dark")
+        XCTAssertFalse(defaults.requiresStrictConfirmation)
+        XCTAssertEqual(defaults.appearance, "dark")
         let upgraded = try JSONDecoder().decode(BackupJob.self, from: JSONEncoder().encode(job))
         XCTAssertEqual(upgraded.settings.live, .motion); XCTAssertEqual(upgraded.settings.quality, .saver)
         XCTAssertEqual(upgraded.dedupKey, job.dedupKey)
     }
-    func testLiveCleanupConsentMigratesOffAndInvalidatesEvidence() throws {
+    @MainActor
+    func testLegacyCleanupKeysAreIgnoredOnDecode() throws {
+        // Stage-2 unification removed the self-built cleanup types
+        // (CleanupEvidence, allowUnverifiedLiveCleanup, cleanupPolicy).
+        // Records written before that still decode: the removed keys
+        // are ignored, and nothing about them grants cleanup eligibility.
         var settings = BackupSettings()
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
-        json.removeValue(forKey: "allowUnverifiedLiveCleanup")
-        XCTAssertFalse(try JSONDecoder().decode(BackupSettings.self, from: JSONSerialization.data(withJSONObject: json)).allowsUnverifiedLiveCleanup)
+        json["allowUnverifiedLiveCleanup"] = true
+        json["cloudState"] = false
+        json["originalAccess"] = false
+        let decoded = try JSONDecoder().decode(BackupSettings.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(decoded.quality, .original); XCTAssertEqual(decoded.live, .applePair)
         var job = try pairedJob(); job.state = .completed
-        let evidence = CleanupEvidence(account: job.account, revision: job.assetRevision, policy: settings.cleanupPolicy, manifest: [])
-        XCTAssertFalse(LiveCleanupPolicy.permits(job, settings: settings))
-        settings.allowUnverifiedLiveCleanup = true
-        XCTAssertTrue(LiveCleanupPolicy.permits(job, settings: settings))
-        XCTAssertFalse(evidence.valid(job: job, settings: settings))
-        job.resources[1].confirmed = false
-        XCTAssertFalse(LiveCleanupPolicy.permits(job, settings: settings))
-        XCTAssertFalse(CleanupCandidates.policyMatches(BackupSettings(), current: settings))
-        XCTAssertEqual(settings.mediaPolicy, BackupSettings().mediaPolicy)
+        var jobJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(job)) as! [String: Any]
+        jobJSON["evidence"] = ["account": job.account, "revision": job.assetRevision, "policy": "11",
+                               "manifest": [], "checked": Date().timeIntervalSince1970]
+        let decodedJob = try JSONDecoder().decode(BackupJob.self, from: JSONSerialization.data(withJSONObject: jobJSON))
+        XCTAssertEqual(decodedJob.id, job.id); XCTAssertTrue(decodedJob.hasConfirmedPairs)
+        // No confirmation time was recorded on this job, so there is no
+        // per-item cleanup evidence — the guidance gate stays closed.
+        XCTAssertNil(HarborCoreAdapter.cleanupEvidenceItems(for: decodedJob))
+        // A real cloud confirmation produces exactly one evidence item.
+        var confirmed = try pairedJob(); confirmed.state = .completed
+        confirmed.completedAt = Date(timeIntervalSince1970: 1000)
+        let items = HarborCoreAdapter.cleanupEvidenceItems(for: confirmed)
+        XCTAssertEqual(items?.count, 1)
+        XCTAssertEqual(items?.first?["task_id"] as? String, confirmed.id)
+        XCTAssertEqual(items?.first?["cloud_confirmed"] as? Bool, true)
+        XCTAssertEqual(items?.first?["confirmed_at"] as? Int, 1000)
     }
     func testLookupUploadAndSaveHaveDistinctUserFacingStages() throws {
         var job = try pairedJob(); job.settings.strictLiveConfirmation = false
@@ -90,15 +105,6 @@ final class BackupCoreTests: XCTestCase {
         XCTAssertEqual(job.flowIndex, 3, "An uncertain submitted pair is a save check, not pre-upload dedup")
         job.isLive = false; job.mediaKind = "video"
         XCTAssertEqual(job.flowSteps.first, "准备视频"); XCTAssertEqual(job.flowSteps[2], "上传视频")
-    }
-    func testCleanupSnapshotRejectsNetworkAndVerificationChangesOnly() {
-        let captured = BackupSettings()
-        var changed = captured; changed.wifiOnly = false
-        XCTAssertFalse(CleanupCandidates.policyMatches(captured, current: changed))
-        changed = captured; changed.originalAccess = false
-        XCTAssertFalse(CleanupCandidates.policyMatches(captured, current: changed))
-        changed = captured; changed.appearance = "dark"; changed.strictLiveConfirmation = true
-        XCTAssertTrue(CleanupCandidates.policyMatches(captured, current: changed))
     }
     func testMainTaskMessageKeepsCodesInAdvancedInformation() throws {
         var job = try pairedJob(); job.error = "ENGINE_ERROR"
@@ -153,41 +159,6 @@ final class BackupCoreTests: XCTestCase {
         b.activityHidden = true; XCTAssertTrue(ActivityBatch.make([b], source: .all, status: .all).isEmpty)
     }
 
-    func testCleanupCandidatesAreAccountScoped() throws {
-        var a = try pairedJob(); a.state = .completed; a.id = "old"; a.created = Date(timeIntervalSince1970: 1)
-        var recent = a; recent.id = "recent"; recent.created = Date(timeIntervalSince1970: 2)
-        var other = recent; other.id = "other-account"; other.account = "other"
-        var pending = recent; pending.id = "blue"; pending.assetID = "another-asset"; pending.state = .paired
-        XCTAssertEqual(CleanupCandidates.select([a, recent, other, pending], account: "a").map(\.id), ["recent"])
-        XCTAssertEqual(CleanupCandidates.remainingSelection(["old"], eligible: ["old", "new"]), ["old"])
-        XCTAssertTrue(CleanupCandidates.remainingSelection(["old"], eligible: ["new"]).isEmpty)
-        XCTAssertEqual(CleanupOutcome.failure(HarborError("LIVE_CLEANUP_UNVERIFIED")), .deferred)
-        XCTAssertEqual(CleanupOutcome.failure(HarborError("NETWORK_ERROR")), .failed)
-    }
-
-    func testCleanupSelectionDefaultsToPassedAndPreservesIgnoredAssets() throws {
-        var a = try pairedJob(); a.id = "first"; a.assetID = "asset-a"
-        var b = a; b.id = "second"; b.assetID = "asset-b"
-        var selection = CleanupSelection()
-        selection.reconcile(eligible: [a.id], jobs: [a, b])
-        XCTAssertEqual(selection.selected, [a.id])
-        selection.toggle(a)
-        selection.reconcile(eligible: [a.id, b.id], jobs: [a, b])
-        XCTAssertEqual(selection.selected, [b.id])
-        selection.reconcile(eligible: [], jobs: [a, b])
-        var replacement = a; replacement.id = "new-job-for-asset-a"
-        selection.reconcile(eligible: [replacement.id, b.id], jobs: [replacement, b])
-        XCTAssertEqual(selection.selected, [b.id])
-        selection.selectAll(eligible: [replacement.id, b.id], jobs: [replacement, b])
-        XCTAssertEqual(selection.selected, [replacement.id, b.id])
-        selection.deselectAll(jobs: [replacement, b])
-        selection.reconcile(eligible: [replacement.id, b.id], jobs: [replacement, b])
-        XCTAssertTrue(selection.selected.isEmpty)
-        selection = CleanupSelection()
-        selection.reconcile(eligible: [replacement.id], jobs: [replacement, b])
-        XCTAssertEqual(selection.selected, [replacement.id])
-    }
-
     func testAdvancedDiagnosticExcludesPrivateResourceIdentity() throws {
         var job = try pairedJob(); job.account = "private@example.test"
         job.resources[0].name = "private-photo-name.heic"; job.resources[0].sha1 = "private-hash"
@@ -212,14 +183,12 @@ final class BackupCoreTests: XCTestCase {
         }
     }
 
-    func testBluePairStateRequiresCompleteSameKeyEvidenceAndIsNotCleanupEligible() throws {
+    func testBluePairStateRequiresCompleteSameKeyEvidence() throws {
         var job = try pairedJob()
         XCTAssertTrue(job.hasConfirmedPairs)
         job.beginConfirmation()
         XCTAssertEqual(job.state, .paired); XCTAssertEqual(job.statusSymbol, "checkmark.circle.fill")
         XCTAssertTrue(job.unfinished); XCTAssertTrue(job.state.active)
-        let evidence = CleanupEvidence(account: job.account, revision: job.assetRevision, policy: job.settings.cleanupPolicy, manifest: [])
-        XCTAssertFalse(evidence.valid(job: job, settings: job.settings))
         job.resources[1].remoteKey = "other"
         XCTAssertFalse(job.hasConfirmedPairs)
         job.beginConfirmation(); XCTAssertEqual(job.state, .confirming)
@@ -259,7 +228,7 @@ final class BackupCoreTests: XCTestCase {
         XCTAssertTrue(saved[0].hasConfirmedPairs)
         XCTAssertEqual(saved[0].confirmationChecks, 1)
         XCTAssertEqual(saved[0].lastConfirmationSeconds, 2.5)
-        XCTAssertNil(saved[0].completedAt); XCTAssertNil(saved[0].evidence)
+        XCTAssertNil(saved[0].completedAt)
     }
 
     @MainActor
@@ -517,23 +486,6 @@ final class BackupCoreTests: XCTestCase {
         XCTAssertEqual(loaded.count, 2)
         XCTAssertEqual(loaded.first { $0.account == "a" }?.settings.quality, .original)
         XCTAssertNotEqual(job.dedupKey, other.dedupKey)
-    }
-    func testCleanupEvidenceExpiresAndIsBoundToAccountRevisionPolicyAndSourceSet() {
-        var job = BackupJob(account: "a", assetID: "asset", assetRevision: "1", settings: BackupSettings())
-        job.state = .completed
-        job.sources = [MediaResource(role: "original.photo", path: "", name: "", sha256: "abc")]
-        let legacy = CleanupEvidence(account: "a", revision: "1", policy: "11", manifest: ["original.photo:abc"])
-        XCTAssertFalse(legacy.valid(job: job, settings: BackupSettings()), "Old evidence cannot authorize deletion under the new consent policy")
-        let evidence = CleanupEvidence(account: "a", revision: "1", policy: BackupSettings().cleanupPolicy, manifest: ["original.photo:abc"])
-        XCTAssertTrue(evidence.valid(job: job, settings: BackupSettings()))
-        XCTAssertFalse(evidence.valid(job: job, settings: BackupSettings(), now: evidence.checked.addingTimeInterval(300)))
-        XCTAssertFalse(evidence.valid(job: job, settings: BackupSettings(), now: evidence.checked.addingTimeInterval(-1)))
-        job.account = "b"; XCTAssertFalse(evidence.valid(job: job, settings: BackupSettings()))
-        job.account = "a"; job.sources[0].sha256 = "changed"
-        XCTAssertFalse(evidence.valid(job: job, settings: BackupSettings()))
-        job.sources[0].sha256 = "abc"
-        var weakened = BackupSettings(); weakened.originalAccess = false
-        XCTAssertFalse(evidence.valid(job: job, settings: weakened))
     }
     func testDefaultSettingsAndVersionedMediaIdentity() {
         var settings = BackupSettings()

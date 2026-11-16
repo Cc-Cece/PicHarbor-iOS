@@ -1,4 +1,5 @@
 import Foundation
+import Photos
 
 struct LiveLinkScope: Codable {
     var mode: String = "all"
@@ -43,6 +44,48 @@ struct LiveLinkScope: Codable {
         if let from, let start = Self.formatter.date(from: from), value < start { return false }
         if let to, let date = Self.formatter.date(from: to), let end = Calendar.current.date(byAdding: .day, value: 1, to: date), value >= end { return false }
         return true
+    }
+
+    /// Scope as a shared-core `evaluate_scope` / `livelink_scope`
+    /// dict — the same fields, the same meaning, on both ends.
+    /// `version` is 2 (scope2): a core that does not know this scope
+    /// version must error, and the caller must then exclude the asset
+    /// — never fall back to the full library.
+    var scopeDictionary: [String: Any] {
+        var value: [String: Any] = [
+            "version": 2,
+            "mode": mode,
+            "albums": albums,
+            "dateEnabled": dateEnabled,
+            "photos": photos,
+            "videos": videos,
+            "ignoreSmallImages": ignoreSmallImages,
+            "minImageKb": minImageKb,
+            "filterCache": filterCache,
+        ]
+        value["from"] = from ?? NSNull()
+        value["to"] = to ?? NSNull()
+        return value
+    }
+
+    /// One asset as a shared-core `evaluate_scope` / `livelink_scope`
+    /// asset dict. `albums` are the asset's album memberships (the
+    /// core needs them to judge `advanced` scopes); `size` is the
+    /// known byte size when available — an unknown size stays included
+    /// under `ignoreSmallImages`, per the core's semantics.
+    static func assetDictionary(for asset: PHAsset, albumIDs: [String], size: Int64?) -> [String: Any] {
+        var value: [String: Any] = [
+            "local_id": asset.localIdentifier,
+            "media_kind": asset.mediaType == .video ? "video"
+                : asset.mediaSubtypes.contains(.photoLive) ? "live_photo" : "photo",
+            "albums": albumIDs,
+        ]
+        if let created = asset.creationDate ?? asset.modificationDate {
+            value["created_at"] = Int(created.timeIntervalSince1970)
+        }
+        if asset.mediaType == .video { value["duration_seconds"] = asset.duration }
+        if let size { value["size"] = size }
+        return value
     }
 }
 

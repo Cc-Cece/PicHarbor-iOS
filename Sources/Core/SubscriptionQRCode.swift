@@ -20,6 +20,11 @@ enum SubscriptionQRCode {
                     kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 4096] as CFDictionary) else { throw HarborError("QR_IMAGE_UNAVAILABLE") }
         let request = VNDetectBarcodesRequest()
         request.symbologies = [.qr]
+        // Still-image detection with the default request revision has been
+        // observed to return no observations on simulator runtimes, while
+        // Revision1 detects the same image. Pin Revision1: it supports QR,
+        // and the pinned revision keeps behaviour identical across SDKs.
+        request.revision = VNDetectBarcodesRequestRevision1
         try VNImageRequestHandler(cgImage: image).perform([request])
         var seen = Set<String>()
         return (request.results ?? []).compactMap(\.payloadStringValue).filter { seen.insert($0).inserted }

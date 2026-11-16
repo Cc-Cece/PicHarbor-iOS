@@ -123,61 +123,12 @@ extension BackupJob {
     }
 }
 
-enum LiveCleanupPolicy {
-    static var waitingMessage: String { L10n.text("等待 Live Photo 完整验证") }
-    static func permits(_ job: BackupJob, settings: BackupSettings) -> Bool {
-        !job.isLive || (settings.allowsUnverifiedLiveCleanup && job.standardConfirmationPassed)
-    }
-}
-
-enum CleanupCandidates {
-    static func policyMatches(_ captured: BackupSettings, current: BackupSettings) -> Bool {
-        captured.cleanupPolicy == current.cleanupPolicy && captured.wifiOnly == current.wifiOnly
-    }
-    static func select(_ jobs: [BackupJob], account: String) -> [BackupJob] {
-        var seen = Set<String>()
-        return jobs.filter { $0.account == account && $0.activityHidden != true && $0.state == .completed }
-            .sorted { $0.created > $1.created }.filter { seen.insert($0.assetID).inserted }
-    }
-    static func remainingSelection(_ selected: Set<String>, eligible: [String]) -> Set<String> {
-        selected.intersection(Set(eligible))
-    }
-}
-
-/// Selection belongs to this screen session; ignored assets stay ignored after a recheck.
-struct CleanupSelection {
-    var selected = Set<String>()
-    private(set) var ignoredAssets = Set<String>()
-
-    mutating func reconcile(eligible: [String], jobs: [BackupJob]) {
-        let allowed = Set(eligible)
-        selected.formIntersection(allowed)
-        for job in jobs where allowed.contains(job.id) && !ignoredAssets.contains(job.assetID) {
-            selected.insert(job.id)
-        }
-    }
-    mutating func toggle(_ job: BackupJob) {
-        if selected.remove(job.id) != nil { ignoredAssets.insert(job.assetID) }
-        else { ignoredAssets.remove(job.assetID); selected.insert(job.id) }
-    }
-    mutating func selectAll(eligible: [String], jobs: [BackupJob]) {
-        for job in jobs where eligible.contains(job.id) { ignoredAssets.remove(job.assetID) }
-        reconcile(eligible: eligible, jobs: jobs)
-    }
-    mutating func deselectAll(jobs: [BackupJob]) {
-        for job in jobs where selected.contains(job.id) { ignoredAssets.insert(job.assetID) }
-        selected.removeAll()
-    }
-}
-
-enum CleanupOutcome: String, CaseIterable, Identifiable {
-    case all, eligible, deferred, failed, removed
-    var id: String { rawValue }
-    var title: String {
-        switch self { case .all: return L10n.text("全部"); case .eligible: return L10n.text("可清理"); case .deferred: return L10n.text("暂不能"); case .failed: return L10n.text("失败"); case .removed: return L10n.text("已处理") }
-    }
-    static func failure(_ error: Error) -> CleanupOutcome {
-        guard let code = (error as? HarborError)?.code else { return .failed }
-        return ["LIVE_CLEANUP_UNVERIFIED", "LIVE_COMPONENT_UNVERIFIED", "CLEANUP_UNVERIFIED", "SOURCE_CHANGED", "REMOTE_MISSING", "CLOUD_ORIGINAL_UNCONFIRMED", "ORIGINAL_UNAVAILABLE"].contains(code) ? .deferred : .failed
-    }
-}
+// Legacy self-built cleanup candidate/selection types
+// (`LiveCleanupPolicy`, `CleanupCandidates`, `CleanupSelection`,
+// `CleanupOutcome`) were removed in the stage-2 unification pass:
+// PicHarbor no longer scans, selects or deletes local assets. The
+// only cleanup surface is the official Google Photos free-up-space
+// guidance (`CleanupView`), gated per item by the shared core's
+// `decide_cleanup` evidence. `CleanupOutcome.failure`'s error-code
+// table is gone with it; the codes themselves stay in `Engine` as
+// user-facing messages for old jobs that still carry them.

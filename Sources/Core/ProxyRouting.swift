@@ -116,6 +116,15 @@ final class ProxyManager: ObservableObject {
     private let testStop: (() -> Void)?
     private let defaults: UserDefaults
     private let testLatency: ((Int) async -> Int?)?
+    /// Shared-core proxy validation, installed by `HarborModel.boot()`.
+    /// Called with the explicit proxy parameters plus the primary
+    /// node's loopback port (the endpoint the traffic goes through) —
+    /// never node configuration, credentials or secrets. Returns true
+    /// (valid) / false (invalid — routing must refuse) / nil (the core
+    /// does not know `validate_proxy` yet, or there is no primary
+    /// loopback port to validate against — proceed on native checks
+    /// alone). Nil by default (tests and pre-core boots route without it).
+    var coreValidator: ((ProxyPreferences, Int?) async -> Bool?)?
     private var home: String {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PicHarbor/Proxy").path
     }
@@ -308,6 +317,16 @@ final class ProxyManager: ObservableObject {
         let operation = Task { @MainActor in
             guard let data = try readStore(), let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw HarborError("PROXY_CONFIG_REQUIRED") }
             let nodes = try ProxyConfiguration.nodes(object)
+            // The shared core validates the explicit proxy parameters
+            // before the local core starts. The loopback port is the
+            // primary node's assigned port (24500 + index); without a
+            // primary node there is nothing to validate against. A core
+            // "invalid" refuses the route; an unknown action (nil)
+            // keeps the native checks.
+            if let validator = coreValidator, preferences.enabled {
+                let primaryPort = nodes.firstIndex(where: { ($0["name"] as? String) == preferences.primary }).map { 24500 + $0 }
+                if await validator(preferences, primaryPort) == false { throw HarborError("PROXY_UNAVAILABLE") }
+            }
             let (configuration, newPorts) = try ProxyConfiguration.runtime(nodes)
             let succeeded = await startCore(configuration)
             guard succeeded else { throw startupError() }
