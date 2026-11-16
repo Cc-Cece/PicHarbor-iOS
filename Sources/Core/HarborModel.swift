@@ -645,9 +645,12 @@ final class HarborModel: ObservableObject {
                 assetDict["created_at"] = Int(created.timeIntervalSince1970)
             }
             if asset.mediaType == .video { assetDict["duration_seconds"] = asset.duration }
+            // NOTE: explicit `.some(...)` patterns, not literal `true`/`false`:
+            // Xcode 16.4's exhaustiveness checker does not count literal cases
+            // as covering `.some` of a `Bool?` (Xcode 26 accepts both forms).
             switch await coreAdapter.evaluateScope(scope: scope, asset: assetDict) {
-            case true: included.append(asset)
-            case false: continue
+            case .some(true): included.append(asset)
+            case .some(false): continue
             case nil: included.append(asset) // Core does not know the action yet.
             }
             if included.count % QueueScaling.chunkSize == 0 { await Task.yield() }
