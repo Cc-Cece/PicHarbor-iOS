@@ -47,6 +47,15 @@ final class HarborFlowTests: XCTestCase {
         let app = localizedApp(); app.launch()
         if app.buttons["稍后"].waitForExistence(timeout: 30) { app.buttons["稍后"].tap() }
         app.tabBars.buttons["设置"].tap(); app.buttons["活动记录"].tap()
+        // The archive field first exists — and reports hittable with its
+        // final frame — while the push transition is still animating, so a
+        // tap issued right away lands where the field will be, not where
+        // it is: the 80-wide trailing field is shifted off its tap point
+        // mid-animation. Existence / hittability alone do not prove the
+        // transition has settled, so wait it out (~0.35s push) before
+        // touching the field. Three earlier tap styles all failed
+        // identically because they all fired inside this window.
+        sleep(1)
         let days = app.textFields["archive.days"]
         XCTAssertTrue(days.waitForExistence(timeout: 5)); XCTAssertEqual(days.value as? String, "14")
         replaceArchiveDays(days, with: "91")
