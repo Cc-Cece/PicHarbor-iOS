@@ -59,8 +59,16 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["归档记录"].waitForExistence(timeout: 5)); capture("archive-empty")
     }
     private func replaceArchiveDays(_ field: XCUIElement, with value: String) {
-        // The value is one numeric word. Select it rather than guessing where
-        // a coordinate tap placed the insertion cursor in a trailing field.
+        // Focus first and wait for the keyboard before selecting: a bare
+        // coordinate double-tap races the push transition and the
+        // keyboard-driven layout shift, so the second tap can land outside
+        // the field and drop focus before typeText runs. The value is one
+        // numeric word; select it with a double-tap only once focus is
+        // established, rather than guessing where a coordinate tap placed
+        // the insertion cursor in a trailing field.
+        field.tap()
+        let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 5), .completed)
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).doubleTap()
         field.typeText(value)
         XCTAssertEqual(field.value as? String, value)
@@ -182,7 +190,11 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["已归档"].exists)
         XCTAssertTrue(app.buttons["移除未完成"].exists)
         capture("activity-filtered-actions")
-        app.navigationBars["活动"].staticTexts["活动"].tap()
+        // The open menu dims the page, so the navigation-bar title is not
+        // hittable and tapping it fails to scroll into view. Dismiss the
+        // menu with a tap outside it (top-left of the navigation bar) and
+        // keep the existing check that we are still on the Activity page.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.08)).tap()
         XCTAssertTrue(app.navigationBars["活动"].exists)
     }
     func testPhotoKitExportAfterSystemAuthorization() {
