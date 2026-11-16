@@ -3,6 +3,13 @@ import Foundation
 enum ResourceReuse {
     /// A prior success is a reason to recheck, never permission to upload again
     /// after an ambiguous miss. Match actual content rather than a file name.
+    ///
+    /// This is the single local derivation of prior remote keys. The
+    /// dedup *decision* is not made here: `confirmedReuseKeys` routes
+    /// every candidate key through the shared core's `decide_prepare`
+    /// (a `remote_key` hit means `content_exists`, skip the upload),
+    /// and the pipeline still re-checks the key with `confirm_resource`
+    /// before trusting it. No other call site derives prior keys.
     static func evidence(for job: BackupJob, history: [BackupJob]) -> [String: String] {
         var result: [String: String] = [:]
         let candidates = history.filter {
@@ -17,5 +24,27 @@ enum ResourceReuse {
             }) { result[resource.id] = match.remoteKey }
         }
         return result
+    }
+
+    /// Core-backed reuse keys: `evidence(for:)` candidates filtered by
+    /// the shared core's `decide_prepare`. A candidate the core does
+    /// not confirm (`decidePrepare` false or nil) is dropped, so the
+    /// pipeline uploads instead of trusting a stale local derivation.
+    /// Returns nil only when the core is unavailable — the caller then
+    /// treats the job as having no reusable resources rather than
+    /// guessing from local history alone.
+    static func confirmedReuseKeys(for job: BackupJob, history: [BackupJob],
+                                   adapter: HarborCoreAdapter) async -> [String: String]? {
+        guard adapter.available else { return nil }
+        let derived = evidence(for: job, history: history)
+        guard !derived.isEmpty else { return [:] }
+        var confirmed: [String: String] = [:]
+        for resource in job.resources {
+            guard let key = derived[resource.id], !key.isEmpty else { continue }
+            if await adapter.decidePrepare(job: job, resource: resource, remoteKey: key) == true {
+                confirmed[resource.id] = key
+            }
+        }
+        return confirmed
     }
 }

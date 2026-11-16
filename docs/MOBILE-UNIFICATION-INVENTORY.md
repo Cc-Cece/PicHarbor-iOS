@@ -36,7 +36,7 @@
 | 网络偏好（仅 Wi-Fi 开关应用于当前账号未完成任务；手动暂停保持暂停；传输按需重建） | `HarborModel.applyNetworkSettings()`、`Sources/Core/BackgroundTransfer.swift`（`NetworkStatus`） | 稳定 | 系统网络状态 |
 | 相簿单向同步（默认关闭；只创建/复用映射相册并添加成员；媒体与相簿步骤分别持久化） | `HarborModel.synchronizeAlbums()`、`Sources/Core/BackupModels.swift`（`AlbumMapping`） | 稳定 | PhotoKit 相簿 |
 | 上传模式三档（`original` / `quota` / `saver`），默认 `original` | `Sources/Core/BackupModels.swift`（`UploadQuality`）、`Sources/Core/Engine.swift` | 稳定 | — |
-| 统一核心适配（夜间重构新增；普通照片走共享状态机，旧路径为 fallback） | `Sources/Core/HarborCoreAdapter.swift`（新增）、`Python/harbor_ios.py`（`core_*` 透传分支）、`HarborModel` 接入点（见文件内注释 `deprecated-by-unification`） | 实验（`harbor_core.py` 已同步至 `Vendor/gpmc`，22 个锁定文件离线校验通过；Swift 本机无 Xcode 未编译验证，须 CI 构建验证） | 嵌入式 Python（PythonBridge） |
+| 统一核心适配（夜间重构新增；第二阶段：照片、视频、Live Photo / 多资源、批量、范围、复用、代理、LiveLink 全部走共享状态机；旧路径已删除，无 fallback） | `Sources/Core/HarborCoreAdapter.swift`、`Python/harbor_ios.py`（`core_*` 透传分支）、`HarborModel`（`processRouted` 统一上传路径、`pauseJobs`/`resumeJobs`/`cancel`/`removeUnfinished` 核心镜像）、`Sources/Core/LiveLinkSend.swift`（握手/范围校验）、`Sources/Core/ProxyRouting.swift`（`coreValidator`）、`Sources/Core/LegacyMigration.swift`（只读迁移预览） | 实验（核心第二阶段 action 随 `harbor_core` 扩展逐步落地，`UNKNOWN_OPERATION` 时走文档化本地回退；Swift 本机无 Xcode 未编译验证，须 CI 构建验证） | 嵌入式 Python（PythonBridge） |
 
 ## 2. PhotoKit 图库与增量（稳定）
 
@@ -111,7 +111,7 @@
 | 嵌入式 CPython 3.13 启动与调用（主线程初始化；GIL；请求预算与取消；进度事件节流） | `Sources/Bridge/PythonBridge.h/.m`、`Sources/Bridge/BridgingHeader.h`、`Sources/Core/Engine.swift`（`invoke`） | 稳定 | CPython（`Runtime/Python.xcframework`）、TLS/SQLite 扩展 |
 | gpmc 固定快照（中央库唯一维护；`gpmc.lock.json` 内容锁定；构建离线校验；不得直接改各端副本） | `Vendor/gpmc/`、`gpmc.lock.json`、`Vendor/source-manifest.json`、`tools/sync_gpmc.py` | 稳定 | — |
 | 协议适配（分阶段协议：`prepare_upload` / `commit_resource` / `confirm_resource` / `pair_apple` / `confirm_pair` / `motion_status` / 相簿；请求预算；账号/代理隔离；最多 8 个空闲上下文） | `Python/harbor_ios.py`（`Service`、`IOSApi`）、`Python/harbor_protocol.py`（兼容导入 → `gpmc.protocol`）、`Python/harbor_deadline.py` | 稳定 | 嵌入式 Python |
-| 统一核心透传（`core_*` → `harbor_core.dispatch_json`；`harbor_core` 缺失时返回 `RUNTIME_UNAVAILABLE`，不伪造成功） | `Python/harbor_ios.py`（`dispatch` 内 `core_*` 分支）、`Sources/Core/HarborCoreAdapter.swift` | 稳定（`harbor_core.py` 已同步；9 项 `tests_python/test_core_adapter.py` 本地通过） | 嵌入式 Python |
+| 统一核心透传（`core_*` → `harbor_core.dispatch_json`；`harbor_core` 缺失时返回 `RUNTIME_UNAVAILABLE`，不伪造成功；第二阶段新增 `batch_pause` / `batch_resume` / `evaluate_scope` / `validate_proxy` / `livelink_handshake` / `livelink_scope` / `migrate_legacy` 透传，未落地时核心返回 `UNKNOWN_OPERATION`，Swift 侧走文档化回退） | `Python/harbor_ios.py`（`dispatch` 内 `core_*` 分支）、`Sources/Core/HarborCoreAdapter.swift` | 稳定（`harbor_core.py` 已同步；`tests_python/test_core_adapter.py` 12 项，含第二阶段透传信封与视频/Live 资产用例，未本地执行，见进度记录） | 嵌入式 Python |
 
 ## 10. 设置、界面与本地化（稳定）
 
@@ -128,7 +128,7 @@
 | 残留 | 位置 | 处理 |
 |---|---|---|
 | 自建本机清理 UI（清理核验页、扫描、选择列表、删除执行、风险对话框） | 已移除。现 `Sources/Features/CleanupView.swift` 为纯官方指引页 | 保留指引页；不重建清理 UI |
-| 清理证据模型（账号/版本/策略绑定、5 分钟有效期规则） | `Sources/Core/BackupModels.swift`（`CleanupEvidence`、`cleanupPolicy`）、`Sources/Core/TaskPresentation.swift`（`LiveCleanupPolicy`、`CleanupCandidates`、`CleanupSelection`、`CleanupOutcome`）、`Sources/Core/Engine.swift`（`LIVE_CLEANUP_UNVERIFIED` / `LIVE_COMPONENT_UNVERIFIED` 文案） | 只作旧任务/旧设置兼容读取与单元测试对象；无任何调用链能走到删除（全仓无删除调用）。`LIVE_COMPONENT_UNVERIFIED` 文案已于本次重构改为指向官方释放空间（原“空间清理核验”入口已不存在）。`BackupSettings` 的 `allowUnverifiedLiveCleanup` / `cloudState` / `originalAccess` 字段保留解码，不再生效 |
+| 清理证据模型（账号/版本/策略绑定、5 分钟有效期规则） | 已删除（第二阶段）：`Sources/Core/BackupModels.swift` 的 `CleanupEvidence` 与 `BackupJob.evidence`、`BackupSettings` 的 `allowUnverifiedLiveCleanup` / `cloudState` / `originalAccess` / `cleanupPolicy`、`Sources/Core/TaskPresentation.swift` 的 `LiveCleanupPolicy` / `CleanupCandidates` / `CleanupSelection` / `CleanupOutcome` 全部删除；旧任务/旧设置仍可解码（JSONDecoder 忽略已删键）。清理指引改由共享核心 `decide_cleanup` 的逐项云端确认证据判定（`HarborCoreAdapter.cleanupEvidenceItems`），无证据时只做页级指引。`Engine.swift` 的 `LIVE_CLEANUP_UNVERIFIED` / `LIVE_COMPONENT_UNVERIFIED` 文案保留，仅作旧任务错误码的面向用户说明。 | 仅兼容读取（解码层）；无任何调用链能走到删除（全仓无删除调用） |
 | gpmc `check_cleanup` 协议操作（按哈希查云端 key、校验快照新鲜度与云端状态，返回 eligible/reason） | `Vendor/gpmc/protocol.py`（`Protocol.actions` 含 `check_cleanup`） | 本身不删除任何东西，只是证据查询；新版不得用它授权/触发删除，不接入清理决策 |
 | 清理类诊断事件与旧文档口径 | `HarborModel.diagnostics` 已明确 `local_cleanup=false`；旧文档见“文档内部残留冲突” | 诊断沿用此口径；旧文档口径不实现 |
 
@@ -138,4 +138,4 @@
 - Live Photo 两种方式的完整验收（云端正确关联、同机显示、官方客户端取回、配额、完整样本矩阵）均待真机验收；Motion Photo 声音/关键帧/HDR/编辑版本未逐项验收。
 - 真机后台、权限变化、iCloud 原件、安装升级、大图库（万级）与超 4 GiB 视频、锁屏/系统终止/重启恢复待逐项记录。
 - 电脑直连未执行真机配对验收（真实局域网扫码、双向确认、部分照片授权、iCloud 原件、锁屏/断网、实况回放）。
-- 统一核心接入已同步（`Vendor/gpmc/harbor_core.py`，`gpmc.lock.json` 更新，离线校验通过）；Swift 侧本机无 Xcode，未编译验证，须 CI 构建验证。视频 / Live Photo 仍走旧路径，未接入核心。
+- 统一核心接入已同步（`Vendor/gpmc/harbor_core.py`，`gpmc.lock.json` 更新，离线校验通过）；Swift 侧本机无 Xcode，未编译验证，须 CI 构建验证。第二阶段：视频 / Live Photo / 多资源 / 批量 / 范围 / 复用 / 代理 / LiveLink 已全部接核心（核心第二阶段 action 未落地时走文档化回退），旧业务核心路径已删除。

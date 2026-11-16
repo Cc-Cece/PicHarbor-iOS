@@ -134,7 +134,7 @@
     },
     {
       "path": "gpmc/harbor_core.py",
-      "sha256": "60b22677365bcce775dc561beba1f448d1c56c8e337610ea0a05ab4e549c7a85"
+      "sha256": "0d6c30a6f5c11e2c55d8e869b7a4af0d831d8e8fe888d1a7d7f47fbc93571831"
     },
     {
       "path": "gpmc/hash_handler.py",

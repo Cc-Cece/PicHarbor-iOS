@@ -35,16 +35,15 @@ struct BackupSettings: Codable, Equatable {
     var pipelineOverrides: PipelineLimits?
     var executionOverrides: BackupExecutionPolicy?
     var selectedAlbums: [String] = []
-    // Legacy cleanup preferences remain decodable for upgrades. No longer used
-    // by the native application; local removal is delegated to Google Photos.
-    var cloudState = true
-    var originalAccess = true
     var appearance = "system"
     var strictLiveConfirmation: Bool?
-    var allowUnverifiedLiveCleanup: Bool?
-    var allowsUnverifiedLiveCleanup: Bool { allowUnverifiedLiveCleanup ?? false }
+    // Legacy cleanup preferences (`cloudState`, `originalAccess`,
+    // `allowUnverifiedLiveCleanup`) were removed in the stage-2
+    // unification pass: PicHarbor no longer scans or deletes local
+    // assets; free-up-space is Google Photos' official feature and
+    // unvalidated Live Photos are kept by default. Old stored settings
+    // still decode — JSONDecoder ignores the removed keys.
     var requiresStrictConfirmation: Bool { strictLiveConfirmation ?? false }
-    var cleanupPolicy: String { "\(cloudState ? 1 : 0)\(originalAccess ? 1 : 0):live\(allowsUnverifiedLiveCleanup ? 1 : 0)" }
     // Scheduling/network/cleanup preferences do not change the encoded media identity.
     var mediaPolicy: String { "\(quality.rawValue):\(live.rawValue):\(edits.rawValue):mux1" }
     func restoringDefaults() -> BackupSettings {
@@ -119,6 +118,10 @@ struct MediaResource: Codable, Identifiable, Equatable {
     var sha1 = ""
     var sha256 = ""
     var size: Int64 = 0
+    /// Video / paired-video duration in seconds, when the source asset
+    /// reports one. Sent to the core as `duration_seconds` for video
+    /// tasks; nil for stills and for records written before stage 2.
+    var durationSeconds: Double?
     var remoteKey = ""
     var confirmed = false
     var reused: Bool?
@@ -182,9 +185,13 @@ struct BackupJob: Codable, Identifiable {
     var albumIDs: [String] = []
     var albumsPending = false
     var progress: Double = 0
-    var evidence: CleanupEvidence?
+    // Legacy per-item cleanup evidence (`evidence: CleanupEvidence?`)
+    // was removed in the stage-2 unification pass. Cleanup guidance
+    // now takes its evidence from cloud-confirmation results via
+    // `HarborCoreAdapter.cleanupEvidenceItems(for:)`; old stored jobs
+    // still decode — JSONDecoder ignores the removed key.
     // Unified core: whether decide_cleanup found the cloud evidence fresh
-    // enough to show the official-cleanup guidance; nil = unknown / legacy path.
+    // enough to show the official-cleanup guidance; nil = unknown / pre-core job.
     var cleanupEligible: Bool?
     var dedupKey: String { "\(account)|\(assetID)|\(assetRevision)|\(settings.mediaPolicy)" }
     func discoveryKey(origin: BackupOrigin) -> String {
@@ -239,7 +246,7 @@ struct BackupJob: Codable, Identifiable {
     }
     // Rebinding is allowed only before any exported or remotely submitted resource exists.
     var canRefreshSource: Bool {
-        resources.isEmpty && sources.isEmpty && (livePairs ?? []).isEmpty && evidence == nil &&
+        resources.isEmpty && sources.isEmpty && (livePairs ?? []).isEmpty &&
         state != .completed && state != .cancelled
     }
     mutating func refreshSource(revision: String, live: Bool, created: Date?, modified: Date?) throws {
@@ -266,7 +273,7 @@ struct BackupJob: Codable, Identifiable {
     }
     mutating func removeFromActivity() {
         guard state != .completed else { return }
-        state = .cancelled; activityHidden = true; evidence = nil; retryAt = nil
+        state = .cancelled; activityHidden = true; retryAt = nil
     }
     var failureStageTitle: String? {
         guard let failureStage else { return nil }
@@ -355,18 +362,6 @@ struct ActivityGroup: Identifiable {
         return grouped.map { key, values in
             ActivityGroup(id: key, origin: values.first?.origin, jobs: values.sorted { $0.created > $1.created })
         }.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
-    }
-}
-struct CleanupEvidence: Codable {
-    var account: String
-    var revision: String
-    var policy: String
-    var manifest: [String]
-    var checked = Date()
-    func valid(job: BackupJob, settings: BackupSettings, now: Date = Date()) -> Bool {
-        account == job.account && revision == job.assetRevision && policy == settings.cleanupPolicy &&
-        now.timeIntervalSince(checked) >= 0 && now.timeIntervalSince(checked) < 300 &&
-        manifest == job.sources.map { "\($0.role):\($0.sha256)" }.sorted() && job.state == .completed
     }
 }
 struct AlbumMapping: Codable {

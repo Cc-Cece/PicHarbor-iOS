@@ -38,7 +38,7 @@ struct HarborError: LocalizedError {
         case "LIVE_KEYFRAME_MISSING": return L10n.text("无法读取 Live Photo 关键帧，已保留原件。")
         case "LIVE_PAIR_MISSING": return L10n.text("无法取得同一版本的完整 Live Photo 资源。")
         case "MOTION_FORMAT_UNSUPPORTED", "MOTION_METADATA_ERROR": return L10n.text("动态照片封装未完成，原件已保留。")
-        case "LIVE_CLEANUP_UNVERIFIED": return LiveCleanupPolicy.waitingMessage
+        case "LIVE_CLEANUP_UNVERIFIED": return L10n.text("等待 Live Photo 完整验证")
         case "LIVE_COMPONENT_UNVERIFIED": return L10n.text("照片和视频已保存，但暂时无法完成动态视频的额外检查。原件已保留；备份确认完成后，可前往 Google 相册释放空间。")
         case "CLEANUP_UNVERIFIED": return L10n.text("完整资源或云端核验未通过，原件会保留。")
         case "CLEANUP_CANCELLED": return L10n.text("检查已停止，原件会保留。")

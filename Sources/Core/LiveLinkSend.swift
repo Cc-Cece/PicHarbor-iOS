@@ -252,6 +252,7 @@ final class LiveLinkController: ObservableObject {
     func confirmIncoming() {
         guard let offerId = incomingId, incomingReady, !busy else { return }
         let assets = incomingAssets
+        let offerScope = incomingScope
         responding = true
         clearIncoming()
         begin(trackSend: true) { [self] in
@@ -261,6 +262,27 @@ final class LiveLinkController: ObservableObject {
                 return
             }
             status = L10n.text("将发送 {0} 项到电脑", [String(assets.count)])
+            // Shared-core scope check for the incoming offer, judged
+            // on a real asset. A core scope rejection
+            // (`INVALID_SCOPE`) rejects the offer; `requires_confirmation`
+            // is honored by the accept below plus the computer's own
+            // confirmation — no transfer starts without it.
+            if let first = assets.first, let criteria = try? LiveLinkScope.parse(offerScope ?? "all") {
+                let groups = LiveLinkScope.groups()
+                var albumIDsByAsset: [String: [String]] = [:]
+                for group in groups { for id in group.ids { albumIDsByAsset[id, default: []].append(group.album.id) } }
+                let assetDict = LiveLinkScope.assetDictionary(for: first, albumIDs: albumIDsByAsset[first.localIdentifier] ?? [], size: nil)
+                let scopeCheck = await HarborModel.shared.coreAdapter.livelinkScope(scope: criteria.scopeDictionary, asset: assetDict)
+                if scopeCheck?.scopeValid == false {
+                    message = L10n.text("不支持此备份范围，请更新 PicHarbor。")
+                    try? await http.reject(connection: link, offerId: offerId)
+                    return
+                }
+            }
+            // Receiver confirmation gate (incoming direction): the user
+            // confirmed with the `confirmIncoming` tap, and the computer
+            // must accept before any transfer. A Live Photo is one media
+            // item: its photo + paired video travel together.
             try await http.accept(connection: link, offerId: offerId)
             do {
                 if !assets.isEmpty { try await transfer(link, assets: assets, allowCloud: allowCloud) }
@@ -334,6 +356,10 @@ final class LiveLinkController: ObservableObject {
                 return
             }
             status = L10n.text("正在等待电脑确认…")
+            // Receiver confirmation gate: no bytes move until the
+            // computer accepts this offer. A Live Photo counts as one
+            // media item here (`assets.count`) and is transferred whole
+            // — photo + paired video together, one manifest, one pair id.
             let offerId = try await http.offer(connection: link, scope: "library", count: assets.count)
             guard try await http.waitForComputer(connection: link, offerId: offerId) else {
                 message = L10n.text("电脑没有确认")
@@ -416,6 +442,13 @@ final class LiveLinkController: ObservableObject {
         }
         let identity = try LiveLinkStore.loadOrCreate()
         let link = try await http.establish(target, identity: identity, deviceName: LiveLinkDevice.name())
+        // Shared-core handshake: the paired computer must speak the
+        // scope2/catalog2 capabilities announced in hello. A core
+        // "incompatible" refuses the session; an unknown action (nil)
+        // keeps the local hello flow.
+        if await HarborModel.shared.coreAdapter.livelinkHandshake() == false {
+            throw LiveLinkFailure.rejected
+        }
         connection = link
         saved = LiveLinkStore.computer()
         return link
@@ -464,6 +497,22 @@ final class LiveLinkController: ObservableObject {
                 let all = await Self.assets(matching: "all")
                 let selected = criteria.select(all, groups: groups)
                 let known = LiveLinkScope.knownSizes(all)
+                // Shared-core scope check for the computer-requested
+                // scope, judged on a real asset (the core needs an
+                // asset to apply album/date/type rules). A core scope
+                // rejection (`INVALID_SCOPE`) reports the scope as
+                // unsupported (caught below); per-asset admission is
+                // the local select above, whose semantics the core
+                // mirrors. `requires_confirmation` is honored by the
+                // offer/accept gate — no transfer ever starts without
+                // receiver confirmation.
+                if let first = selected.first {
+                    var albumIDsByAsset: [String: [String]] = [:]
+                    for group in groups { for id in group.ids { albumIDsByAsset[id, default: []].append(group.album.id) } }
+                    let assetDict = LiveLinkScope.assetDictionary(for: first, albumIDs: albumIDsByAsset[first.localIdentifier] ?? [], size: known[first.localIdentifier])
+                    let scopeCheck = await HarborModel.shared.coreAdapter.livelinkScope(scope: criteria.scopeDictionary, asset: assetDict)
+                    if scopeCheck?.scopeValid == false { throw LiveLinkFailure.rejected }
+                }
                 let albums = groups.map { group -> LiveLinkAlbum in
                     var value = group.album; value.bytes = group.ids.compactMap { known[$0] }.reduce(0, +); return value
                 }
@@ -489,6 +538,9 @@ final class LiveLinkController: ObservableObject {
             try? await http.reject(connection: link, offerId: offer.id)
             return
         }
+        // No asset is known yet at offer-listing time, so the core
+        // scope check runs at confirm time (`confirmIncoming`) with a
+        // real asset; the local parse above is the listing-time gate.
         incomingId = offer.id
         incomingScope = offer.scope ?? "all"
     }
