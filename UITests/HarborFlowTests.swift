@@ -59,14 +59,18 @@ final class HarborFlowTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["归档记录"].waitForExistence(timeout: 5)); capture("archive-empty")
     }
     private func replaceArchiveDays(_ field: XCUIElement, with value: String) {
-        // Focus first and wait for the keyboard before selecting: a bare
-        // coordinate double-tap races the push transition and the
-        // keyboard-driven layout shift, so the second tap can land outside
-        // the field and drop focus before typeText runs. The value is one
+        // The field's AX frame spans the whole LabeledContent row, so a
+        // centre tap lands on the label side, not the text field — and a
+        // tap gesture on the row would swallow the field's native tap
+        // anyway. Tap the trailing edge where the text actually sits, and
+        // only once the push transition has settled (existence alone
+        // returns while the page is still sliding in). The value is one
         // numeric word; select it with a double-tap only once focus is
         // established, rather than guessing where a coordinate tap placed
         // the insertion cursor in a trailing field.
-        field.tap()
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 5), .completed)
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field)
         XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 5), .completed)
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).doubleTap()

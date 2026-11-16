@@ -288,12 +288,10 @@ struct ActivityArchiveSettingsView: View {
                 LabeledContent(L10n.text("归档天数")) {
                     TextField(L10n.text("归档天数"), text: $days).keyboardType(.numberPad).focused($editingDays).multilineTextAlignment(.trailing).frame(width: 80).accessibilityIdentifier("archive.days")
                 }
-                // Tapping the label side of a LabeledContent row in a Form
-                // does not always move focus into the embedded field, so a
-                // coordinate tap can leave the field without a keyboard.
-                // Make the whole row focus the field; the field itself
-                // keeps its native tap-to-focus behaviour.
-                .onTapGesture { editingDays = true }
+                // Do NOT add a tap gesture on this row to focus the field:
+                // a parent tap gesture swallows the embedded field's native
+                // tap, and FocusState does not reliably focus a field
+                // inside a Form — the field must keep native tap-to-focus.
                 Button(L10n.text("保存")) {
                     editingDays = false
                     invalid = !prefs.setDays(days)
