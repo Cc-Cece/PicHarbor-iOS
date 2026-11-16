@@ -285,13 +285,18 @@ struct ActivityArchiveSettingsView: View {
         Form {
             Section {
                 Toggle(L10n.text("自动归档"), isOn: $prefs.enabled)
-                LabeledContent(L10n.text("归档天数")) {
+                HStack {
+                    Text(L10n.text("归档天数"))
+                    Spacer()
                     TextField(L10n.text("归档天数"), text: $days).keyboardType(.numberPad).focused($editingDays).multilineTextAlignment(.trailing).frame(width: 80).accessibilityIdentifier("archive.days")
                 }
-                // Do NOT add a tap gesture on this row to focus the field:
-                // a parent tap gesture swallows the embedded field's native
-                // tap, and FocusState does not reliably focus a field
-                // inside a Form — the field must keep native tap-to-focus.
+                // Do NOT wrap this row in LabeledContent and do NOT add a
+                // tap gesture on it: LabeledContent merges the field into
+                // one accessibility element spanning the whole row, so a
+                // tap on the field's centre lands on the label side and
+                // never focuses it; a parent tap gesture swallows the
+                // field's native tap. The field must be its own element
+                // with its own frame.
                 Button(L10n.text("保存")) {
                     editingDays = false
                     invalid = !prefs.setDays(days)
