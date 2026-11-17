@@ -95,7 +95,7 @@ final class HarborCoreAdapter {
               result["harbor_core_version"] as? Int == 1,
               result["protocol_version"] as? Int == 2,
               let actions = result["actions"] as? [String],
-              Set(["create_task", "transition", "evaluate_scope", "batch_pause", "batch_resume", "select_proxy"]).isSubset(of: Set(actions)) else {
+              Set(["create_task", "transition", "evaluate_scope", "batch_pause", "batch_resume", "select_proxy", "select_versions"]).isSubset(of: Set(actions)) else {
             available = false
             return false
         }

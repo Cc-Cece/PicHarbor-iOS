@@ -150,11 +150,20 @@ enum ResourceExporter {
         let video = asset.mediaType == .video
         guard asset.mediaType == .image || video else { throw HarborError("UNSUPPORTED_MEDIA") }
         var result: [MediaResource] = []
-        let versions = settings.edits == .both ? ["original", "current"] : [settings.edits.rawValue]
+        let originalType: PHAssetResourceType = video ? .video : .photo
+        let currentType: PHAssetResourceType = video ? .fullSizeVideo : .fullSizePhoto
+        var available: [String] = []
+        if resources.contains(where: { $0.type == originalType }) { available.append("original") }
+        if resources.contains(where: { $0.type == currentType }) { available.append("current") }
+        let edited = resources.contains(where: { $0.type == .adjustmentData || $0.type == currentType })
+        let adapter = await MainActor.run { HarborModel.shared.coreAdapter }
+        let selection = await adapter.dispatch(action: "select_versions", payload: ["policy": settings.edits.rawValue,
+            "available": available, "has_edits": edited])
+        guard selection["ok"] as? Bool == true, let versions = selection["versions"] as? [String] else {
+            throw HarborError(selection["error"] as? String ?? "RESOURCE_MISSING")
+        }
         for version in versions {
             let current = version == "current"
-            let originalType: PHAssetResourceType = video ? .video : .photo
-            let currentType: PHAssetResourceType = video ? .fullSizeVideo : .fullSizePhoto
             guard let image = resources.first(where: { $0.type == (current ? currentType : originalType) }) ?? resources.first(where: { $0.type == originalType }) else { throw HarborError("RESOURCE_MISSING") }
             var pair = [(image, "\(version).\(video ? "video" : "photo")")]
             if live {

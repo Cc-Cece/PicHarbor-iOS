@@ -96,6 +96,7 @@ ACTIONS = (
     "evaluate_scope",
     "validate_proxy",
     "select_proxy",
+    "select_versions",
     "livelink_handshake",
     "livelink_scope",
     "retry_delay",
@@ -1375,6 +1376,9 @@ def _dispatch_value(action, value):
     if action == "select_proxy":
         from .proxy_selection import select_proxy
         return select_proxy(value)
+    if action == "select_versions":
+        from .media_versions import select_versions
+        return select_versions(value)
     if value is None:
         value = {}
     if not isinstance(value, dict):

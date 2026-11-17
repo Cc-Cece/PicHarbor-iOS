@@ -130,11 +130,15 @@
     },
     {
       "path": "gpmc/harbor_core.py",
-      "sha256": "178842f326c96ebd27477e7cb7bbe84a70e9ec529d6da2ffcd0e4ac44bcd0759"
+      "sha256": "b3c31e5bb75c9e418ea1cd199af203b7beffba9751997686cd8ae15db13f23f1"
     },
     {
       "path": "gpmc/hash_handler.py",
       "sha256": "e52af0f8385de5f8ae37ff153f8d8e5d312324e3216fe3ff602b43a0a97e967f"
+    },
+    {
+      "path": "gpmc/heif_metadata.py",
+      "sha256": "de2952ec49ab52e2a1d25696a1ead27a4bf3a809996ca357f239bc28584c7503"
     },
     {
       "path": "gpmc/live.py",
@@ -149,6 +153,10 @@
       "sha256": "503440f1733581a9e4f242de4f607581c42b3f596f76847d3f131969e3c79832"
     },
     {
+      "path": "gpmc/media_versions.py",
+      "sha256": "79596ad62c96ecfd5af3b25abc26bcfc0758ff3d6d2f731264b1a44167619960"
+    },
+    {
       "path": "gpmc/message_types.py",
       "sha256": "808bfb732cc8d9df1c077322f68ee330afa676ebb3277d083e9f3e676123c3a1"
     },
@@ -158,7 +166,7 @@
     },
     {
       "path": "gpmc/motion_photo.py",
-      "sha256": "bc2fb7e1366780b9c5e56667a71126f73e2d2b6a35991d4222ec6231462ee418"
+      "sha256": "55faf5a987c61d89f180e87766ed5d16defbf3729046d7fb84aedf8df9519c69"
     },
     {
       "path": "gpmc/NOTICE.md",
