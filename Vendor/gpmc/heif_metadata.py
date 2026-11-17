@@ -91,12 +91,13 @@ def encode_locations(entries):
 
 
 class HeifMetadata:
-    def __init__(self, source):
+    def __init__(self, source, allow_motion=False):
         self.source = source
         source.seek(0, 2)
         self.length = source.tell()
         self.meta_at = None
         self.zero_sizes = []
+        self.motion = None
         at = 0
         count = 0
         found_brand = False
@@ -129,7 +130,9 @@ class HeifMetadata:
                 found_brand = any(brands[index:index + 4] in (b'heic', b'heix', b'hevc', b'hevx')
                                   for index in [0] + list(range(8, len(brands), 4)))
             if kind == b'mpvd':
-                invalid()
+                if not allow_motion or self.motion is not None or header != 8 or size != self.length - at or (at, size) in self.zero_sizes:
+                    invalid()
+                self.motion = (at + header, size - header)
             if kind == b'meta':
                 if self.meta_at is not None or size - header > LIMIT:
                     invalid()

@@ -138,7 +138,7 @@
     },
     {
       "path": "gpmc/heif_metadata.py",
-      "sha256": "de2952ec49ab52e2a1d25696a1ead27a4bf3a809996ca357f239bc28584c7503"
+      "sha256": "a79104a0496b8f03a5b0e8795ec65235dd09a69a7b4783d64f8449c4f9e61660"
     },
     {
       "path": "gpmc/live.py",
@@ -166,7 +166,7 @@
     },
     {
       "path": "gpmc/motion_photo.py",
-      "sha256": "55faf5a987c61d89f180e87766ed5d16defbf3729046d7fb84aedf8df9519c69"
+      "sha256": "875d6b9fa9fad480d87ab45dea4f6f8ad50a08ec9dda11ede46ee543e1d8fe17"
     },
     {
       "path": "gpmc/NOTICE.md",
