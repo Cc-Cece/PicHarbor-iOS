@@ -48,6 +48,8 @@ struct BackupExecutionPolicy: Codable, Equatable {
     var idleSeconds = 120
     var fileMinutes = 120
     var cloudMinutes = 60
+    var diagnostic: [String: Int] { ["retries": retries, "query_seconds": querySeconds, "commit_seconds": commitSeconds,
+        "idle_seconds": idleSeconds, "file_minutes": fileMinutes, "cloud_minutes": cloudMinutes] }
     var valid: Bool {
         (0...10).contains(retries) && (15...300).contains(querySeconds) && (15...600).contains(commitSeconds) &&
         (30...1800).contains(idleSeconds) && (10...1440).contains(fileMinutes) && (10...240).contains(cloudMinutes)

@@ -54,6 +54,9 @@ enum PipelineProfiles {
     // start conservatively; RAM and runtime pressure always cap a preset.
     private static let performance: Set<String> = ["iPhone16,1", "iPhone16,2", "iPhone17,1", "iPhone17,2", "iPhone17,3", "iPhone17,4", "iPhone17,5"]
     private static let balanced: Set<String> = ["iPhone14,2", "iPhone14,3", "iPhone14,7", "iPhone14,8", "iPhone15,2", "iPhone15,3", "iPhone15,4", "iPhone15,5"]
+    static func profile(_ device: PipelineConditions) -> String {
+        performance.contains(device.machine) ? "performance" : balanced.contains(device.machine) ? "balanced" : "conservative"
+    }
     static func recommended(_ device: PipelineConditions) -> PipelineLimits {
         if performance.contains(device.machine), device.memoryGB >= 8 {
             return PipelineLimits(preparation: 2, lookup: 3, upload: 6, commit: 2, confirmation: 2, bufferMB: 768)

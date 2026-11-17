@@ -95,7 +95,7 @@ final class HarborCoreAdapter {
               result["harbor_core_version"] as? Int == 1,
               result["protocol_version"] as? Int == 2,
               let actions = result["actions"] as? [String],
-              Set(["create_task", "transition", "evaluate_scope", "batch_pause", "batch_resume", "select_proxy", "select_versions"]).isSubset(of: Set(actions)) else {
+              Set(["create_task", "transition", "evaluate_scope", "batch_pause", "batch_resume", "select_proxy", "select_versions", "resolve_pipeline", "resolve_execution"]).isSubset(of: Set(actions)) else {
             available = false
             return false
         }
@@ -415,6 +415,7 @@ final class HarborCoreAdapter {
         for entry in entries {
             guard let id = entry["task_id"] as? String else { continue }
             if let updated = entry["task"] as? [String: Any] {
+                guard (tasks[id]?["revision"] as? Int ?? 0) == (known[id]?["revision"] as? Int ?? 0) else { continue }
                 tasks[id] = updated
                 states[id] = updated["state"] as? String ?? ""
             } else {
@@ -640,13 +641,14 @@ final class HarborCoreAdapter {
     /// upload was skipped, otherwise the upload/commit/confirm states
     /// the native flow has already passed. Applies to every media kind:
     /// photo, video and Live Photo share one core task per job.
-    func finishJob(_ job: BackupJob) async {
-        guard available, let current = tasks[job.id] else { return }
+    @discardableResult
+    func finishJob(_ job: BackupJob) async -> Bool {
+        guard available, job.standardConfirmationPassed, let current = tasks[job.id] else { return false }
         let state = current["state"] as? String ?? ""
-        guard state != "done" else { return }
+        guard state != "done" else { return current["cloud_confirmed"] as? Bool == true }
         let key = job.resources.first?.remoteKey
         let remoteKey = (key?.isEmpty == false) ? key : nil
-        if await transition(jobID: job.id, to: "done", remoteKey: remoteKey) != nil { return }
+        if await transition(jobID: job.id, to: "done", remoteKey: remoteKey) != nil { return true }
         let path: [String]
         switch state {
         case "preparing":
@@ -664,7 +666,8 @@ final class HarborCoreAdapter {
         for step in path {
             let isLast = step == "done"
             guard await transition(jobID: job.id, to: step,
-                                   remoteKey: isLast ? remoteKey : nil) != nil else { break }
+                                   remoteKey: isLast ? remoteKey : nil) != nil else { return false }
         }
+        return tasks[job.id]?["state"] as? String == "done"
     }
 }

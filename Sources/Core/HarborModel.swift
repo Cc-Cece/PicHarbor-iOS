@@ -106,7 +106,8 @@ final class HarborModel: ObservableObject {
     private struct UploadPlan { var resourceID: String; var plan: [String: Any]; var created: TimeInterval; var modified: Date? }
     private var uploadPlans: [String: UploadPlan] = [:]
     private struct PipelineBoundary: Error {}
-    var pipelineLimits: PipelineLimits { PipelineProfiles.effective(settings: settings, device: pipelineDevice) }
+    @Published private(set) var pipelineLimits = PipelineLimits(preparation: 0, lookup: 0, upload: 0, commit: 0, confirmation: 0, bufferMB: 64)
+    private var resolvedExecutionPolicy = BackupExecutionPolicy()
     private func refreshPipelineDevice(force: Bool = false) {
         let now = ProcessInfo.processInfo.systemUptime
         guard force || now - lastDeviceRead >= 10 else { return }
@@ -151,10 +152,10 @@ final class HarborModel: ObservableObject {
             .flatMap(\.resources).filter { $0.transportID != nil }.reduce(Int64(0)) { $0 + $1.size }
         guard free > resource.size + reserved + 64 * 1024 * 1024 else { throw HarborError("DISK_FULL") }
         try checkpoint(value)
-        let task = try transfer.create(job: value, resource: resource, plan: prepared.plan, policy: settings.executionPolicy)
+        let task = try transfer.create(job: value, resource: resource, plan: prepared.plan, policy: resolvedExecutionPolicy)
         value.state = .transferring; value.resources[index].transportID = task.taskIdentifier; value.failureStage = "transfer_creation"
         value.transferStartedAt = Date()
-        value.transferWatch = BackupTransferWatch(taskID: task.taskIdentifier, resourceID: resource.id, policy: settings.executionPolicy)
+        value.transferWatch = BackupTransferWatch(taskID: task.taskIdentifier, resourceID: resource.id, policy: resolvedExecutionPolicy)
         transferWatches[value.id] = value.transferWatch; transferClocks[value.id] = nil
         do { try await persist(value) } catch { task.cancel(); throw error }
         uploadPlans.removeValue(forKey: value.id)
@@ -702,7 +703,7 @@ final class HarborModel: ObservableObject {
                 var budget = job.recovery ?? BackupRecoveryBudget()
                 let seconds = (cloudSeconds[job.id] ?? budget.cloudSeconds) + delta
                 cloudSeconds[job.id] = seconds
-                let exceeded = seconds >= Double(settings.executionPolicy.cloudMinutes * 60)
+                let exceeded = seconds >= Double(resolvedExecutionPolicy.cloudMinutes * 60)
                 if exceeded || Int(seconds / 60) > Int(budget.cloudSeconds / 60) {
                     budget.cloudSeconds = seconds; job.recovery = budget
                     if exceeded {
@@ -717,7 +718,7 @@ final class HarborModel: ObservableObject {
             liveTransfers.insert(job.id)
             var clock = transferClocks[job.id] ?? BackupObservedClock()
             let delta = clock.tick(now: now, running: true); transferClocks[job.id] = clock
-            var watch = transferWatches[job.id] ?? job.transferWatch ?? BackupTransferWatch(taskID: id, resourceID: resource.id, policy: settings.executionPolicy)
+            var watch = transferWatches[job.id] ?? job.transferWatch ?? BackupTransferWatch(taskID: id, resourceID: resource.id, policy: resolvedExecutionPolicy)
             guard watch.taskID == id else { transferWatches[job.id] = nil; continue }
             let code = watch.tick(delta, size: resource.size); transferWatches[job.id] = watch
             if let code {
@@ -763,8 +764,31 @@ final class HarborModel: ObservableObject {
             lastStagingSweep = Date(); await collectFinishedStaging()
         }
         guard !switching, !updatingNetwork, !storageFailed, !recoveryRequired else { return }
+        let execution = await coreAdapter.dispatch(action: "resolve_execution", payload: ["overrides": settings.executionOverrides?.diagnostic as Any? ?? NSNull()])
+        guard coreAdapter.available, execution["ok"] as? Bool == true, let policy = execution["policy"] as? [String: Int],
+              let retries = policy["retries"], let query = policy["query_seconds"], let commitLimit = policy["commit_seconds"],
+              let idle = policy["idle_seconds"], let file = policy["file_minutes"], let cloud = policy["cloud_minutes"] else {
+            notice = L10n.text("共享核心暂不可用，请稍后重试。")
+            return
+        }
+        resolvedExecutionPolicy = BackupExecutionPolicy(retries: retries, querySeconds: query, commitSeconds: commitLimit, idleSeconds: idle, fileMinutes: file, cloudMinutes: cloud)
         await monitorBudgets()
         refreshPipelineDevice()
+        let device = pipelineDevice
+        let decision = await coreAdapter.dispatch(action: "resolve_pipeline", payload: [
+            "mode": (settings.pipelineMode ?? .automatic).rawValue,
+            "limits": settings.pipelineOverrides?.diagnostic ?? [:],
+            "device": ["profile": PipelineProfiles.profile(device), "memory_gb": device.memoryGB,
+                "available_mb": Int(device.availableMemory / (1024 * 1024)), "processors": device.processors,
+                "thermal": device.thermal, "low_power": device.lowPower, "memory_warning": device.memoryWarning,
+                "free_disk_mb": Int(max(0, device.freeDisk) / (1024 * 1024))]])
+        guard coreAdapter.available, decision["ok"] as? Bool == true, let values = decision["limits"] as? [String: Int],
+              let preparation = values["preparation"], let lookup = values["lookup"], let upload = values["upload"],
+              let commit = values["commit"], let confirmation = values["confirmation"], let buffer = values["buffer_mb"] else {
+            notice = L10n.text("共享核心暂不可用，请稍后重试。")
+            return
+        }
+        pipelineLimits = PipelineLimits(preparation: preparation, lookup: lookup, upload: upload, commit: commit, confirmation: confirmation, bufferMB: buffer)
         let limits = pipelineLimits
         let buffered = PipelineScheduler.bufferedBytes(jobs, account: account)
         bufferBudget.configure(limit: limits.bufferBytes, base: buffered)
@@ -785,7 +809,7 @@ final class HarborModel: ObservableObject {
                 continue
             }
             workers.insert(id); workerStages[id] = candidate.stage
-            let lease = BackupExecutionLease(stage: candidate.stage, policy: settings.executionPolicy)
+            let lease = BackupExecutionLease(stage: candidate.stage, policy: resolvedExecutionPolicy)
             executionLeases[id] = lease
             if candidate.stage == .preparation { bufferBudget.begin(id) }
             Task { [weak self] in
@@ -880,7 +904,7 @@ final class HarborModel: ObservableObject {
             job.failureStage = "proxy_route"; job.proxyFailures = []
             if job.error == "JOB_PAUSED" || job.error == "ACCOUNT_CHANGED" { return }
             if job.error == "WAITING_NETWORK" { job.state = .waiting; job.retryAt = nil }
-            else { job.retryFailure(job.error, policy: BackupExecutionContext.lease?.policy ?? settings.executionPolicy) }
+            else { job.retryFailure(job.error, policy: BackupExecutionContext.lease?.policy ?? resolvedExecutionPolicy) }
             try? await persist(job, recoveryBudget: job.recovery)
         }
     }
@@ -1143,7 +1167,7 @@ final class HarborModel: ObservableObject {
                 if let resource = job.resources.first {
                     _ = await coreAdapter.ensureTask(job: job, resource: resource)
                 }
-                await coreAdapter.finishJob(job)
+                guard await coreAdapter.finishJob(job) else { throw HarborError("ENGINE_ERROR") }
                 job.cleanupEligible = await coreAdapter.decideCleanupEligibility(job: job)
             }
             job.state = .completed; job.completedAt = Date(); job.progress = 1; job.error = ""; job.retryAt = nil
@@ -1183,7 +1207,7 @@ final class HarborModel: ObservableObject {
             }
             else if code == "REMOTE_NOT_VISIBLE" { job.waitForConfirmation() }
             else if ["NETWORK_ERROR", "UPLOAD_EXPIRED", "PREVIOUS_BACKUP_NOT_VISIBLE", "STAGE_TIMEOUT", "NO_PROGRESS_TIMEOUT", "PROXY_UNAVAILABLE"].contains(code) {
-                job.retryFailure(code, policy: BackupExecutionContext.lease?.policy ?? settings.executionPolicy)
+                job.retryFailure(code, policy: BackupExecutionContext.lease?.policy ?? resolvedExecutionPolicy)
             } else { job.state = ["PAIR_PROTOCOL_UNVERIFIED", "PAIR_COMMIT_REJECTED", "SOURCE_CHANGED", "SOURCE_RECOVERY_MISMATCH", "SOURCE_SNAPSHOT_LOCKED", "PHOTO_PERMISSION", "LOGIN_REQUIRED"].contains(code) ? .attention : .failed }
             // Unified core: mirror the failure / pause / network outcome.
             // Best effort; an illegal core edge changes nothing.
@@ -1458,7 +1482,7 @@ final class HarborModel: ObservableObject {
         }
         do {
             let paused = job.state == .paused
-            let attemptPolicy = job.transferWatch?.policy ?? settings.executionPolicy
+            let attemptPolicy = job.transferWatch?.policy ?? resolvedExecutionPolicy
             if job.state == .cancelled {
                 try? FileManager.default.removeItem(atPath: receipt.responsePath)
                 transfer.acknowledge(receipt); return

@@ -129,8 +129,12 @@
       "sha256": "1a929e4a671dbc592b7bce18bbaea6e21e4e1ba2f935218c33c9f3d7b24ea647"
     },
     {
+      "path": "gpmc/execution_policy.py",
+      "sha256": "053289f21ad2b8fa68bd04e49f8dd0f4cdf84b1fec0d146cf2ee613d3369657b"
+    },
+    {
       "path": "gpmc/harbor_core.py",
-      "sha256": "b3c31e5bb75c9e418ea1cd199af203b7beffba9751997686cd8ae15db13f23f1"
+      "sha256": "ac3dc36c5b2b4d830380787ae76f91161ec89dedf4b53342d4e84fe362b6f1e2"
     },
     {
       "path": "gpmc/hash_handler.py",
@@ -171,6 +175,10 @@
     {
       "path": "gpmc/NOTICE.md",
       "sha256": "a6a186cd6229d0cf28d24587676aa7c6016e04e4244791bf35eafe2048a38d9d"
+    },
+    {
+      "path": "gpmc/pipeline_policy.py",
+      "sha256": "eebcd315af4a0acf4865f97226c614d56475cf1af791ee26beda065db0906d89"
     },
     {
       "path": "gpmc/protocol.py",
