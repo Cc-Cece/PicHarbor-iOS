@@ -158,7 +158,7 @@
     },
     {
       "path": "gpmc/motion_photo.py",
-      "sha256": "2e9fa76d0f3743d688e075d9eedb402d61d310aa0bfe2afd232d770fd23e9211"
+      "sha256": "bc2fb7e1366780b9c5e56667a71126f73e2d2b6a35991d4222ec6231462ee418"
     },
     {
       "path": "gpmc/NOTICE.md",
