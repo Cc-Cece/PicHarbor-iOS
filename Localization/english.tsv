@@ -874,3 +874,5 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 准备导出|Prepare export
 导出失败，请重试。|Export failed. Please try again.
 日志默认持续记录，保留 14 天或 64 MiB。导出包含 JSONL 和可读文本，不包含账号、凭据或媒体内容。|Logs are always recorded and retained for 14 days or 64 MiB. Exports contain JSONL and readable text, with no accounts, credentials or media.
+共享核心暂不可用，请稍后重试。|The shared core is unavailable. Please try again later.
+图库暂未提供所选版本，请重新选择版本或稍后重试。|The selected version is not available from the library. Choose another version or try again later.

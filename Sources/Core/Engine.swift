@@ -30,6 +30,7 @@ struct HarborError: LocalizedError {
         case "RUNTIME_UNAVAILABLE": return L10n.text("Python 运行环境不可用，请导出诊断报告。")
         case "KEYCHAIN_ERROR": return L10n.text("无法访问安全凭据存储。")
         case "PHOTO_PERMISSION": return L10n.text("请允许访问所选照片，然后重新选择。")
+        case "ORIGINAL_VERSION_UNAVAILABLE", "CURRENT_VERSION_UNAVAILABLE", "VERSION_RESOURCE_MISSING": return L10n.text("图库暂未提供所选版本，请重新选择版本或稍后重试。")
         case "UNSUPPORTED_MEDIA": return L10n.text("暂不支持此媒体格式，原件会保留。")
         case "PAIR_PROTOCOL_UNVERIFIED": return L10n.text("苹果原始资源的云端配对协议尚未验证；原件已保留，不会按两个普通文件上传。")
         case "PAIR_CONFIRMATION_PENDING": return L10n.text("照片与视频的关联请求已提交，正在等待云端确认同一动态项目。继续／重试只核验关联，不会重复提交。")

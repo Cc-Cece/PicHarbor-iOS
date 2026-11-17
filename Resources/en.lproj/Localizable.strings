@@ -159,6 +159,7 @@
 "全部来源" = "All sources";
 "全部现存日志" = "All retained logs";
 "公开收录的启动链接，待真机确认" = "Publicly listed launch link; device test needed";
+"共享核心暂不可用，请稍后重试。" = "The shared core is unavailable. Please try again later.";
 "关于" = "About";
 "关于 PicHarbor" = "About PicHarbor";
 "关联照片与视频" = "Link photo and video";
@@ -237,6 +238,7 @@
 "启动应用" = "Launch app";
 "启用 iCloud 照片时，删除会同步到同一图库的其他设备。系统删除授权由你决定。" = "With iCloud Photos, deletions sync to other devices in the same library. You decide whether to allow deletion.";
 "回忆有处安放" = "A home for your memories";
+"图库暂未提供所选版本，请重新选择版本或稍后重试。" = "The selected version is not available from the library. Choose another version or try again later.";
 "图片中未找到二维码，请选择清晰、完整的二维码图片。" = "No QR code found. Choose a clear image showing the entire code.";
 "在 App Store 查看" = "View in App Store";
 "在 Google 相册中操作" = "In Google Photos";
