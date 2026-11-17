@@ -1,5 +1,12 @@
 import Foundation
 
+struct ProxyRouteDecision {
+    var node: String
+    var direct: Bool
+    var waiting: Bool
+}
+typealias ProxyRouteSelector = @MainActor (ProxyPolicy, [String], [String: ProxyNodeHealth], String?, [String]) async throws -> ProxyRouteDecision
+
 actor ProxyProbeLimiter {
     private var active = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []

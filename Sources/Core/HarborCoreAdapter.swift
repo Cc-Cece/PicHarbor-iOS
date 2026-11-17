@@ -95,7 +95,7 @@ final class HarborCoreAdapter {
               result["harbor_core_version"] as? Int == 1,
               result["protocol_version"] as? Int == 2,
               let actions = result["actions"] as? [String],
-              Set(["create_task", "transition", "evaluate_scope", "batch_pause", "batch_resume"]).isSubset(of: Set(actions)) else {
+              Set(["create_task", "transition", "evaluate_scope", "batch_pause", "batch_resume", "select_proxy"]).isSubset(of: Set(actions)) else {
             available = false
             return false
         }
@@ -502,10 +502,10 @@ final class HarborCoreAdapter {
     /// Returns true (compatible) / false (incompatible — caller must
     /// refuse the session), or nil when the core does not know
     /// `livelink_handshake` yet (caller keeps the local hello flow).
-    func livelinkHandshake() async -> Bool? {
+    func livelinkHandshake(capabilities: [String]) async -> Bool? {
         guard available else { return nil }
         let result = await dispatch(action: "livelink_handshake", payload: [
-            "capabilities": ["scope2", "catalog2"],
+            "capabilities": capabilities,
         ])
         if Self.isCoreUnavailable(result) { return nil }
         if let compatible = result["compatible"] as? Bool { return compatible }
@@ -527,7 +527,7 @@ final class HarborCoreAdapter {
         let result = await dispatch(action: "livelink_scope", payload: ["scope": scope, "asset": asset])
         if Self.isCoreUnavailable(result) { return nil }
         guard result["ok"] as? Bool == true else { return (false, false, false) }
-        let inScope = (result["in_scope"] as? Bool) ?? true
+        let inScope = (result["in_scope"] as? Bool) ?? false
         let requiresConfirmation = (result["requires_confirmation"] as? Bool) ?? true
         return (inScope, requiresConfirmation, true)
     }

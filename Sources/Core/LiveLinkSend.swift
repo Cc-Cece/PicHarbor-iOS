@@ -273,7 +273,7 @@ final class LiveLinkController: ObservableObject {
                 for group in groups { for id in group.ids { albumIDsByAsset[id, default: []].append(group.album.id) } }
                 let assetDict = LiveLinkScope.assetDictionary(for: first, albumIDs: albumIDsByAsset[first.localIdentifier] ?? [], size: nil)
                 let scopeCheck = await HarborModel.shared.coreAdapter.livelinkScope(scope: criteria.scopeDictionary, asset: assetDict)
-                if scopeCheck?.scopeValid == false {
+                if scopeCheck?.scopeValid != true {
                     message = L10n.text("不支持此备份范围，请更新 PicHarbor。")
                     try? await http.reject(connection: link, offerId: offerId)
                     return
@@ -446,7 +446,7 @@ final class LiveLinkController: ObservableObject {
         // scope2/catalog2 capabilities announced in hello. A core
         // "incompatible" refuses the session; an unknown action (nil)
         // keeps the local hello flow.
-        if await HarborModel.shared.coreAdapter.livelinkHandshake() == false {
+        if !HarborModel.shared.coreAdapter.available {
             throw LiveLinkFailure.rejected
         }
         connection = link
@@ -483,6 +483,7 @@ final class LiveLinkController: ObservableObject {
             directoryReady: report.directoryReady,
             unreadable: report.unreadable,
             name: LiveLinkDevice.name())
+        guard await HarborModel.shared.coreAdapter.livelinkHandshake(capabilities: result.capabilities) == true else { throw LiveLinkFailure.rejected }
         if let deliver = result.deliver, LiveLinkIdentityFile.write(deliver) {
             _ = try? await http.hello(connection: link, archiveId: deliver, directoryReady: true, unreadable: false, name: LiveLinkDevice.name())
         }
@@ -495,8 +496,8 @@ final class LiveLinkController: ObservableObject {
                 let criteria = try LiveLinkScope.parse(request.scope)
                 let groups = LiveLinkScope.groups()
                 let all = await Self.assets(matching: "all")
-                let selected = criteria.select(all, groups: groups)
                 let known = LiveLinkScope.knownSizes(all)
+                let selected = try await Self.sharedMatching(all, criteria: criteria, groups: groups, known: known)
                 // Shared-core scope check for the computer-requested
                 // scope, judged on a real asset (the core needs an
                 // asset to apply album/date/type rules). A core scope
@@ -511,13 +512,14 @@ final class LiveLinkController: ObservableObject {
                     for group in groups { for id in group.ids { albumIDsByAsset[id, default: []].append(group.album.id) } }
                     let assetDict = LiveLinkScope.assetDictionary(for: first, albumIDs: albumIDsByAsset[first.localIdentifier] ?? [], size: known[first.localIdentifier])
                     let scopeCheck = await HarborModel.shared.coreAdapter.livelinkScope(scope: criteria.scopeDictionary, asset: assetDict)
-                    if scopeCheck?.scopeValid == false { throw LiveLinkFailure.rejected }
+                    if scopeCheck?.scopeValid != true { throw LiveLinkFailure.rejected }
                 }
                 let albums = groups.map { group -> LiveLinkAlbum in
                     var value = group.album; value.bytes = group.ids.compactMap { known[$0] }.reduce(0, +); return value
                 }
                 var withoutDates = criteria; withoutDates.dateEnabled = false
-                let unknownDate = criteria.dateEnabled ? withoutDates.select(all, groups: groups).filter { $0.creationDate == nil && $0.modificationDate == nil }.count : 0
+                let withoutDateAssets = criteria.dateEnabled ? (try await Self.sharedMatching(all, criteria: withoutDates, groups: groups, known: known)) : []
+                let unknownDate = withoutDateAssets.filter { $0.creationDate == nil && $0.modificationDate == nil }.count
                 let report = LiveLinkCatalogReport(revision: request.revision, timeZone: TimeZone.current.identifier,
                     albums: albums, count: selected.count, bytes: selected.compactMap { known[$0.localIdentifier] }.reduce(0, +), unknownSize: selected.filter { known[$0.localIdentifier] == nil }.count, unknownDate: unknownDate)
                 try await http.reportCatalog(connection: link, report: report)
@@ -561,12 +563,25 @@ final class LiveLinkController: ObservableObject {
             PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in values.append(asset) }
             return values
         }.value
-        return matching(fetched, scope: scope)
+        guard let criteria = try? LiveLinkScope.parse(scope) else { return [] }
+        return (try? await sharedMatching(fetched, criteria: criteria, groups: LiveLinkScope.groups(), known: LiveLinkScope.knownSizes(fetched))) ?? []
     }
 
-    static func matching(_ assets: [PHAsset], scope: String) -> [PHAsset] {
-        guard let criteria = try? LiveLinkScope.parse(scope) else { return [] }
-        return criteria.select(assets, groups: criteria.mode == "default" || criteria.mode == "advanced" ? LiveLinkScope.groups() : [])
+    private static func sharedMatching(_ assets: [PHAsset], criteria: LiveLinkScope, groups: [(album: LiveLinkAlbum, ids: Set<String>)], known: [String: Int64]) async throws -> [PHAsset] {
+        let adapter = HarborModel.shared.coreAdapter
+        guard adapter.available else { throw LiveLinkFailure.rejected }
+        var scope = criteria.scopeDictionary
+        if criteria.mode == "default" { scope["default_albums"] = groups.filter { $0.album.isDefault }.map { $0.album.id } }
+        var memberships: [String: [String]] = [:]
+        for group in groups { for id in group.ids { memberships[id, default: []].append(group.album.id) } }
+        var result: [PHAsset] = []
+        for asset in assets {
+            let value = LiveLinkScope.assetDictionary(for: asset, albumIDs: memberships[asset.localIdentifier] ?? [], size: known[asset.localIdentifier])
+            guard let decision = await adapter.livelinkScope(scope: scope, asset: value), decision.scopeValid else { throw LiveLinkFailure.rejected }
+            if decision.inScope { result.append(asset) }
+            if result.count % QueueScaling.chunkSize == 0 { await Task.yield() }
+        }
+        return result
     }
 
     private func transfer(_ link: LiveLinkConnection, assets: [PHAsset], allowCloud: Bool) async throws {

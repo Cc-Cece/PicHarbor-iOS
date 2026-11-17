@@ -320,8 +320,8 @@ final class HarborModel: ObservableObject {
             // proceeds on the native checks alone. No credentials are
             // ever sent to the core (see HarborCoreAdapter.validateProxy).
             ProxyManager.shared.coreValidator = { [weak self] preferences, primaryPort in
-                guard let self else { return nil }
-                return await self.coreAdapter.validateProxy(preferences: preferences, primaryPort: primaryPort)
+                guard let self else { return false }
+                return await self.coreAdapter.validateProxy(preferences: preferences, primaryPort: primaryPort) ?? false
             }
             let capabilities = try await engine.invoke("capabilities")
             applePairAvailable = capabilities["apple_pair"] as? Bool == true

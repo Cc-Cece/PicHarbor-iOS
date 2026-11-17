@@ -16,7 +16,7 @@ final class ProxySelectionTests: XCTestCase {
         let suite = "ProxyTimeout." + UUID().uuidString, defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         var stored: Data?
-        let manager = ProxyManager(read: { stored }, save: { stored = $0 }, start: { _ in true }, stop: {}, defaults: defaults, latency: { _ in 10 })
+        let manager = ProxyManager(read: { stored }, save: { stored = $0 }, start: { _ in true }, stop: {}, defaults: defaults, latency: { _ in 10 }, selection: fixtureSelection)
         try await manager.importText(#"{"proxies":[{"name":"a","type":"socks5","server":"127.0.0.1","port":9},{"name":"b","type":"socks5","server":"127.0.0.1","port":9}]}"#)
         manager.preferences.enabled = true; manager.preferences.selection = .automatic
         _ = try await manager.route()
@@ -69,7 +69,7 @@ final class ProxySelectionTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         var stored: Data?
         let counter = ProbeCounter()
-        let manager = ProxyManager(read: { stored }, save: { stored = $0 }, start: { _ in true }, stop: {}, defaults: defaults, latency: { await counter.measure($0) })
+        let manager = ProxyManager(read: { stored }, save: { stored = $0 }, start: { _ in true }, stop: {}, defaults: defaults, latency: { await counter.measure($0) }, selection: fixtureSelection)
         let nodes = (0..<6).map { ["name": "n\($0)", "type": "socks5", "server": "127.0.0.1", "port": 9] as [String: Any] }
         let input = try JSONSerialization.data(withJSONObject: ["proxies": nodes])
         try await manager.importText(String(decoding: input, as: UTF8.self))
@@ -105,7 +105,7 @@ final class ProxySelectionTests: XCTestCase {
         let suite = "ProxySelection." + UUID().uuidString, defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         var stored: Data?
-        let manager = ProxyManager(read: { stored }, save: { stored = $0 }, start: { _ in true }, stop: {}, defaults: defaults, latency: { _ in nil })
+        let manager = ProxyManager(read: { stored }, save: { stored = $0 }, start: { _ in true }, stop: {}, defaults: defaults, latency: { _ in nil }, selection: fixtureSelection)
         let input = #"{"proxies":[{"name":"a","type":"socks5","server":"127.0.0.1","port":9}]}"#
         try await manager.importText(input)
         manager.preferences.enabled = true; manager.preferences.selection = .automatic
@@ -114,4 +114,15 @@ final class ProxySelectionTests: XCTestCase {
         XCTAssertEqual(direct.0, -1)
         XCTAssertEqual(ProxyPolicy.resolve(manager.preferences).exhaustion, .wait)
     }
+}
+
+@MainActor private func fixtureSelection(_ policy: ProxyPolicy, names: [String], health: [String: ProxyNodeHealth], preferred: String?, failures: [String]) async throws -> ProxyRouteDecision {
+    let candidates: [String]
+    if policy.selection == .automatic {
+        candidates = ProxyNodeRanking.ordered(names: names, health: health, preferred: preferred, failures: failures, now: Date())
+    } else {
+        candidates = ([policy.primary] + policy.backups).filter { names.contains($0) && !failures.contains($0) && !(health[$0]?.cooling(at: Date()) ?? false) }
+    }
+    if let name = candidates.first { return ProxyRouteDecision(node: name, direct: false, waiting: false) }
+    return ProxyRouteDecision(node: "", direct: policy.exhaustion == .direct, waiting: policy.exhaustion != .direct)
 }

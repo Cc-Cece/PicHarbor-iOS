@@ -130,7 +130,7 @@
     },
     {
       "path": "gpmc/harbor_core.py",
-      "sha256": "d3b21866077d9b635459a0f1466772bc57db47ee0d4aad754d6ffe505365c990"
+      "sha256": "178842f326c96ebd27477e7cb7bbe84a70e9ec529d6da2ffcd0e4ac44bcd0759"
     },
     {
       "path": "gpmc/hash_handler.py",
@@ -146,7 +146,7 @@
     },
     {
       "path": "gpmc/media_identity.py",
-      "sha256": "04502f4848a8f76c4d56b759e96b5e4165f4b97c94aa89dc25ea620c4b25baa0"
+      "sha256": "503440f1733581a9e4f242de4f607581c42b3f596f76847d3f131969e3c79832"
     },
     {
       "path": "gpmc/message_types.py",
@@ -155,6 +155,10 @@
     {
       "path": "gpmc/models.py",
       "sha256": "f3e15d30b0bd9add20169d6df07192b82099521d9ea93c17f4399bbb2ba1d7e8"
+    },
+    {
+      "path": "gpmc/motion_photo.py",
+      "sha256": "2e9fa76d0f3743d688e075d9eedb402d61d310aa0bfe2afd232d770fd23e9211"
     },
     {
       "path": "gpmc/NOTICE.md",

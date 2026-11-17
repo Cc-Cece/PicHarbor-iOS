@@ -89,3 +89,16 @@ def apple_id(path,video=False):
             return apple_video_id(stream) if video else apple_photo_id(stream.read(1024*1024))
     except (OSError,ValueError,struct.error):
         return None
+
+def has_still_image_time(path):
+    """Only permit native sample-time extraction if the movie declares Apple's track."""
+    try:
+        with open(path,'rb') as stream:
+            stream.seek(0,2);length=stream.tell()
+            for kind,start,end in _atoms(stream,0,length):
+                if kind==b'moov' and end-start<=16*1024*1024:
+                    stream.seek(start)
+                    return b'com.apple.quicktime.still-image-time' in stream.read(end-start)
+    except (OSError,ValueError,struct.error):
+        pass
+    return False

@@ -218,13 +218,13 @@ final class LiveLinkHTTP: @unchecked Sendable {
         return try await pair(host: target.host, port: target.port, fingerprint: fingerprint, code: target.code, identity: identity, deviceName: deviceName)
     }
 
-    func hello(connection: LiveLinkConnection, archiveId: String?, directoryReady: Bool, unreadable: Bool, name: String) async throws -> (deliver: String?, conflict: Bool) {
+    func hello(connection: LiveLinkConnection, archiveId: String?, directoryReady: Bool, unreadable: Bool, name: String) async throws -> (deliver: String?, conflict: Bool, capabilities: [String]) {
         let body = try JSONEncoder().encode(LiveLinkHelloBody(archiveId: archiveId, name: name, platform: "ios", directory: directoryReady, unreadable: unreadable))
         let (status, data, _) = try await send(method: "POST", path: "/v1/hello", host: connection.host, port: connection.port,
                                                pin: .full(connection.fingerprint), token: connection.token, body: body,
                                                contentType: "application/json", timeout: 20)
         guard status == 200, let decoded = try? JSONDecoder().decode(LiveLinkHelloResponse.self, from: data) else { throw LiveLinkFailure.rejected }
-        return (decoded.deliver, decoded.conflict == true)
+        return (decoded.deliver, decoded.conflict == true, decoded.capabilities ?? [])
     }
 
     func catalogRequest(connection: LiveLinkConnection) async throws -> LiveLinkCatalogRequest {
@@ -539,6 +539,7 @@ private struct LiveLinkHelloResponse: Codable {
     var archiveId: String?
     var deliver: String?
     var conflict: Bool?
+    var capabilities: [String]?
 }
 
 private struct LiveLinkOfferBody: Codable {

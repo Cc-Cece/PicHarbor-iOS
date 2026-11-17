@@ -116,6 +116,7 @@ final class ProxyManager: ObservableObject {
     private let testStop: (() -> Void)?
     private let defaults: UserDefaults
     private let testLatency: ((Int) async -> Int?)?
+    private let selectRoute: ProxyRouteSelector
     /// Shared-core proxy validation, installed by `HarborModel.boot()`.
     /// Called with the explicit proxy parameters plus the primary
     /// node's loopback port (the endpoint the traffic goes through) —
@@ -131,10 +132,11 @@ final class ProxyManager: ObservableObject {
     init(read: @escaping () throws -> Data? = ProxySecretStore.read,
          save: @escaping (Data) throws -> Void = ProxySecretStore.save,
          start: ((String) -> Bool)? = nil, stop: (() -> Void)? = nil, defaults: UserDefaults = .standard,
-         latency: ((Int) async -> Int?)? = nil) {
+         latency: ((Int) async -> Int?)? = nil, selection: ProxyRouteSelector? = nil) {
         readStore = read; writeStore = save; testStart = start; testStop = stop
         self.defaults = defaults
         testLatency = latency
+        selectRoute = selection ?? Self.sharedDecision
         preferences = defaults.data(forKey: "picharbor.proxy.preferences.v1").flatMap { try? JSONDecoder().decode(ProxyPreferences.self, from: $0) } ?? ProxyPreferences()
         if let data = try? readStore(), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             if let stored = object["library"], let encoded = try? JSONSerialization.data(withJSONObject: stored),
@@ -324,7 +326,7 @@ final class ProxyManager: ObservableObject {
             // "invalid" refuses the route; an unknown action (nil)
             // keeps the native checks.
             if let validator = coreValidator, preferences.enabled {
-                let primaryPort = nodes.firstIndex(where: { ($0["name"] as? String) == preferences.primary }).map { 24500 + $0 }
+                let primaryPort = (nodes.firstIndex(where: { ($0["name"] as? String) == preferences.primary }) ?? nodes.indices.first).map { 24500 + $0 }
                 if await validator(preferences, primaryPort) == false { throw HarborError("PROXY_UNAVAILABLE") }
             }
             let (configuration, newPorts) = try ProxyConfiguration.runtime(nodes)
@@ -335,6 +337,23 @@ final class ProxyManager: ObservableObject {
         starting = operation; defer { starting = nil }
         try await operation.value
     }
+    private static func sharedDecision(_ policy: ProxyPolicy, names: [String], health: [String: ProxyNodeHealth], preferred: String?, failures: [String]) async throws -> ProxyRouteDecision {
+        let adapter = HarborModel.shared.coreAdapter
+        guard adapter.available else { throw HarborError("PROXY_UNAVAILABLE") }
+        let now = Date()
+        let nodes: [[String: Any]] = names.map { name in
+            let value = health[name]
+            let cooling = value?.cooling(at: now) ?? false
+            let retry = value?.coolingUntil.map { $0 <= now } ?? false
+            return ["name": name, "healthy": !failures.contains(name) && !cooling && (value?.milliseconds != nil || value?.measuredAt == nil || retry),
+                    "cooling": cooling, "latency": value?.milliseconds as Any? ?? NSNull()]
+        }
+        let settings: [String: Any] = ["selection": policy.selection.rawValue, "primary": policy.primary,
+            "backups": policy.backups, "exhaustion": policy.exhaustion.rawValue]
+        let result = await adapter.dispatch(action: "select_proxy", payload: ["nodes": nodes, "policy": settings, "current": preferred ?? ""])
+        guard result["ok"] as? Bool == true else { throw HarborError("PROXY_UNAVAILABLE") }
+        return ProxyRouteDecision(node: result["node"] as? String ?? "", direct: result["direct"] as? Bool == true, waiting: result["waiting"] as? Bool == true)
+    }
     func route(override legacy: ProxyFallback? = nil, failures: [String] = [], policy custom: ProxyPolicy? = nil, preferred: String? = nil) async throws -> (Int, String) {
         guard preferences.enabled else { return (-1, "") }
         guard !busy else { throw HarborError("PROXY_UNAVAILABLE") }
@@ -342,25 +361,19 @@ final class ProxyManager: ObservableObject {
         let policy = ProxyPolicy.resolve(preferences, legacy: legacy, override: custom)
         let token = generation
         let sticky = preferred ?? (custom == nil && legacy == nil ? automaticNode : nil)
-        var candidates: [String]
-        if policy.selection == .automatic {
-            if let sticky, names.contains(sticky), !failures.contains(sticky),
-               health[sticky]?.healthy(at: Date()) != true, !(health[sticky]?.cooling(at: Date()) ?? false),
-               let port = ports[sticky] { _ = await measureNode(sticky, port: port) }
-            var ranked = ProxyNodeRanking.ordered(names: names, health: health, preferred: sticky, failures: failures, now: Date())
-            if !ranked.contains(where: { health[$0]?.healthy(at: Date()) == true }) {
-                try await testAllNodes(force: false)
-                ranked = ProxyNodeRanking.ordered(names: names, health: health, preferred: sticky, failures: failures, now: Date())
-            }
-            candidates = ranked
-        } else {
-            var seen = Set<String>()
-            candidates = ([policy.primary] + policy.backups).filter { names.contains($0) && seen.insert($0).inserted && !failures.contains($0) && !(health[$0]?.cooling(at: Date()) ?? false) }
-        }
-        for name in candidates {
+        if policy.selection == .automatic { try await testAllNodes(force: false) }
+        var rejected = failures
+        for _ in 0...names.count {
             try Task.checkCancellation()
             guard token == generation, preferences.enabled, !busy else { throw HarborError("PROXY_UNAVAILABLE") }
-            guard let port = ports[name] else { continue }
+            let decision = try await selectRoute(policy, names, health, sticky, rejected)
+            if decision.waiting { throw HarborError("PROXY_UNAVAILABLE") }
+            if decision.direct {
+                guard policy.exhaustion == .direct, !rejected.contains("") else { throw HarborError("PROXY_UNAVAILABLE") }
+                currentNode = ""; currentDirect = true; return (-1, "")
+            }
+            let name = decision.node
+            guard names.contains(name), !rejected.contains(name), let port = ports[name] else { throw HarborError("PROXY_UNAVAILABLE") }
             let healthy = health[name]?.healthy(at: Date()) == true
             let available = healthy ? true : await measureNode(name, port: port) != nil
             guard token == generation, preferences.enabled, !busy else { throw HarborError("PROXY_UNAVAILABLE") }
@@ -369,10 +382,8 @@ final class ProxyManager: ObservableObject {
                 if policy.selection == .automatic && custom == nil && legacy == nil { automaticNode = name }
                 return (port, name)
             }
+            rejected.append(name)
         }
-        try Task.checkCancellation()
-        guard token == generation else { throw HarborError("PROXY_UNAVAILABLE") }
-        if policy.exhaustion == .direct && !failures.contains("") { currentNode = ""; currentDirect = true; return (-1, "") }
         throw HarborError("PROXY_UNAVAILABLE")
     }
     func recordOutcome(node: String?, errorCode: String?, scope: String? = nil) {

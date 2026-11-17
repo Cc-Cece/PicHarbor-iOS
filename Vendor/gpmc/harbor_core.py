@@ -152,7 +152,7 @@ _ALLOWED = {
     "waiting_confirmation": {"confirming", "done", "paused", "cancelled",
                              "failed", "interrupted"},
     "paused": {"queued", "cancelled", "failed"},
-    "failed": {"queued"},
+    "failed": {"queued", "cancelled"},
     "interrupted": {"queued", "cancelled", "failed"},
     "done": set(),
     "cancelled": set(),
@@ -1278,7 +1278,7 @@ def migrate_legacy(records):
 _KNOWN_TASK_FIELDS = frozenset({
     "task_id", "asset", "state", "error_code", "attempts",
     "idempotency_key", "remote_key", "cloud_confirmed", "created_at",
-    "updated_at", "history", "settings", "credentials",
+    "updated_at", "history", "settings", "credentials", "revision",
     "credentials_migrated", "unknown_fields", "redacted_fields",
 })
 

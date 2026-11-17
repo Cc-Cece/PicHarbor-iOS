@@ -81,7 +81,7 @@ struct LiveLinkScope: Codable {
             "albums": albumIDs,
         ]
         if let created = asset.creationDate ?? asset.modificationDate {
-            value["created_at"] = Int(created.timeIntervalSince1970)
+            value["created_at"] = Self.formatter.string(from: created)
         }
         if asset.mediaType == .video { value["duration_seconds"] = asset.duration }
         if let size { value["size"] = size }

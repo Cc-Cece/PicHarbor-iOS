@@ -34,7 +34,9 @@ final class MobileDiagnostics: @unchecked Sendable {
                 let files = logs()
                 let last = files.last
                 let size = last.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } ?? 0
-                let target = last != nil && size < 512 * 1024 ? last! : directory.appendingPathComponent("\(Int64(now.timeIntervalSince1970 * 1000))-\(UUID().uuidString).jsonl")
+                let lastTime = last.flatMap { Double($0.lastPathComponent.split(separator: "-").first ?? "") }.map { $0 / 1000 } ?? 0
+                let sameDay = Int(lastTime / 86400) == Int(now.timeIntervalSince1970 / 86400)
+                let target = last != nil && sameDay && size < 512 * 1024 ? last! : directory.appendingPathComponent("\(Int64(now.timeIntervalSince1970 * 1000))-\(UUID().uuidString).jsonl")
                 if !FileManager.default.fileExists(atPath: target.path) { FileManager.default.createFile(atPath: target.path, contents: nil) }
                 let handle = try FileHandle(forWritingTo: target); defer { try? handle.close() }
                 try handle.seekToEnd()
@@ -52,7 +54,8 @@ final class MobileDiagnostics: @unchecked Sendable {
         var remaining: [(URL, Int)] = []
         for file in logs() {
             let metadata = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-            if now.timeIntervalSince(metadata?.contentModificationDate ?? .distantPast) >= retention { try? FileManager.default.removeItem(at: file) }
+            let created = Double(file.lastPathComponent.split(separator: "-").first ?? "").map { Date(timeIntervalSince1970: $0 / 1000) } ?? .distantPast
+            if now.timeIntervalSince(created) >= retention { try? FileManager.default.removeItem(at: file) }
             else { remaining.append((file, metadata?.fileSize ?? 0)) }
         }
         var total = remaining.reduce(0) { $0 + $1.1 }
