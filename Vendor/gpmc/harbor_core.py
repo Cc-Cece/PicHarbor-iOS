@@ -363,7 +363,7 @@ def transition(task, to_state, event="transition", error_code=None,
     if to_state == "done" and cloud_confirmed is not True and task.get("cloud_confirmed") is not True:
         return _error("CLOUD_CONFIRMATION_REQUIRED")
     if current == "queued" and to_state == "confirming" and (
-            task.get("cloud_confirmed") is not True or not task.get("remote_key")):
+            (task.get("cloud_confirmed") is not True and cloud_confirmed is not True) or not (remote_key or task.get("remote_key"))):
         return _error("CLOUD_CONFIRMATION_REQUIRED")
 
     updated = dict(task)

@@ -134,7 +134,7 @@
     },
     {
       "path": "gpmc/harbor_core.py",
-      "sha256": "ac3dc36c5b2b4d830380787ae76f91161ec89dedf4b53342d4e84fe362b6f1e2"
+      "sha256": "8b4b1babbd81dfa97a6a16d6f11e8072acaa05b226e480aa748b28bd0e5d1859"
     },
     {
       "path": "gpmc/hash_handler.py",
@@ -142,7 +142,7 @@
     },
     {
       "path": "gpmc/heif_metadata.py",
-      "sha256": "a79104a0496b8f03a5b0e8795ec65235dd09a69a7b4783d64f8449c4f9e61660"
+      "sha256": "5fb147895dc249785e2e391d61646da8598789c205476862a93db8ab69109fb4"
     },
     {
       "path": "gpmc/live.py",
@@ -182,7 +182,7 @@
     },
     {
       "path": "gpmc/protocol.py",
-      "sha256": "d1a719292ecc219d5ced1f69cad135cc6514f7640f2f1eab087d042aa3ad5973"
+      "sha256": "11cb3e07fdf9ea7fe0bb5115806e43497fe818a4df900b4a4f1cfc3740879b14"
     },
     {
       "path": "gpmc/proxy_selection.py",

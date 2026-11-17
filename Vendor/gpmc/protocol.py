@@ -87,9 +87,12 @@ class Protocol:
                 decoded, _ = decode_message(data, {"1": {"type": "int"}, "2": {"type": "bytes"}}) if pair_photo else decode_message(data)
             except Exception:
                 raise Failure("UPLOAD_RESPONSE_INVALID") from None
+            modified_at = value.get("modified_at")
+            if modified_at is not None and (type(modified_at) is not int or modified_at < 0):
+                raise Failure("INVALID_ARGUMENT")
             key = self.api.commit_upload(decoded, value["name"], bytes.fromhex(value["sha1"]),
                 quality="saver" if quality == "saver" else "original",
-                model={"original": "Pixel XL", "quota": "Pixel 8", "saver": "Pixel 2"}[quality])
+                model={"original": "Pixel XL", "quota": "Pixel 8", "saver": "Pixel 2"}[quality], upload_timestamp=modified_at)
             if not isinstance(key, str) or not key:
                 raise Failure("COMMIT_UNCONFIRMED")
             self.snapshot_at = 0

@@ -66,11 +66,15 @@ def locations(data):
     if count > 65535:
         invalid()
     entries = {}
+    total_extents = 0
     for _ in range(count):
         identifier = reader.number(4 if version == 2 else 2)
         method = reader.number(2) if version else 0
         reference, base = reader.number(2), reader.number(base_size)
         extent_count = reader.number(2)
+        total_extents += extent_count
+        if total_extents > 65535 or (extent_count and length_size == 0):
+            invalid()
         if method not in (0, 1) or reference or identifier in entries:
             invalid()
         extents = [(reader.number(index_size), reader.number(offset_size), reader.number(length_size))
@@ -207,7 +211,7 @@ class HeifMetadata:
         method, base, extents = self.entries[self.xmp_id]
         output = bytearray()
         for index, offset, length in extents:
-            if index or length == 0 or len(output) + length > LIMIT:
+            if index or length == 0 or len(output) + length > 4 * 1024 * 1024:
                 invalid()
             start = base + offset
             if method == 1:

@@ -49,7 +49,7 @@ enum ProxyConfiguration {
             "bind-address": "127.0.0.1", "port": 0, "socks-port": 0, "mixed-port": 0,
             "external-controller": "", "external-controller-unix": "", "tun": ["enable": false],
             "dns": ["enable": false], "profile": ["store-selected": false, "store-fake-ip": false],
-            "proxies": nodes, "listeners": listeners, "rules": ["MATCH,REJECT"]]
+            "proxies": nodes.map { node in var verified = node; verified["skip-cert-verify"] = false; return verified }, "listeners": listeners, "rules": ["MATCH,REJECT"]]
         // The SDK reads this JSON through its YAML decoder, which rejects JSON's
         // optional escaped slash (e.g. ALPN "http\/1.1"). Preserve plain slashes.
         return (String(decoding: try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self), ports)
