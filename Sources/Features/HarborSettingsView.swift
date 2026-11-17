@@ -34,7 +34,7 @@ struct HarborSettingsView: View {
                     .accessibilityIdentifier("settings.restore")
             }
             Section {
-                NavigationLink { DiagnosticsView() } label: { Label(L10n.text("诊断"), systemImage: "stethoscope") }
+                NavigationLink { MobileDiagnosticsView() } label: { Label(L10n.text("诊断"), systemImage: "stethoscope") }
                 NavigationLink { AboutView() } label: { Label(L10n.text("关于 PicHarbor"), systemImage: "info.circle") }
             }
         }.navigationTitle(L10n.text("设置"))

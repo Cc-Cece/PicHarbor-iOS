@@ -296,6 +296,7 @@ final class HarborModel: ObservableObject {
         do {
             let repository = try BackupStore(url: engine.home.appendingPathComponent("backup-v2.sqlite"))
             store = repository
+            coreAdapter.configureStore(repository)
             jobs = try await repository.load(BackupJob.self, kind: "job")
             rebuildJobPositions()
             updateAssetStates(jobs)
@@ -393,7 +394,10 @@ final class HarborModel: ObservableObject {
         // Publish intent before yielding: pause/cancel must see the latest transport ID.
         if let index = jobPositions[value.id] { jobs[index] = value } else { appendJobs([value]) }
         updateAssetStates([value])
-        do { try await store.save(value, kind: "job", id: value.id, revision: value.generation ?? 0) }
+        do {
+            try await store.save(value, kind: "job", id: value.id, revision: value.generation ?? 0)
+            MobileDiagnostics.shared.record("task.persisted", task: value.id, fields: ["state": value.state.rawValue, "error_code": value.error, "resource_count": value.resources.count, "revision": value.generation ?? 0])
+        }
         catch { fatalStorage(error); throw error }
     }
     /// Publish once per bounded transaction, retaining each task's generation.
@@ -623,7 +627,7 @@ final class HarborModel: ObservableObject {
     /// with no restriction at all skips the per-asset calls: the core
     /// cannot exclude anything from an unrestricted scope.
     func coreScopedAssets(_ assets: [PHAsset]) async -> [PHAsset] {
-        guard coreAdapter.available else { return assets }
+        guard coreAdapter.available else { return [] }
         let scope = HarborCoreAdapter.scopeDictionary(for: settings)
         let restrictive = scope["mode"] as? String != "all" || scope["dateEnabled"] as? Bool == true
             || scope["ignoreSmallImages"] as? Bool == true
@@ -651,7 +655,7 @@ final class HarborModel: ObservableObject {
             switch await coreAdapter.evaluateScope(scope: scope, asset: assetDict) {
             case .some(true): included.append(asset)
             case .some(false): continue
-            case nil: included.append(asset) // Core does not know the action yet.
+            case nil: continue // An unavailable decision never widens the backup scope.
             }
             if included.count % QueueScaling.chunkSize == 0 { await Task.yield() }
         }

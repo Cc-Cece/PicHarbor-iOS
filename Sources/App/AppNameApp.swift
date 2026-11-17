@@ -8,6 +8,7 @@ struct PicHarborApp: App {
   @UIApplicationDelegateAdaptor(HarborAppDelegate.self) private var delegate
 
   init() {
+    MobileDiagnostics.shared.record("app.started")
     SelfRefreshManager.shared.configure(
       SelfRefreshConfiguration(
         urlScheme: "picharbor",

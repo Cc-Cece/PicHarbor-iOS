@@ -77,10 +77,6 @@
       "sha256": "93901b94770025d3178d57ef7566540558e7324115ed1255eaf17321bd2e8298"
     },
     {
-      "path": "gpmc/NOTICE.md",
-      "sha256": "a6a186cd6229d0cf28d24587676aa7c6016e04e4244791bf35eafe2048a38d9d"
-    },
-    {
       "path": "gpmc/__init__.py",
       "sha256": "00c357d41820c1c00fb2f7beec0a1461ee6f88635ac4b7bbb82076841107e0c7"
     },
@@ -98,7 +94,7 @@
     },
     {
       "path": "gpmc/api.py",
-      "sha256": "aa1591d370320bc52b4db007b49e063e52417e086ac9401d007516782a477d6b"
+      "sha256": "104070e5185c7a75a0d01a7d2a47e15c8ef01982ce87158410dd9262a531bd8a"
     },
     {
       "path": "gpmc/auth.py",
@@ -134,7 +130,7 @@
     },
     {
       "path": "gpmc/harbor_core.py",
-      "sha256": "0d6c30a6f5c11e2c55d8e869b7a4af0d831d8e8fe888d1a7d7f47fbc93571831"
+      "sha256": "d3b21866077d9b635459a0f1466772bc57db47ee0d4aad754d6ffe505365c990"
     },
     {
       "path": "gpmc/hash_handler.py",
@@ -149,6 +145,10 @@
       "sha256": "88dad509d517dc2b5265eb51ea08c0c63fbfdad0623afc4557207097faff11f9"
     },
     {
+      "path": "gpmc/media_identity.py",
+      "sha256": "04502f4848a8f76c4d56b759e96b5e4165f4b97c94aa89dc25ea620c4b25baa0"
+    },
+    {
       "path": "gpmc/message_types.py",
       "sha256": "808bfb732cc8d9df1c077322f68ee330afa676ebb3277d083e9f3e676123c3a1"
     },
@@ -157,8 +157,16 @@
       "sha256": "f3e15d30b0bd9add20169d6df07192b82099521d9ea93c17f4399bbb2ba1d7e8"
     },
     {
+      "path": "gpmc/NOTICE.md",
+      "sha256": "a6a186cd6229d0cf28d24587676aa7c6016e04e4244791bf35eafe2048a38d9d"
+    },
+    {
       "path": "gpmc/protocol.py",
       "sha256": "d1a719292ecc219d5ced1f69cad135cc6514f7640f2f1eab087d042aa3ad5973"
+    },
+    {
+      "path": "gpmc/proxy_selection.py",
+      "sha256": "5c5173b8ed09330b4275e4b46a22588841d54d39e26e538f996df4108921ccd0"
     },
     {
       "path": "gpmc/utils.py",

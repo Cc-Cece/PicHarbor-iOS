@@ -47,6 +47,10 @@ final class HarborCoreAdapter {
     /// Core task dicts by task id (== native job id), loaded from the
     /// store at boot and saved after every mutation.
     private var tasks: [String: [String: Any]] = [:]
+    private var repository: BackupStore?
+    private struct StoredTask: Codable { let id: String; let payload: Data; let revision: Int64 }
+
+    func configureStore(_ value: BackupStore) { repository = value }
 
     var storePath: String { home.appendingPathComponent("harbor-core-tasks.json").path }
 
@@ -78,6 +82,7 @@ final class HarborCoreAdapter {
               let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return ["ok": false, "error": "ENGINE_ERROR"]
         }
+        MobileDiagnostics.shared.record("core.operation", task: (payload["task"] as? [String: Any])?["task_id"] as? String ?? "", fields: ["stage": action, "error_code": decoded["error"] as? String ?? ""])
         if decoded["ok"] as? Bool == true { return decoded }
         return ["ok": false, "error": decoded["error"] as? String ?? "ENGINE_ERROR"]
     }
@@ -87,13 +92,16 @@ final class HarborCoreAdapter {
     func probe() async -> Bool {
         let result = await dispatch(action: "capabilities", payload: [:])
         guard result["ok"] as? Bool == true,
-              result["harbor_core_version"] as? Int == 1 else {
+              result["harbor_core_version"] as? Int == 1,
+              result["protocol_version"] as? Int == 2,
+              let actions = result["actions"] as? [String],
+              Set(["create_task", "transition", "evaluate_scope", "batch_pause", "batch_resume"]).isSubset(of: Set(actions)) else {
             available = false
             return false
         }
         available = true
         await loadStore()
-        return true
+        return available
     }
 
     /// True when a core reply means "this action is not available in the
@@ -108,14 +116,34 @@ final class HarborCoreAdapter {
     // MARK: - Persistence (store_save / store_load)
 
     func loadStore() async {
+        guard let repository else { available = false; return }
+        do {
+            let values = try await repository.load(StoredTask.self, kind: "core-task")
+            if !values.isEmpty {
+                tasks = try Dictionary(uniqueKeysWithValues: values.map { value in
+                    guard let task = try JSONSerialization.jsonObject(with: value.payload) as? [String: Any] else { throw HarborError("DATABASE_ERROR") }
+                    return (value.id, task)
+                })
+                return
+            }
+        } catch { available = false; return }
+        // One-time compatible import. Subsequent writes use the native database.
         let result = await dispatch(action: "store_load", payload: ["path": storePath])
         guard result["ok"] as? Bool == true,
               let loaded = result["tasks"] as? [String: [String: Any]] else { return }
         tasks = loaded
+        await saveStore()
     }
 
     func saveStore() async {
-        _ = await dispatch(action: "store_save", payload: ["path": storePath, "tasks": tasks])
+        guard let repository else { available = false; return }
+        do {
+            for (id, task) in tasks {
+                let revision = (task["revision"] as? NSNumber)?.int64Value ?? 0
+                let value = StoredTask(id: id, payload: try JSONSerialization.data(withJSONObject: task), revision: revision)
+                try await repository.save(value, kind: "core-task", id: id, revision: revision)
+            }
+        } catch { available = false }
     }
 
     /// Restart recovery: in-flight tasks from a previous process become
@@ -239,6 +267,7 @@ final class HarborCoreAdapter {
               let task = result["task"] as? [String: Any] else { return nil }
         tasks[job.id] = task
         await saveStore()
+        guard available else { return nil }
         return await transition(jobID: job.id, to: "preparing")
     }
 
@@ -250,14 +279,16 @@ final class HarborCoreAdapter {
                     remoteKey: String? = nil, save: Bool = true) async -> [String: Any]? {
         guard available, let task = tasks[jobID] else { return nil }
         var payload: [String: Any] = ["task": task, "to": state]
+        if state == "done" { payload["cloud_confirmed"] = true }
         if let errorCode { payload["error_code"] = errorCode }
         if let remoteKey, !remoteKey.isEmpty { payload["remote_key"] = remoteKey }
         let result = await dispatch(action: "transition", payload: payload)
         guard result["ok"] as? Bool == true,
               let updated = result["task"] as? [String: Any] else { return nil }
+        guard (tasks[jobID]?["revision"] as? Int ?? 0) == (task["revision"] as? Int ?? 0) else { return nil }
         tasks[jobID] = updated
         if save { await saveStore() }
-        return updated
+        return available ? updated : nil
     }
 
     // MARK: - Decisions

@@ -70,6 +70,7 @@ struct HarborRootView: View {
             Button(L10n.text("好")) { model.notice = "" }
         } message: { Text(L10n.message(model.notice)) }
         .onChange(of: scenePhase) { _, phase in
+            MobileDiagnostics.shared.record("app.lifecycle", fields: ["foreground": phase == .active])
             if phase == .active {
                 link.startPresence()
                 Task { await model.library.refresh(); await model.pump() }

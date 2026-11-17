@@ -868,3 +868,9 @@ HTTP 或 HTTPS 订阅链接|HTTP or HTTPS subscription URL
 旧任务 {0} 项，可迁移 {1} 项|{0} legacy jobs, {1} migratable
 ，未知状态 {0} 项将记为失败待人工处理|, {0} with unknown states will be marked failed for manual review
 ；账号 {0} 个，设置 {1} 个。仅预览，未写入、未删除、未转换。|; {0} accounts, {1} in settings. Preview only — nothing written, deleted, or converted.
+全部现存日志|All retained logs
+开始日期|Start date
+结束日期|End date
+准备导出|Prepare export
+导出失败，请重试。|Export failed. Please try again.
+日志默认持续记录，保留 14 天或 64 MiB。导出包含 JSONL 和可读文本，不包含账号、凭据或媒体内容。|Logs are always recorded and retained for 14 days or 64 MiB. Exports contain JSONL and readable text, with no accounts, credentials or media.

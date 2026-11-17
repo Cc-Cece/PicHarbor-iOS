@@ -208,7 +208,7 @@ class Api:
         media_key = decoded_message["1"].get("2", {}).get("2", {}).get("1", None)
         return media_key
 
-    def upload_file(self, file: str | Path | bytes | IO[bytes] | Generator[bytes, None, None], upload_token: str) -> dict:
+    def upload_file(self, file: str | Path | bytes | IO[bytes] | Generator[bytes, None, None], upload_token: str, *, raw_response: bool = False) -> dict | bytes:
         """
         Upload a file to Google Photos.
 
@@ -249,6 +249,8 @@ class Api:
 
         response.raise_for_status()
 
+        if raw_response:
+            return response.content
         upload_response_decoded, _ = decode_message(response.content)
         return upload_response_decoded
 
