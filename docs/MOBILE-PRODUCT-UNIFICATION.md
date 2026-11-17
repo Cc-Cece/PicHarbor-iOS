@@ -1,13 +1,9 @@
-# 手机端产品统一
+# 手机端统一维护入口
 
-当前产品蓝本固定为 `90ac7e1`，保持现有四栏和主要交互；后续整合分支只作为核心接入与缺陷修复的可复用来源。
-iOS 应用身份、用户数据与原生 UI 保留。Android 作为新应用在原仓库重建。
+Android 与 iOS 已整合到私有仓库 [PicHarbor-Mobile](https://github.com/Cc-Cece/PicHarbor-Mobile/tree/feat/mobile-framework-parity)。本仓库保留此前历史；后续手机端页面、构建与交付在统一仓库维护。
 
-共同规范及两端完成度以中央记录为准：
+- [页面规范与用户确认的预览](https://github.com/Cc-Cece/PicHarbor-Mobile/tree/feat/mobile-framework-parity/specs)
+- [源码结构对照记录](https://github.com/Cc-Cece/PicHarbor-Mobile/blob/feat/mobile-framework-parity/specs/STRUCTURE-REVIEW.md)
+- [gpmc 共享业务核心](https://github.com/Cc-Cece/gpmc)
 
-- [移动端共同产品规范](https://github.com/Cc-Cece/gpmc/blob/feat/mobile-product-unification/docs/MOBILE-PRODUCT-CONTRACT.md)
-- [2026-11-17 实施记录](https://github.com/Cc-Cece/gpmc/blob/feat/mobile-product-unification/docs/MOBILE-IMPLEMENTATION-2026-11-17.md)
-
-本轮将核心快照从独立 JSON 文件兼容导入 BackupStore，增加修订检查和持续诊断日志。
-日志默认常开，14 天/64 MiB；设置支持日期范围导出 JSONL 与同源文本 ZIP。
-本轮开发实现已完成，最终功能源码为 `e0c495c`，共享核心内容哈希为 `0a4472b9ffd4537b`。生产代理、版本、范围、流水线与执行策略接入共享核心；原生存储核对完成证据和修订号。无签名 IPA 构建及最终产物见中央交付记录。用户要求自行测试，本轮不运行测试，不声明 iPhone 或真实云端验收通过。
+产品蓝本为 iOS e0c495c，并按用户确认的预览修订。两端分别保留 SwiftUI / Compose 原生实现。应用身份、签名、账号和任务数据保留；实机功能验收由用户进行。
